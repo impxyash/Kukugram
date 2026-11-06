@@ -2,8 +2,33 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    { "idx": 0, "version": "7", "when": 0, "tag": "0000_initial", "breakpoints": true },
-    { "idx": 1, "version": "7", "when": 0, "tag": "0001_social_core", "breakpoints": true },
-    { "idx": 2, "version": "7", "when": 1794000000000, "tag": "0002_privacy_controls", "breakpoints": true }
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 0,
+      "tag": "0000_initial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 0,
+      "tag": "0001_social_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794000000000,
+      "tag": "0002_privacy_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794000001000,
+      "tag": "0003_moderation_reports",
+      "breakpoints": true
+    }
   ]
 }
