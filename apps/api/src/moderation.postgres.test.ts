@@ -329,7 +329,7 @@ integration("PostgreSQL moderation guarantees", () => {
       expect(retainedAudit.rows).toEqual([
         { actorId: deletedUser.userId, reportId, subjectUserId: deletedUser.userId }
       ]);
-    }
+    },
   );
 
   it("serializes concurrent appeal submissions and records only one appeal", async () => {
