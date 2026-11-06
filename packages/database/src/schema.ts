@@ -180,10 +180,10 @@ export const moderatorRoles = moderation.table(
 
 export const moderationAuditEvents = moderation.table("audit_events", {
   id: uuid("id").primaryKey(),
-  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  actorId: uuid("actor_id"),
   action: varchar("action", { length: 48 }).notNull(),
-  reportId: uuid("report_id").references(() => reports.id, { onDelete: "set null" }),
-  subjectUserId: uuid("subject_user_id").references(() => users.id, { onDelete: "set null" }),
+  reportId: uuid("report_id"),
+  subjectUserId: uuid("subject_user_id"),
   details: jsonb("details").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
