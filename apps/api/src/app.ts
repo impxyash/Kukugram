@@ -4,6 +4,7 @@ import helmet from "@fastify/helmet";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify from "fastify";
+import type { Pool } from "pg";
 import { createDatabase } from "@kukugram/database";
 import { ZodError } from "zod";
 import type { ApiConfig } from "./config.js";
@@ -15,12 +16,12 @@ const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 10;
 const authAttempts = new Map<string, { count: number; resetAt: number }>();
 
-export function buildApp(config: ApiConfig) {
+export function buildApp(config: ApiConfig, poolOverride?: Pool) {
   const app = Fastify({
     logger: { level: config.NODE_ENV === "production" ? "info" : "debug" },
     genReqId: () => crypto.randomUUID()
   });
-  const { pool } = createDatabase(config.DATABASE_URL);
+  const pool = poolOverride ?? createDatabase(config.DATABASE_URL).pool;
   app.decorate("config", config);
   app.decorate("pool", pool);
   app.addHook("onClose", async () => pool.end());
