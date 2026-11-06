@@ -577,31 +577,48 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const appellant = await requireViewer(request);
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const input = z.object({ details: z.string().trim().min(20).max(2000) }).parse(request.body);
-    const report = await app.pool.query<{ status: string }>(
-      "SELECT status FROM moderation.reports WHERE id = $1 AND reporter_id = $2",
-      [params.id, appellant.id]
-    );
-    if (!report.rows[0]) throw Object.assign(new Error("Report not found."), { statusCode: 404 });
-    if (!["resolved", "dismissed"].includes(report.rows[0].status))
-      throw Object.assign(new Error("Only closed reports can be appealed."), { statusCode: 409 });
     const appealId = randomUUID();
+    const client = await app.pool.connect();
     try {
-      await app.pool.query(
+      await client.query("BEGIN");
+      const report = await client.query<{ status: string }>(
+        "SELECT status FROM moderation.reports WHERE id = $1 AND reporter_id = $2 FOR UPDATE",
+        [params.id, appellant.id]
+      );
+      if (!report.rows[0]) {
+        await client.query("ROLLBACK");
+        throw Object.assign(new Error("Report not found."), { statusCode: 404 });
+      }
+      if (!["resolved", "dismissed"].includes(report.rows[0].status)) {
+        await client.query("ROLLBACK");
+        throw Object.assign(new Error("Only closed reports can be appealed."), {
+          statusCode: 409
+        });
+      }
+      await client.query(
         "INSERT INTO moderation.appeals (id, report_id, appellant_id, details) VALUES ($1, $2, $3, $4)",
         [appealId, params.id, appellant.id, input.details]
       );
+      await client.query(
+        "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, 'appeal.submitted', $3, $4::jsonb)",
+        [randomUUID(), appellant.id, params.id, JSON.stringify({ appealId })]
+      );
+      await client.query("COMMIT");
+      return reply.code(202).send({ appealId, status: "open" });
     } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the original transaction error; the connection is released in finally.
+      }
       if ((error as { code?: string }).code === "23505")
         throw Object.assign(new Error("An appeal has already been submitted for this report."), {
           statusCode: 409
         });
       throw error;
+    } finally {
+      client.release();
     }
-    await app.pool.query(
-      "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, 'appeal.submitted', $3, $4::jsonb)",
-      [randomUUID(), appellant.id, params.id, JSON.stringify({ appealId })]
-    );
-    return reply.code(202).send({ appealId, status: "open" });
   });
 
   app.get("/me/appeals", async (request) => {
