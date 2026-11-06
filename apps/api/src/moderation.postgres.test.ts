@@ -384,10 +384,16 @@ integration("PostgreSQL moderation guarantees", () => {
       ]);
       expect(reportQueue.statusCode).toBe(200);
       expect(appealQueue.statusCode).toBe(200);
-      expect(reportQueue.payload).toContain("Deleted account");
-      expect(appealQueue.payload).toContain("Deleted account");
       expect(reportQueue.payload).toContain(reportId);
       expect(appealQueue.payload).toContain(appealId);
+      expect(
+        (reportQueue.json() as { reports: { reporterHandle: string | null }[] }).reports[0]
+          ?.reporterHandle
+      ).toBeNull();
+      expect(
+        (appealQueue.json() as { appeals: { appellantHandle: string | null }[] }).appeals[0]
+          ?.appellantHandle
+      ).toBeNull();
     } finally {
       await app.close();
     }
