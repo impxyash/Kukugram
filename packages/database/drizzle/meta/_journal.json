@@ -57,6 +57,13 @@
       "when": 1794000005000,
       "tag": "0007_moderation_audit_actor_refs",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794000006000,
+      "tag": "0008_moderation_audit_identity_resolution",
+      "breakpoints": true
     }
   ]
 }
