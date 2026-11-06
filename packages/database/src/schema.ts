@@ -43,6 +43,26 @@ export const follows = social.table("follows", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
 
+export const blocks = social.table("blocks", {
+  blockerId: uuid("blocker_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  blockedId: uuid("blocked_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const mutes = social.table("mutes", {
+  muterId: uuid("muter_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  mutedId: uuid("muted_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
 export const posts = content.table("posts", {
   id: uuid("id").primaryKey(),
   authorId: uuid("author_id")
