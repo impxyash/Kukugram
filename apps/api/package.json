@@ -9,7 +9,7 @@
     "start": "node --env-file=../../.env dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vitest run"
+    "test": "pnpm --filter @kukugram/database build && vitest run"
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",
