@@ -264,8 +264,12 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     );
     if (!result.rowCount) throw Object.assign(new Error("Follow request not found."), { statusCode: 404 });
     await app.pool.query(
+      "DELETE FROM notifications.notifications WHERE recipient_id = $1 AND actor_id = $2 AND type = 'follow_request'",
+      [current.id, result.rows[0]!.follower_id]
+    );
+    await app.pool.query(
       "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type) VALUES ($1, $2, $3, 'follow')",
-      [randomUUID(), current.id, result.rows[0]!.follower_id]
+      [randomUUID(), result.rows[0]!.follower_id, current.id]
     );
     return reply.code(204).send();
   });
