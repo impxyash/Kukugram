@@ -121,10 +121,9 @@ integration("PostgreSQL moderation guarantees", () => {
       });
       expect(response.statusCode).toBe(500);
 
-      const report = await database().query(
-        "SELECT status FROM moderation.reports WHERE id = $1",
-        [reportId]
-      );
+      const report = await database().query("SELECT status FROM moderation.reports WHERE id = $1", [
+        reportId
+      ]);
       expect(report.rows).toEqual([{ status: "open" }]);
       const audit = await database().query(
         "SELECT id FROM moderation.audit_events WHERE report_id = $1",
