@@ -483,7 +483,12 @@ describe("social privacy authorization", () => {
     expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(
       true
     );
-    expect(pool.statements).toContain("COMMIT");
+    const reportUpdate = pool.statements.findIndex((sql) => sql.includes("UPDATE moderation.reports"));
+    const auditInsert = pool.statements.findIndex((sql) => sql.includes("INSERT INTO moderation.audit_events"));
+    const commit = pool.statements.indexOf("COMMIT");
+    expect(reportUpdate).toBeGreaterThanOrEqual(0);
+    expect(reportUpdate).toBeLessThan(auditInsert);
+    expect(auditInsert).toBeLessThan(commit);
     await app.close();
   });
 
@@ -501,7 +506,12 @@ describe("social privacy authorization", () => {
     expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(
       true
     );
-    expect(pool.statements).toContain("COMMIT");
+    const appealUpdate = pool.statements.findIndex((sql) => sql.includes("UPDATE moderation.appeals"));
+    const auditInsert = pool.statements.findIndex((sql) => sql.includes("INSERT INTO moderation.audit_events"));
+    const commit = pool.statements.indexOf("COMMIT");
+    expect(appealUpdate).toBeGreaterThanOrEqual(0);
+    expect(appealUpdate).toBeLessThan(auditInsert);
+    expect(auditInsert).toBeLessThan(commit);
     await app.close();
   });
 
