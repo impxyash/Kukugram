@@ -875,25 +875,35 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.post("/moderation/audit/resolve-actor", async (request, reply) => {
     const current = await requireViewer(request);
-    const raw = request.body && typeof request.body === "object" ? request.body as Record<string, unknown> : {};
-    const parsed = z.object({
-      actorRef: z.string().uuid(),
-      reason: z.string().trim().min(20).max(500),
-      password: z.string().min(1).max(128)
-    }).strict().safeParse(raw);
+    const raw =
+      request.body && typeof request.body === "object"
+        ? (request.body as Record<string, unknown>)
+        : {};
+    const parsed = z
+      .object({
+        actorRef: z.string().uuid(),
+        reason: z.string().trim().min(20).max(500),
+        password: z.string().min(1).max(128)
+      })
+      .strict()
+      .safeParse(raw);
     const requestId = request.id;
     if (!parsed.success) {
-      const safeActorRef = typeof raw.actorRef === "string" && /^[0-9a-f-]{36}$/i.test(raw.actorRef)
-        ? raw.actorRef
-        : "00000000-0000-0000-0000-000000000000";
-      const safeReason = typeof raw.reason === "string" && raw.reason.trim().length >= 20
-        ? raw.reason.trim().slice(0, 500)
-        : "[invalid or missing resolution reason]";
+      const safeActorRef =
+        typeof raw.actorRef === "string" && /^[0-9a-f-]{36}$/i.test(raw.actorRef)
+          ? raw.actorRef
+          : "00000000-0000-0000-0000-000000000000";
+      const safeReason =
+        typeof raw.reason === "string" && raw.reason.trim().length >= 20
+          ? raw.reason.trim().slice(0, 500)
+          : "[invalid or missing resolution reason]";
       await app.pool.query(
         "INSERT INTO moderation.audit_identity_resolution_log (requester_user_id, actor_ref, purpose_scope, reason, outcome, request_id) VALUES ($1, $2, 'moderation.audit.actor.v1', $3, 'invalid_request', $4)",
         [current.id, safeActorRef, safeReason, requestId]
       );
-      throw Object.assign(new Error("A valid audit identity resolution request is required."), { statusCode: 400 });
+      throw Object.assign(new Error("A valid audit identity resolution request is required."), {
+        statusCode: 400
+      });
     }
     const input = parsed.data;
     const role = await app.pool.query<{ role: string }>(
@@ -905,11 +915,13 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         "INSERT INTO moderation.audit_identity_resolution_log (requester_user_id, actor_ref, purpose_scope, reason, outcome, request_id) VALUES ($1, $2, 'moderation.audit.actor.v1', $3, 'denied_role', $4)",
         [current.id, input.actorRef, input.reason, requestId]
       );
-      throw Object.assign(new Error("Audit identity resolution is not permitted."), { statusCode: 403 });
+      throw Object.assign(new Error("Audit identity resolution is not permitted."), {
+        statusCode: 403
+      });
     }
 
     const credentials = await app.pool.query<{ passwordHash: string }>(
-      "SELECT password_hash AS \"passwordHash\" FROM identity.users WHERE id = $1 AND is_active = true",
+      'SELECT password_hash AS "passwordHash" FROM identity.users WHERE id = $1 AND is_active = true',
       [current.id]
     );
     const verified = credentials.rows[0]
@@ -920,7 +932,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         "INSERT INTO moderation.audit_identity_resolution_log (requester_user_id, actor_ref, purpose_scope, reason, outcome, request_id) VALUES ($1, $2, 'moderation.audit.actor.v1', $3, 'denied_step_up', $4)",
         [current.id, input.actorRef, input.reason, requestId]
       );
-      throw Object.assign(new Error("Audit identity resolution is not permitted."), { statusCode: 403 });
+      throw Object.assign(new Error("Audit identity resolution is not permitted."), {
+        statusCode: 403
+      });
     }
 
     const client = await app.pool.connect();
@@ -936,10 +950,15 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         [current.id, input.actorRef, input.reason, userId ? "resolved" : "not_found", requestId]
       );
       await client.query("COMMIT");
-      if (!userId) throw Object.assign(new Error("Audit identity reference not found."), { statusCode: 404 });
+      if (!userId)
+        throw Object.assign(new Error("Audit identity reference not found."), { statusCode: 404 });
       return reply.code(200).send({ userId });
     } catch (error) {
-      try { await client.query("ROLLBACK"); } catch { /* preserve original error */ }
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the original error.
+      }
       throw error;
     } finally {
       client.release();
