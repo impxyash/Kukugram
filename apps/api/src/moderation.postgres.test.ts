@@ -376,6 +376,106 @@ integration("PostgreSQL moderation guarantees", () => {
     }
   });
 
+  it("cascades account deletion through authored content and social controls", async () => {
+    const deletedUser = await seedAdmin();
+    const survivingUser = await seedAdmin();
+    const deletedPostId = randomUUID();
+    const survivingPostId = randomUUID();
+    const deletedAuthorCommentId = randomUUID();
+    const deletedPostCommentId = randomUUID();
+    const survivingCommentId = randomUUID();
+
+    await database().query(
+      "INSERT INTO content.posts (id, author_id, body) VALUES ($1, $2, 'Post owned by deleted user'), ($3, $4, 'Post owned by surviving user')",
+      [deletedPostId, deletedUser.userId, survivingPostId, survivingUser.userId]
+    );
+    await database().query(
+      "INSERT INTO content.comments (id, post_id, author_id, body) VALUES ($1, $2, $3, 'Comment by deleted user'), ($4, $5, $6, 'Comment on deleted post'), ($7, $8, $9, 'Surviving comment')",
+      [
+        deletedAuthorCommentId,
+        survivingPostId,
+        deletedUser.userId,
+        deletedPostCommentId,
+        deletedPostId,
+        survivingUser.userId,
+        survivingCommentId,
+        survivingPostId,
+        survivingUser.userId
+      ]
+    );
+    await database().query(
+      "INSERT INTO content.likes (user_id, post_id) VALUES ($1, $2), ($3, $4), ($5, $6)",
+      [
+        deletedUser.userId,
+        survivingPostId,
+        survivingUser.userId,
+        deletedPostId,
+        survivingUser.userId,
+        survivingPostId
+      ]
+    );
+    await database().query(
+      "INSERT INTO social.follows (follower_id, followee_id) VALUES ($1, $2), ($2, $1)",
+      [deletedUser.userId, survivingUser.userId]
+    );
+    await database().query(
+      "INSERT INTO social.blocks (blocker_id, blocked_id) VALUES ($1, $2), ($2, $1)",
+      [deletedUser.userId, survivingUser.userId]
+    );
+    await database().query(
+      "INSERT INTO social.mutes (muter_id, muted_id) VALUES ($1, $2), ($2, $1)",
+      [deletedUser.userId, survivingUser.userId]
+    );
+
+    await database().query("DELETE FROM identity.users WHERE id = $1", [deletedUser.userId]);
+
+    const deletedPosts = await database().query(
+      "SELECT id FROM content.posts WHERE author_id = $1",
+      [deletedUser.userId]
+    );
+    const survivingPost = await database().query(
+      "SELECT id FROM content.posts WHERE id = $1",
+      [survivingPostId]
+    );
+    const deletedComments = await database().query(
+      "SELECT id FROM content.comments WHERE id = ANY($1::uuid[])",
+      [[deletedAuthorCommentId, deletedPostCommentId]]
+    );
+    const survivingComment = await database().query(
+      "SELECT id FROM content.comments WHERE id = $1",
+      [survivingCommentId]
+    );
+    const survivingLike = await database().query(
+      "SELECT user_id, post_id FROM content.likes WHERE user_id = $1 AND post_id = $2",
+      [survivingUser.userId, survivingPostId]
+    );
+    const remainingLikes = await database().query(
+      "SELECT user_id, post_id FROM content.likes WHERE user_id = $1 OR post_id = $2",
+      [deletedUser.userId, deletedPostId]
+    );
+
+    expect(deletedPosts.rowCount).toBe(0);
+    expect(survivingPost.rowCount).toBe(1);
+    expect(deletedComments.rowCount).toBe(0);
+    expect(survivingComment.rowCount).toBe(1);
+    expect(survivingLike.rowCount).toBe(1);
+    expect(remainingLikes.rowCount).toBe(0);
+
+    for (const table of ["follows", "blocks", "mutes"]) {
+      const result = await database().query(
+        `SELECT 1 FROM social.${table} WHERE follower_id = $1 OR followee_id = $1`.replace(
+          "follower_id",
+          table === "follows" ? "follower_id" : table === "blocks" ? "blocker_id" : "muter_id"
+        ).replace(
+          "followee_id",
+          table === "follows" ? "followee_id" : table === "blocks" ? "blocked_id" : "muted_id"
+        ),
+        [deletedUser.userId]
+      );
+      expect(result.rowCount).toBe(0);
+    }
+  });
+
   it("serializes concurrent appeal submissions and records only one appeal", async () => {
     const appellant = await seedAdmin();
     const reportId = randomUUID();
