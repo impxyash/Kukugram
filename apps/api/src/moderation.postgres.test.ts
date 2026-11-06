@@ -17,7 +17,7 @@ integration("PostgreSQL moderation guarantees", () => {
     NODE_ENV: "test",
     API_HOST: "127.0.0.1",
     WEB_ORIGIN: "http://localhost:3000",
-    DATABASE_URL: databaseUrl!,
+    DATABASE_URL: databaseUrl ?? "postgresql://localhost/kukugram_test",
     REDIS_URL: "redis://localhost:6379",
     SESSION_COOKIE_NAME: "session",
     SESSION_TOKEN_PEPPER: pepper
@@ -78,12 +78,12 @@ integration("PostgreSQL moderation guarantees", () => {
     );
 
     await expect(
-      adminPool.query("UPDATE moderation.audit_events SET action = 'tampered' WHERE id = $1", [
+      database().query("UPDATE moderation.audit_events SET action = 'tampered' WHERE id = $1", [
         eventId
       ])
     ).rejects.toThrow("Moderation audit events are immutable");
     await expect(
-      adminPool.query("DELETE FROM moderation.audit_events WHERE id = $1", [eventId])
+      database().query("DELETE FROM moderation.audit_events WHERE id = $1", [eventId])
     ).rejects.toThrow("Moderation audit events are immutable");
 
     const persisted = await database().query(
