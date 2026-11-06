@@ -328,6 +328,61 @@ integration("PostgreSQL moderation guarantees", () => {
     ]);
   });
 
+  it("keeps reports about deleted target accounts visible in the moderator queue", async () => {
+    const reporter = await seedAdmin();
+    const targetId = randomUUID();
+    const reportId = randomUUID();
+
+    await database().query(
+      "INSERT INTO social.profiles (user_id, handle, display_name) VALUES ($1, $2, 'Report author')",
+      [reporter.userId, `reporter_${reporter.userId.replaceAll("-", "").slice(0, 12)}`]
+    );
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+      targetId,
+      `${targetId}@target-retention.test`
+    ]);
+    await database().query(
+      "INSERT INTO social.profiles (user_id, handle, display_name) VALUES ($1, $2, 'Deleted target')",
+      [targetId, `target_${targetId.replaceAll("-", "").slice(0, 12)}`]
+    );
+    await database().query(
+      "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category) VALUES ($1, $2, 'profile', $3, 'impersonation')",
+      [reportId, reporter.userId, targetId]
+    );
+
+    await database().query("DELETE FROM identity.users WHERE id = $1", [targetId]);
+
+    const retainedReport = await database().query(
+      'SELECT id, target_id AS "targetId" FROM moderation.reports WHERE id = $1',
+      [reportId]
+    );
+    expect(retainedReport.rows).toEqual([{ id: reportId, targetId }]);
+
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+    try {
+      const queue = await app.inject({
+        method: "GET",
+        url: "/v1/moderation/reports",
+        headers: { cookie: reporter.cookie }
+      });
+
+      expect(queue.statusCode).toBe(200);
+      expect(queue.json().reports).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: reportId,
+            targetType: "profile",
+            targetId,
+            reporterId: reporter.userId
+          })
+        ])
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
   it("serializes concurrent appeal submissions and records only one appeal", async () => {
     const appellant = await seedAdmin();
     const reportId = randomUUID();
