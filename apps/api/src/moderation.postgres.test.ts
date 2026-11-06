@@ -777,7 +777,18 @@ integration("PostgreSQL moderation guarantees", () => {
     const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
     const app = buildApp(config, appPool);
     try {
-      const [anonymousReports, anonymousAppeals, ordinaryReports, ordinaryAppeals, reportQueue, appealQueue, reportDetail, appealDetail, ordinaryReportDetail, anonymousAppealDetail] = await Promise.all([
+      const [
+        anonymousReports,
+        anonymousAppeals,
+        ordinaryReports,
+        ordinaryAppeals,
+        reportQueue,
+        appealQueue,
+        reportDetail,
+        appealDetail,
+        ordinaryReportDetail,
+        anonymousAppealDetail
+      ] = await Promise.all([
         app.inject({ method: "GET", url: "/v1/moderation/reports" }),
         app.inject({ method: "GET", url: "/v1/moderation/appeals" }),
         app.inject({
@@ -876,7 +887,12 @@ integration("PostgreSQL moderation guarantees", () => {
     );
     await database().query(
       "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, subject_user_id, details) VALUES ($1, $2, 'report.status_changed', $3, $2, $4::jsonb)",
-      [eventId, admin.userId, reportId, JSON.stringify({ from: "open", to: "resolved", note: privateNote })]
+      [
+        eventId,
+        admin.userId,
+        reportId,
+        JSON.stringify({ from: "open", to: "resolved", note: privateNote })
+      ]
     );
 
     const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
