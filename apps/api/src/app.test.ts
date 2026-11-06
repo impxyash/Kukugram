@@ -143,7 +143,11 @@ describe("social privacy authorization", () => {
         if (sql.includes("SELECT status FROM moderation.reports WHERE id = $1 FOR UPDATE")) {
           return { rows: [{ status: options.reportStatus ?? "open" }], rowCount: 1 };
         }
-        if (sql.includes("SELECT status FROM moderation.reports WHERE id = $1 AND reporter_id = $2 FOR UPDATE")) {
+        if (
+          sql.includes(
+            "SELECT status FROM moderation.reports WHERE id = $1 AND reporter_id = $2 FOR UPDATE"
+          )
+        ) {
           const ownsReport = options.reportOwnerId === values?.[1];
           return {
             rows: ownsReport ? [{ status: options.reportStatus ?? "resolved" }] : [],
@@ -152,7 +156,12 @@ describe("social privacy authorization", () => {
         }
         if (sql.includes("SELECT id, status FROM moderation.reports")) {
           return {
-            rows: [{ id: "00000000-0000-4000-8000-000000000004", status: options.reportStatus ?? "reviewing" }],
+            rows: [
+              {
+                id: "00000000-0000-4000-8000-000000000004",
+                status: options.reportStatus ?? "reviewing"
+              }
+            ],
             rowCount: 1
           };
         }
@@ -312,7 +321,11 @@ describe("social privacy authorization", () => {
       reportId: "00000000-0000-4000-8000-000000000004",
       status: "reviewing"
     });
-    expect(pool.statements.some((sql) => sql.includes("ON CONFLICT (reporter_id, target_type, target_id)"))).toBe(true);
+    expect(
+      pool.statements.some((sql) =>
+        sql.includes("ON CONFLICT (reporter_id, target_type, target_id)")
+      )
+    ).toBe(true);
     await app.close();
   });
 
@@ -444,7 +457,9 @@ describe("social privacy authorization", () => {
     });
     expect(response.statusCode).toBe(409);
     expect(pool.statements.some((sql) => sql.includes("UPDATE moderation.reports"))).toBe(false);
-    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(false);
+    expect(
+      pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))
+    ).toBe(false);
     expect(pool.statements).toContain("ROLLBACK");
     await app.close();
   });
@@ -553,7 +568,9 @@ describe("social privacy authorization", () => {
     });
     expect(response.statusCode).toBe(202);
     expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.appeals"))).toBe(true);
-    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(true);
+    expect(
+      pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))
+    ).toBe(true);
     expect(pool.statements).toContain("COMMIT");
     await app.close();
   });
