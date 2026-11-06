@@ -5,9 +5,9 @@ import type { FormEvent } from "react";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type User = { id: string; handle: string; displayName: string; bio: string | null; avatarUrl: string | null; followers: string; following: string; isFollowing: boolean };
+type User = { id: string; handle: string; displayName: string; bio: string | null; avatarUrl: string | null; followers: string; following: string; isFollowing: boolean; isRequested: boolean; privacy: "public" | "private" | "restricted_creator"; canViewContent: boolean };
 type Post = { id: string; body: string; createdAt: string; handle: string; displayName: string; avatarUrl: string | null; likeCount: string; commentCount: string; likedByViewer: boolean; authorId: string };
-type Notice = { id: string; type: "follow" | "like" | "comment"; postId: string | null; createdAt: string; readAt: string | null; handle: string | null; displayName: string | null };
+type Notice = { id: string; type: "follow" | "follow_request" | "like" | "comment"; postId: string | null; createdAt: string; readAt: string | null; handle: string | null; displayName: string | null };
 type Comment = { id: string; body: string; handle: string; displayName: string; createdAt: string };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -330,12 +330,13 @@ function Discover({ onError }: { onError: (message: string) => void }) {
 
   async function toggleFollow(person: User) {
     try {
-      if (person.isFollowing) {
+      if (person.isFollowing || person.isRequested) {
         await request(`/users/${person.handle}/follow`, { method: "DELETE" });
+        setUsers(users.map((item) => item.id === person.id ? { ...item, isFollowing: false, isRequested: false } : item));
       } else {
-        await request(`/users/${person.handle}/follow`, { method: "POST" });
+        const result = await request<{ user: User }>(`/users/${person.handle}/follow`, { method: "POST" });
+        setUsers(users.map((item) => item.id === person.id ? { ...item, isFollowing: result.user.isFollowing, isRequested: result.user.isRequested } : item));
       }
-      setUsers(users.map((item) => item.id === person.id ? { ...item, isFollowing: !item.isFollowing } : item));
     } catch (reason) {
       onError((reason as Error).message);
     }
@@ -354,7 +355,7 @@ function Discover({ onError }: { onError: (message: string) => void }) {
             <Avatar user={person} />
             <div><strong>{person.displayName}</strong><span>@{person.handle}</span><p>{person.bio}</p></div>
             <button className={person.isFollowing ? "secondary-button" : "primary-button"} onClick={() => { void toggleFollow(person); }}>
-              {person.isFollowing ? "Following" : "Follow"}
+              {person.isFollowing ? "Following" : person.isRequested ? "Requested" : "Follow"}
             </button>
           </article>
         ))}
@@ -378,8 +379,8 @@ function Activity({ notices, setNotices }: { notices: Notice[]; setNotices: (not
         <div className="results">
           {notices.map((notice) => (
             <article className="notice" key={notice.id}>
-              <span className="notice-mark">{notice.type === "follow" ? "+" : notice.type === "like" ? "♥" : "↳"}</span>
-              <p><b>{notice.displayName ?? "Someone"}</b> {notice.type === "follow" ? "followed you" : notice.type === "like" ? "liked your post" : "replied to your post"}.<span>{new Date(notice.createdAt).toLocaleDateString()}</span></p>
+              <span className="notice-mark">{notice.type === "follow" ? "+" : notice.type === "follow_request" ? "⌁" : notice.type === "like" ? "♥" : "↳"}</span>
+              <p><b>{notice.displayName ?? "Someone"}</b> {notice.type === "follow" ? "followed you" : notice.type === "follow_request" ? "requested to follow you" : notice.type === "like" ? "liked your post" : "replied to your post"}.<span>{new Date(notice.createdAt).toLocaleDateString()}</span></p>
             </article>
           ))}
         </div>
@@ -438,6 +439,7 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
   const [name, setName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio ?? "");
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
+  const [privacy, setPrivacy] = useState(user.privacy);
   const [saved, setSaved] = useState(false);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -445,7 +447,7 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
     try {
       const result = await request<{ user: User }>("/me/profile", {
         method: "PATCH",
-        body: JSON.stringify({ displayName: name, bio: bio || null, avatarUrl: avatarUrl || null })
+        body: JSON.stringify({ displayName: name, bio: bio || null, avatarUrl: avatarUrl || null, privacy })
       });
       setUser(result.user);
       setSaved(true);
@@ -461,6 +463,13 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
         <label>Display name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={60} /></label>
         <label>Bio<textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={500} /></label>
         <label>Avatar image URL<input value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} type="url" placeholder="https://..." /></label>
+        <label>Account privacy
+          <select value={privacy} onChange={(event) => setPrivacy(event.target.value as User["privacy"])}>
+            <option value="public">Public — anyone can see your posts</option>
+            <option value="private">Private — approve followers first</option>
+            <option value="restricted_creator">Creator — public creator profile</option>
+          </select>
+        </label>
         <button className="primary-button">Save profile</button>
         {saved && <p className="success">Profile saved.</p>}
       </form>
