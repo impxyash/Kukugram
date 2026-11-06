@@ -1021,7 +1021,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
           </div>
         ) : reports.length ? (
           reports.map((report) => (
-            <article className="person" key={report.id}>
+            <article className="person" key={report.id} aria-busy={busy === report.id}>
               <div>
                 <strong>
                   {report.category.replaceAll("_", " ")} · {report.targetType}
@@ -1038,19 +1038,22 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                   {busy === report.id && <p role="status">Saving report decision...</p>}
                   <div className="inline-actions">
                     <button
-                      disabled={busy === report.id}
+                      disabled={busy !== null}
+                      aria-label={`Review report ${report.id.slice(0, 8)}`}
                       onClick={() => void updateReport(report.id, "reviewing")}
                     >
                       Review
                     </button>
                     <button
-                      disabled={busy === report.id}
+                      disabled={busy !== null}
+                      aria-label={`Resolve report ${report.id.slice(0, 8)}`}
                       onClick={() => void updateReport(report.id, "resolved")}
                     >
                       Resolve
                     </button>
                     <button
-                      disabled={busy === report.id}
+                      disabled={busy !== null}
+                      aria-label={`Dismiss report ${report.id.slice(0, 8)}`}
                       onClick={() => void updateReport(report.id, "dismissed")}
                     >
                       Dismiss
@@ -1072,7 +1075,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
           <p role="alert">Appeals could not be loaded. Retry the queue above.</p>
         ) : appeals.length ? (
           appeals.map((appeal) => (
-            <article className="person" key={appeal.id}>
+            <article className="person" key={appeal.id} aria-busy={busy === appeal.id}>
               <div>
                 <strong>
                   @{appeal.appellantHandle} · Case {appeal.reportId.slice(0, 8)}
@@ -1082,13 +1085,15 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
               {busy === appeal.id && <p role="status">Saving appeal decision...</p>}
               <div className="inline-actions">
                 <button
-                  disabled={busy === appeal.id}
+                  disabled={busy !== null}
+                  aria-label={`Accept appeal for case ${appeal.reportId.slice(0, 8)}`}
                   onClick={() => void reviewAppeal(appeal.id, "accepted")}
                 >
                   Accept
                 </button>
                 <button
-                  disabled={busy === appeal.id}
+                  disabled={busy !== null}
+                  aria-label={`Reject appeal for case ${appeal.reportId.slice(0, 8)}`}
                   onClick={() => void reviewAppeal(appeal.id, "rejected")}
                 >
                   Reject
