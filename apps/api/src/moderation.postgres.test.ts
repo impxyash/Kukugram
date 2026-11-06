@@ -809,4 +809,44 @@ integration("PostgreSQL moderation guarantees", () => {
       await app.close();
     }
   });
+
+  it("redacts legacy actor UUIDs and free-text notes from the admin audit API", async () => {
+    const admin = await seedAdmin();
+    const reportId = randomUUID();
+    const eventId = randomUUID();
+    const privateNote = "Sensitive reporter context must stay outside immutable audit metadata.";
+    await database().query(
+      "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category) VALUES ($1, $2, 'profile', $3, 'spam')",
+      [reportId, admin.userId, randomUUID()]
+    );
+    await database().query(
+      "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, subject_user_id, details) VALUES ($1, $2, 'report.status_changed', $3, $2, $4::jsonb)",
+      [eventId, admin.userId, reportId, JSON.stringify({ from: "open", to: "resolved", note: privateNote })]
+    );
+
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/moderation/audit?reportId=${reportId}`,
+        headers: { cookie: admin.cookie }
+      });
+      expect(response.statusCode).toBe(200);
+      const event = response.json<{ events: Record<string, unknown>[] }>().events.find(
+        (entry) => entry.id === eventId
+      );
+      expect(event).toBeDefined();
+      expect(Object.keys(event ?? {}).sort()).toEqual(
+        ["action", "caseRef", "createdAt", "id", "metadata"].sort()
+      );
+      expect(event?.metadata).toEqual({ from: "open", to: "resolved" });
+      expect(response.payload).not.toContain(admin.userId);
+      expect(response.payload).not.toContain(privateNote);
+      expect(response.payload).not.toContain("actorId");
+      expect(response.payload).not.toContain("subjectUserId");
+    } finally {
+      await app.close();
+    }
+  });
 });
