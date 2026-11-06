@@ -480,14 +480,8 @@ integration("PostgreSQL moderation guarantees", () => {
       expect(appealQueue.statusCode).toBe(200);
       expect(reportQueue.payload).toContain(reportId);
       expect(appealQueue.payload).toContain(appealId);
-      expect(
-        reportQueue.json<{ reports: { reporterHandle: string | null }[] }>().reports[0]
-          ?.reporterHandle
-      ).toBeNull();
-      expect(
-        appealQueue.json<{ appeals: { appellantHandle: string | null }[] }>().appeals[0]
-          ?.appellantHandle
-      ).toBeNull();
+      expect(reportQueue.payload).not.toContain("reporterHandle");
+      expect(appealQueue.payload).not.toContain("appellantHandle");
     } finally {
       await app.close();
     }
@@ -543,8 +537,8 @@ integration("PostgreSQL moderation guarantees", () => {
 
       expect(queue.statusCode).toBe(200);
       expect(queue.payload).toContain(reportId);
-      expect(queue.payload).toContain(targetId);
-      expect(queue.payload).toContain(reporterHandle);
+      expect(queue.payload).not.toContain(targetId);
+      expect(queue.payload).not.toContain(reporterHandle);
       expect(queue.payload).not.toContain(reporter.userId);
     } finally {
       await app.close();
