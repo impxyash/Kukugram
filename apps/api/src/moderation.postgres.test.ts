@@ -113,16 +113,16 @@ integration("PostgreSQL moderation guarantees", () => {
       [reportId, appealId]
     );
     expect(beforeDeletion.rows).toHaveLength(1);
-    expect(beforeDeletion.rows[0]?.reporterId).toBe(userId);
-    expect(beforeDeletion.rows[0]?.appellantId).toBe(userId);
-    expect(beforeDeletion.rows[0]?.reporterPseudonymId).toEqual(expect.any(String));
-    expect(beforeDeletion.rows[0]?.appellantPseudonymId).toEqual(expect.any(String));
-    expect(beforeDeletion.rows[0]?.reporterPseudonymId).not.toBe(userId);
-    expect(beforeDeletion.rows[0]?.appellantPseudonymId).not.toBe(userId);
-    expect(beforeDeletion.rows[0]?.reporterPseudonymId).not.toBe(
-      beforeDeletion.rows[0]?.appellantPseudonymId
-    );
-    expect(beforeDeletion.rows[0]?.details).toBe(
+    const beforeRow = beforeDeletion.rows[0];
+    if (!beforeRow) throw new Error("Legacy moderation case was not retained.");
+    expect(beforeRow.reporterId).toBe(userId);
+    expect(beforeRow.appellantId).toBe(userId);
+    expect(beforeRow.reporterPseudonymId).toEqual(expect.any(String));
+    expect(beforeRow.appellantPseudonymId).toEqual(expect.any(String));
+    expect(beforeRow.reporterPseudonymId).not.toBe(userId);
+    expect(beforeRow.appellantPseudonymId).not.toBe(userId);
+    expect(beforeRow.reporterPseudonymId).not.toBe(beforeRow.appellantPseudonymId);
+    expect(beforeRow.details).toBe(
       "Legacy appeal submitted before pseudonymization migration."
     );
 
