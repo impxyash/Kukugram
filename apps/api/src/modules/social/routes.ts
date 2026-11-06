@@ -873,6 +873,65 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     return { events: result.rows };
   });
 
+  app.post("/moderation/audit/resolve-actor", async (request, reply) => {
+    const current = await requireViewer(request);
+    const input = z.object({
+      actorRef: z.string().uuid(),
+      reason: z.string().trim().min(20).max(500),
+      password: z.string().min(1).max(128)
+    }).strict().parse(request.body);
+
+    const requestId = request.id;
+    const role = await app.pool.query<{ role: string }>(
+      "SELECT role FROM moderation.moderator_roles WHERE user_id = $1 AND role = 'admin'",
+      [current.id]
+    );
+    if (!role.rowCount) {
+      await app.pool.query(
+        "INSERT INTO moderation.audit_identity_resolution_log (requester_user_id, actor_ref, purpose_scope, reason, outcome, request_id) VALUES ($1, $2, 'moderation.audit.actor.v1', $3, 'denied_role', $4)",
+        [current.id, input.actorRef, input.reason, requestId]
+      );
+      throw Object.assign(new Error("Audit identity resolution is not permitted."), { statusCode: 403 });
+    }
+
+    const credentials = await app.pool.query<{ passwordHash: string }>(
+      "SELECT password_hash AS \"passwordHash\" FROM identity.users WHERE id = $1 AND is_active = true",
+      [current.id]
+    );
+    const verified = credentials.rows[0]
+      ? await argon2.verify(credentials.rows[0].passwordHash, input.password).catch(() => false)
+      : false;
+    if (!verified) {
+      await app.pool.query(
+        "INSERT INTO moderation.audit_identity_resolution_log (requester_user_id, actor_ref, purpose_scope, reason, outcome, request_id) VALUES ($1, $2, 'moderation.audit.actor.v1', $3, 'denied_step_up', $4)",
+        [current.id, input.actorRef, input.reason, requestId]
+      );
+      throw Object.assign(new Error("Audit identity resolution is not permitted."), { statusCode: 403 });
+    }
+
+    const client = await app.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const resolved = await client.query<{ userId: string | null }>(
+        'SELECT moderation.resolve_audit_actor_identity($1, \'moderation.audit.actor.v1\') AS "userId"',
+        [input.actorRef]
+      );
+      const userId = resolved.rows[0]?.userId ?? null;
+      await client.query(
+        "INSERT INTO moderation.audit_identity_resolution_log (requester_user_id, actor_ref, purpose_scope, reason, outcome, request_id) VALUES ($1, $2, 'moderation.audit.actor.v1', $3, $4, $5)",
+        [current.id, input.actorRef, input.reason, userId ? "resolved" : "not_found", requestId]
+      );
+      await client.query("COMMIT");
+      if (!userId) throw Object.assign(new Error("Audit identity reference not found."), { statusCode: 404 });
+      return reply.code(200).send({ userId });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch { /* preserve original error */ }
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
   app.post("/reports", async (request, reply) => {
     const current = await requireViewer(request);
     const input = z
