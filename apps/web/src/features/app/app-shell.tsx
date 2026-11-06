@@ -995,7 +995,11 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         <h2>Moderation queue.</h2>
         <p>Review reports and appeals. Every decision is recorded in the audit log.</p>
       </header>
-      {actionNotice && <p className="success" role="status">{actionNotice}</p>}
+      {actionNotice && (
+        <p className="success" role="status">
+          {actionNotice}
+        </p>
+      )}
       <section className="settings-section">
         <label>
           Report status
