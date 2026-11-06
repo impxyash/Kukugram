@@ -343,6 +343,25 @@ function Discover({ onError }: { onError: (message: string) => void }) {
     }
   }
 
+  async function mutePerson(person: User) {
+    try {
+      await request(`/users/${person.handle}/mute`, { method: "POST" });
+      setUsers(users.filter((item) => item.id !== person.id));
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  async function blockPerson(person: User) {
+    if (!window.confirm(`Block @${person.handle}? You will both be removed from each other's follow lists.`)) return;
+    try {
+      await request(`/users/${person.handle}/block`, { method: "POST" });
+      setUsers(users.filter((item) => item.id !== person.id));
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
   return (
     <>
       <header className="pane-header"><p className="eyebrow">Discover</p><h2>Find your next familiar face.</h2></header>
@@ -355,9 +374,13 @@ function Discover({ onError }: { onError: (message: string) => void }) {
           <article key={person.id} className="person">
             <Avatar user={person} />
             <div><strong>{person.displayName}</strong><span>@{person.handle}</span><p>{person.bio}</p></div>
-            <button className={person.isFollowing ? "secondary-button" : "primary-button"} onClick={() => { void toggleFollow(person); }}>
-              {person.isFollowing ? "Following" : person.isRequested ? "Requested" : "Follow"}
-            </button>
+            <div className="person-actions">
+              <button className={person.isFollowing ? "secondary-button" : "primary-button"} onClick={() => { void toggleFollow(person); }}>
+                {person.isFollowing ? "Following" : person.isRequested ? "Requested" : "Follow"}
+              </button>
+              <button className="secondary-button" onClick={() => { void mutePerson(person); }}>Mute</button>
+              <button className="secondary-button" onClick={() => { void blockPerson(person); }}>Block</button>
+            </div>
           </article>
         ))}
       </div>
