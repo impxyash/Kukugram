@@ -88,6 +88,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
 }
 
+function moderationAccountLabel(handle: string | null): string {
+  return handle ? `@${handle}` : "Deleted account";
+}
+
 async function reportContent(
   targetType: "profile" | "post" | "comment",
   targetId: string,
@@ -1027,10 +1031,8 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                   {report.category.replaceAll("_", " ")} · {report.targetType}
                 </strong>
                 <span>
-                  {report.reporterHandle
-                    ? `Reported by @${report.reporterHandle}`
-                    : "Reported by Deleted account"}{" "}
-                  · {new Date(report.createdAt).toLocaleString()}
+                  Reported by {moderationAccountLabel(report.reporterHandle)} ·{" "}
+                  {new Date(report.createdAt).toLocaleString()}
                 </span>
                 {report.details && <p>{report.details}</p>}
                 <span className="status">{report.status}</span>
@@ -1080,8 +1082,8 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
             <article className="person" key={appeal.id} aria-busy={busy === appeal.id}>
               <div>
                 <strong>
-                  {appeal.appellantHandle ? `@${appeal.appellantHandle}` : "Deleted account"}{" "}
-                  · Case {appeal.reportId.slice(0, 8)}
+                  {moderationAccountLabel(appeal.appellantHandle)} · Case{" "}
+                  {appeal.reportId.slice(0, 8)}
                 </strong>
                 <span>{appeal.details}</span>
               </div>
