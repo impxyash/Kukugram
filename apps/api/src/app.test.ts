@@ -124,6 +124,7 @@ describe("social privacy authorization", () => {
       targetOwnerId?: string;
       followRequest?: boolean;
       moderatorRole?: "moderator" | "admin";
+      adminIds?: string[];
       reportStatus?: "open" | "reviewing" | "resolved" | "dismissed";
       reportOwnerId?: string;
       duplicateReport?: boolean;
@@ -138,7 +139,8 @@ describe("social privacy authorization", () => {
         statements.push(sql);
         parameters.push(values ?? []);
         if (sql.includes("ORDER BY user_id FOR UPDATE")) {
-          return { rows: [{ userId: targetId }], rowCount: 1 };
+          const administrators = (options.adminIds ?? [targetId]).map((userId) => ({ userId }));
+          return { rows: administrators, rowCount: administrators.length };
         }
         if (sql.includes("SELECT status FROM moderation.reports WHERE id = $1 FOR UPDATE")) {
           return { rows: [{ status: options.reportStatus ?? "open" }], rowCount: 1 };
@@ -512,6 +514,25 @@ describe("social privacy authorization", () => {
     expect(
       pool.statements.some((sql) => sql.includes("DELETE FROM moderation.moderator_roles"))
     ).toBe(false);
+    await app.close();
+  });
+
+  it("allows revoking an administrator when another administrator remains", async () => {
+    const pool = makePool({ moderatorRole: "admin", adminIds: [viewerId, targetId] });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/v1/moderation/roles/${targetId}/admin`,
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(
+      pool.statements.some((sql) => sql.includes("DELETE FROM moderation.moderator_roles"))
+    ).toBe(true);
+    expect(
+      pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))
+    ).toBe(true);
+    expect(pool.statements).toContain("COMMIT");
     await app.close();
   });
 
