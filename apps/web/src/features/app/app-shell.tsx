@@ -117,8 +117,9 @@ function AuthScreen({ mode, setMode, onAuthenticated }: { mode: "login" | "signu
     setBusy(true);
     setError(null);
     const form = new FormData(event.currentTarget);
+    const values = Object.fromEntries(form);
     try {
-      await request(`/auth/${mode}`, { method: "POST", body: JSON.stringify(Object.fromEntries(form)) });
+      await request(`/auth/${mode}`, { method: "POST", body: JSON.stringify(values) });
       await onAuthenticated();
     } catch (reason) {
       setError((reason as Error).message);
@@ -128,31 +129,60 @@ function AuthScreen({ mode, setMode, onAuthenticated }: { mode: "login" | "signu
   }
 
   return (
-    <main className="auth-shell">
-      <section className="auth-intro">
-        <a className="brand" href="/"><span className="brand-mark">k</span> kukugram</a>
-        <p className="eyebrow">Private MVP</p>
-        <h1>Make room for<br /><em>real connection.</em></h1>
-        <p>Start a quieter, brighter social orbit with the people you choose.</p>
-      </section>
-      <section className="auth-card">
-        <p className="eyebrow">{mode === "signup" ? "Join Kukugram" : "Welcome back"}</p>
-        <h2>{mode === "signup" ? "Claim your corner." : "Pick up where you left off."}</h2>
-        {error && <p className="form-error">{error}</p>}
-        <form onSubmit={(event) => { void submit(event); }}>
-          <label>Email<input required name="email" type="email" autoComplete="email" /></label>
-          <label>Password<input required name="password" type="password" minLength={mode === "signup" ? 12 : 1} autoComplete={mode === "signup" ? "new-password" : "current-password"} /></label>
-          {mode === "signup" && (
-            <>
-              <label>Username<input required name="handle" pattern="[a-z0-9_]{3,30}" title="Use 3-30 lowercase letters, numbers, or underscores." autoComplete="username" /></label>
-              <label>Display name<input required name="displayName" maxLength={60} autoComplete="name" /></label>
-              <label>Bio <span>(optional)</span><textarea name="bio" maxLength={500} /></label>
-            </>
-          )}
-          <button className="primary-button" disabled={busy}>{busy ? "Working..." : mode === "signup" ? "Create account" : "Log in"}</button>
-        </form>
-        <button className="text-button" onClick={() => setMode(mode === "signup" ? "login" : "signup")}>{mode === "signup" ? "Already here? Log in" : "New to Kukugram? Sign up"}</button>
-      </section>
+    <main className="auth-page">
+      <div className="auth-layout">
+        <section className="auth-visual" aria-label="Welcome to Kukugram">
+          <a className="brand auth-brand" href="/"><span className="brand-mark">k</span> kukugram</a>
+          <div className="auth-visual-copy">
+            <p className="eyebrow">A little more you. A little less noise.</p>
+            <h1>Share the<br /><em>good stuff.</em></h1>
+            <p>Find your people, share your moments, and make your own corner of the internet.</p>
+          </div>
+          <div className="auth-orbit" aria-hidden="true">
+            <span className="orbit-bubble bubble-one">✳</span>
+            <span className="orbit-bubble bubble-two">k</span>
+            <span className="orbit-bubble bubble-three">♡</span>
+            <span className="orbit-ring ring-one" />
+            <span className="orbit-ring ring-two" />
+          </div>
+          <p className="auth-visual-foot">YOUR PEOPLE. YOUR PACE. YOUR SPACE.</p>
+        </section>
+
+        <section className="auth-panel">
+          <div className="auth-card auth-card-modern">
+            <div className="auth-mobile-brand"><a className="brand" href="/"><span className="brand-mark">k</span> kukugram</a></div>
+            <div className="auth-card-heading">
+              <p className="eyebrow">{mode === "signup" ? "JOIN THE COMMUNITY" : "GOOD TO SEE YOU AGAIN"}</p>
+              <h2>{mode === "signup" ? "Create an account" : "Welcome back"}</h2>
+              <p>{mode === "signup" ? "Sign up to see photos, posts and moments from your people." : "Log in to catch up with your people."}</p>
+            </div>
+
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <form className="auth-form" onSubmit={(event) => { void submit(event); }}>
+              {mode === "signup" && (
+                <>
+                  <label>Full name<input required name="displayName" maxLength={60} autoComplete="name" placeholder="Your name" /></label>
+                  <label>Username<input required name="handle" pattern="[a-z0-9_]{3,30}" title="Use 3-30 lowercase letters, numbers, or underscores." autoComplete="username" placeholder="Choose a username" /></label>
+                </>
+              )}
+              <label>Email address<input required name="email" type="email" autoComplete="email" placeholder="name@example.com" /></label>
+              <label>Password<input required name="password" type="password" minLength={mode === "signup" ? 12 : 1} autoComplete={mode === "signup" ? "new-password" : "current-password"} placeholder={mode === "signup" ? "At least 12 characters" : "Your password"} /></label>
+              {mode === "signup" && <p className="auth-terms">By signing up, you agree to our Terms and Privacy Policy.</p>}
+              <button className="primary-button auth-submit" disabled={busy}>
+                {busy ? "Please wait..." : mode === "signup" ? "Create account" : "Log in"}
+              </button>
+            </form>
+
+            <div className="auth-switch">
+              {mode === "signup" ? "Already have an account?" : "Don't have an account?"}
+              <button className="auth-switch-button" onClick={() => { setError(null); setMode(mode === "signup" ? "login" : "signup"); }}>
+                {mode === "signup" ? "Log in" : "Sign up"}
+              </button>
+            </div>
+          </div>
+          <p className="auth-footer">© {new Date().getFullYear()} Kukugram · Made for your people</p>
+        </section>
+      </div>
     </main>
   );
 }
