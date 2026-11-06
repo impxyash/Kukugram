@@ -1080,7 +1080,10 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
             <article className="person" key={appeal.id} aria-busy={busy === appeal.id}>
               <div>
                 <strong>
-                  {appeal.appellantHandle ? `@${appeal.appellantHandle}` : "Deleted account"} · Case {appeal.reportId.slice(0, 8)}
+                  {appeal.appellantHandle
+                    ? `@${appeal.appellantHandle}`
+                    : "Deleted account"}{" "}
+                  · Case {appeal.reportId.slice(0, 8)}
                 </strong>
                 <span>{appeal.details}</span>
               </div>
