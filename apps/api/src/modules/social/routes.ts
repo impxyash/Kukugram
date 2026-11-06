@@ -99,7 +99,8 @@ async function profileFor(request: FastifyRequest, handle: string, viewerId?: st
   return result.rows[0] ?? null;
 }
 
-async function canViewPost(request: FastifyRequest, postId: string, viewerId: string): Promise<boolean> {
+async function canViewPost(request: FastifyRequest, postId: string, viewerId?: string): Promise<boolean> {
+  const anonymousViewer = "00000000-0000-0000-0000-000000000000";
   const result = await request.server.pool.query<{ allowed: boolean }>(
     `SELECT (pr.privacy <> 'private' OR p.author_id = $2 OR EXISTS(
         SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = p.author_id AND f.status = 'accepted'
@@ -109,7 +110,7 @@ async function canViewPost(request: FastifyRequest, postId: string, viewerId: st
       ) AS allowed
      FROM content.posts p JOIN social.profiles pr ON pr.user_id = p.author_id
      WHERE p.id = $1 AND p.deleted_at IS NULL`,
-    [postId, viewerId]
+    [postId, viewerId ?? anonymousViewer]
   );
   return result.rows[0]?.allowed ?? false;
 }
@@ -225,7 +226,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     if (target.isBlocked) throw Object.assign(new Error("This profile is unavailable."), { statusCode: 404 });
     const status = target.privacy === "private" ? "pending" : "accepted";
     const inserted = await app.pool.query(
-      "INSERT INTO social.follows (follower_id, followee_id, status) VALUES ($1, $2, $3) ON CONFLICT (follower_id, followee_id) DO UPDATE SET status = EXCLUDED.status WHERE social.follows.status <> 'accepted' RETURNING status",
+      "INSERT INTO social.follows (follower_id, followee_id, status) VALUES ($1, $2, $3) ON CONFLICT (follower_id, followee_id) DO NOTHING RETURNING status",
       [current.id, target.id, status]
     );
     if (inserted.rowCount) await app.pool.query(
@@ -382,7 +383,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
   app.get("/posts/:id/comments", async (request) => {
     const current = await viewer(request);
     const id = z.object({ id: z.string().uuid() }).parse(request.params).id;
-    if (!current || !(await canViewPost(request, id, current.id))) throw Object.assign(new Error("Post not found."), { statusCode: 404 });
+    if (!(await canViewPost(request, id, current?.id))) throw Object.assign(new Error("Post not found."), { statusCode: 404 });
     const result = await app.pool.query(`SELECT c.id, c.body, c.created_at AS "createdAt", p.handle, p.display_name AS "displayName", p.avatar_url AS "avatarUrl" FROM content.comments c JOIN social.profiles p ON p.user_id = c.author_id WHERE c.post_id = $1 ORDER BY c.created_at ASC`, [id]);
     return { comments: result.rows };
   });
