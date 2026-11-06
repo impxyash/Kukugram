@@ -1002,10 +1002,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         ) : loadError ? (
           <div role="alert">
             <p>{loadError}</p>
-            <button
-              className="secondary-button"
-              onClick={() => void refresh()}
-            >
+            <button className="secondary-button" onClick={() => void refresh()}>
               Retry loading queue
             </button>
           </div>
