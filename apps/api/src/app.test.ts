@@ -102,10 +102,13 @@ describe("social privacy authorization", () => {
 
   function makePool(options: { blocked?: boolean; privacy?: "public" | "private"; accepted?: boolean } = {}) {
     const statements: string[] = [];
+    const parameters: unknown[][] = [];
     const pool = {
       statements,
-      query: vi.fn((sql: string) => {
+      parameters,
+      query: vi.fn((sql: string, values?: unknown[]) => {
         statements.push(sql);
+        parameters.push(values ?? []);
         if (sql.includes("FROM identity.sessions")) {
           return { rows: [{ id: viewerId, email: "viewer@example.test" }], rowCount: 1 };
         }
@@ -149,7 +152,7 @@ describe("social privacy authorization", () => {
       }),
       end: vi.fn(() => Promise.resolve())
     };
-    return pool as unknown as Pool & { statements: string[] };
+    return pool as unknown as Pool & { statements: string[]; parameters: unknown[][] };
   }
 
   function appWithPool(pool: Pool) {
@@ -178,7 +181,8 @@ describe("social privacy authorization", () => {
     const app = appWithPool(pool);
     const response = await app.inject({ method: "POST", url: "/v1/users/target_user/follow", headers: { cookie } });
     expect(response.statusCode).toBe(200);
-    expect(pool.statements.some((sql) => sql.includes("'follow_request'"))).toBe(true);
+    expect(pool.parameters.some((values) => values[2] === "pending")).toBe(true);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO notifications.notifications"))).toBe(true);
     await app.close();
   });
 
