@@ -24,4 +24,24 @@ describe("API", () => {
     expect(response.json()).toMatchObject({ status: "ok" });
     await app.close();
   });
+
+  it("limits repeated authentication attempts from one IP", async () => {
+    const app = buildApp(config);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/auth/login",
+        payload: {}
+      });
+      expect(response.statusCode).toBe(400);
+    }
+    const limited = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {}
+    });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers["retry-after"]).toBeDefined();
+    await app.close();
+  });
 });
