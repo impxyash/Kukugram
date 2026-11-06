@@ -95,9 +95,23 @@ integration("PostgreSQL moderation guarantees", () => {
         headers: { cookie: moderator.cookie }
       });
 
+      const grantRole = await app.inject({
+        method: "POST",
+        url: "/v1/moderation/roles",
+        headers: { cookie: moderator.cookie },
+        payload: { userId: randomUUID(), role: "moderator" }
+      });
+      const revokeRole = await app.inject({
+        method: "DELETE",
+        url: `/v1/moderation/roles/${randomUUID()}/moderator`,
+        headers: { cookie: moderator.cookie }
+      });
+
       expect(queue.statusCode).toBe(200);
       expect(audit.statusCode).toBe(403);
       expect(roles.statusCode).toBe(403);
+      expect(grantRole.statusCode).toBe(403);
+      expect(revokeRole.statusCode).toBe(403);
     } finally {
       await app.close();
     }
@@ -240,6 +254,81 @@ integration("PostgreSQL moderation guarantees", () => {
         [[first.userId, second.userId]]
       );
       expect(remaining.rowCount).toBe(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+
+  it("serializes concurrent appeal submissions and records only one appeal", async () => {
+    const appellant = await seedAdmin();
+    const reportId = randomUUID();
+    await database().query(
+      "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, status) VALUES ($1, $2, 'profile', $3, 'spam', 'resolved')",
+      [reportId, appellant.userId, randomUUID()]
+    );
+    const appPool = new Pool({ connectionString: databaseUrl, max: 8 });
+    const app = buildApp(config, appPool);
+
+    try {
+      const submit = () =>
+        app.inject({
+          method: "POST",
+          url: `/v1/reports/${reportId}/appeals`,
+          headers: { cookie: appellant.cookie },
+          payload: { details: "I disagree with this moderation decision and request a review." }
+        });
+      const responses = await Promise.all([submit(), submit()]);
+
+      expect(responses.map((response) => response.statusCode).sort()).toEqual([202, 409]);
+      const persisted = await database().query(
+        "SELECT id FROM moderation.appeals WHERE report_id = $1",
+        [reportId]
+      );
+      expect(persisted.rowCount).toBe(1);
+      const audit = await database().query(
+        "SELECT id FROM moderation.audit_events WHERE report_id = $1 AND action = 'appeal.submitted'",
+        [reportId]
+      );
+      expect(audit.rowCount).toBe(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("enforces appeal ownership and closed-report eligibility in PostgreSQL", async () => {
+    const appellant = await seedAdmin();
+    const otherUser = await seedAdmin();
+    const ownedOpenReport = randomUUID();
+    const foreignClosedReport = randomUUID();
+    await database().query(
+      "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, status) VALUES ($1, $2, 'profile', $3, 'spam', 'open'), ($4, $5, 'profile', $6, 'spam', 'resolved')",
+      [ownedOpenReport, appellant.userId, randomUUID(), foreignClosedReport, otherUser.userId, randomUUID()]
+    );
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+
+    try {
+      const openReportAppeal = await app.inject({
+        method: "POST",
+        url: `/v1/reports/${ownedOpenReport}/appeals`,
+        headers: { cookie: appellant.cookie },
+        payload: { details: "I would like to appeal this decision anyway." }
+      });
+      const foreignReportAppeal = await app.inject({
+        method: "POST",
+        url: `/v1/reports/${foreignClosedReport}/appeals`,
+        headers: { cookie: appellant.cookie },
+        payload: { details: "I would like to appeal this other user's decision." }
+      });
+
+      expect(openReportAppeal.statusCode).toBe(409);
+      expect(foreignReportAppeal.statusCode).toBe(404);
+      const appeals = await database().query(
+        "SELECT id FROM moderation.appeals WHERE report_id = ANY($1::uuid[])",
+        [[ownedOpenReport, foreignClosedReport]]
+      );
+      expect(appeals.rowCount).toBe(0);
     } finally {
       await app.close();
     }
