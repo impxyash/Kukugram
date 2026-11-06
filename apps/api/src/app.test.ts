@@ -203,11 +203,8 @@ describe("social privacy authorization", () => {
         }
         return { rows: [], rowCount: 1 };
       }),
-      connect: vi.fn(async () => ({
-        query: async (sql: string, values?: unknown[]) => {
-          const result = await pool.query(sql, values);
-          return result;
-        },
+      connect: vi.fn(() => ({
+        query: (sql: string, values?: unknown[]) => pool.query(sql, values),
         release: vi.fn()
       })),
       end: vi.fn(() => Promise.resolve())
