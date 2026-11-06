@@ -124,6 +124,9 @@ describe("social privacy authorization", () => {
       targetOwnerId?: string;
       followRequest?: boolean;
       moderatorRole?: "moderator" | "admin";
+      reportStatus?: "open" | "reviewing" | "resolved" | "dismissed";
+      reportOwnerId?: string;
+      duplicateReport?: boolean;
     } = {}
   ) {
     const statements: string[] = [];
@@ -138,7 +141,20 @@ describe("social privacy authorization", () => {
           return { rows: [{ userId: targetId }], rowCount: 1 };
         }
         if (sql.includes("SELECT status FROM moderation.reports WHERE id = $1 FOR UPDATE")) {
-          return { rows: [{ status: "open" }], rowCount: 1 };
+          return { rows: [{ status: options.reportStatus ?? "open" }], rowCount: 1 };
+        }
+        if (sql.includes("SELECT status FROM moderation.reports WHERE id = $1 AND reporter_id = $2 FOR UPDATE")) {
+          const ownsReport = options.reportOwnerId === values?.[1];
+          return {
+            rows: ownsReport ? [{ status: options.reportStatus ?? "resolved" }] : [],
+            rowCount: ownsReport ? 1 : 0
+          };
+        }
+        if (sql.includes("SELECT id, status FROM moderation.reports")) {
+          return {
+            rows: [{ id: "00000000-0000-4000-8000-000000000004", status: options.reportStatus ?? "reviewing" }],
+            rowCount: 1
+          };
         }
         if (sql.includes('SELECT report_id AS "reportId", status FROM moderation.appeals')) {
           return {
@@ -208,7 +224,9 @@ describe("social privacy authorization", () => {
           };
         }
         if (sql.includes("INSERT INTO moderation.reports")) {
-          return { rows: [{ id: "00000000-0000-4000-8000-000000000004" }], rowCount: 1 };
+          return options.duplicateReport
+            ? { rows: [], rowCount: 0 }
+            : { rows: [{ id: "00000000-0000-4000-8000-000000000004" }], rowCount: 1 };
         }
         if (sql.includes("INSERT INTO social.follows")) {
           return { rows: [{ status: "pending" }], rowCount: 1 };
@@ -277,6 +295,24 @@ describe("social privacy authorization", () => {
     const feedQuery = pool.statements.find((sql) => sql.includes("FROM content.posts p"));
     expect(feedQuery).toContain("social.mutes");
     expect(feedQuery).toContain("social.blocks");
+    await app.close();
+  });
+
+  it("returns the existing open case when the same reporter submits a duplicate report", async () => {
+    const pool = makePool({ duplicateReport: true, reportStatus: "reviewing" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/reports",
+      headers: { cookie },
+      payload: { targetType: "profile", targetId, category: "spam" }
+    });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      reportId: "00000000-0000-4000-8000-000000000004",
+      status: "reviewing"
+    });
+    expect(pool.statements.some((sql) => sql.includes("ON CONFLICT (reporter_id, target_type, target_id)"))).toBe(true);
     await app.close();
   });
 
@@ -397,6 +433,22 @@ describe("social privacy authorization", () => {
     await app.close();
   });
 
+  it("prevents moderators from changing a report after it has been closed", async () => {
+    const pool = makePool({ moderatorRole: "moderator", reportStatus: "resolved" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/reports/00000000-0000-4000-8000-000000000004",
+      headers: { cookie },
+      payload: { status: "dismissed", note: "Attempted second decision." }
+    });
+    expect(response.statusCode).toBe(409);
+    expect(pool.statements.some((sql) => sql.includes("UPDATE moderation.reports"))).toBe(false);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(false);
+    expect(pool.statements).toContain("ROLLBACK");
+    await app.close();
+  });
+
   it("records moderator report decisions in the audit log", async () => {
     const pool = makePool({ moderatorRole: "moderator" });
     const app = appWithPool(pool);
@@ -487,6 +539,22 @@ describe("social privacy authorization", () => {
     });
     expect(response.statusCode).toBe(403);
     expect(pool.statements.some((sql) => sql.includes("UPDATE moderation.reports"))).toBe(false);
+    await app.close();
+  });
+
+  it("allows only the original reporter to submit an appeal for a closed report", async () => {
+    const pool = makePool({ reportOwnerId: viewerId, reportStatus: "resolved" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/reports/00000000-0000-4000-8000-000000000004/appeals",
+      headers: { cookie },
+      payload: { details: "I believe this decision was incorrect." }
+    });
+    expect(response.statusCode).toBe(202);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.appeals"))).toBe(true);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(true);
+    expect(pool.statements).toContain("COMMIT");
     await app.close();
   });
 
