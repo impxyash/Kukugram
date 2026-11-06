@@ -767,12 +767,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       await client.query("BEGIN");
       if (params.role === "admin") {
         const administrators = await client.query<{ userId: string }>(
-          'SELECT user_id AS "userId" FROM moderation.moderator_roles WHERE role = \'admin\' ORDER BY user_id FOR UPDATE'
+          "SELECT user_id AS \"userId\" FROM moderation.moderator_roles WHERE role = 'admin' ORDER BY user_id FOR UPDATE"
         );
-        if (
-          administrators.rows.length <= 1 &&
-          administrators.rows[0]?.userId === params.userId
-        ) {
+        if (administrators.rows.length <= 1 && administrators.rows[0]?.userId === params.userId) {
           await client.query("ROLLBACK");
           throw Object.assign(new Error("The final administrator role cannot be revoked."), {
             statusCode: 409
