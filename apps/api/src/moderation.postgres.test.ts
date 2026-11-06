@@ -88,11 +88,10 @@ integration("PostgreSQL moderation guarantees", () => {
     const token = randomUUID();
     const password = "correct-step-up-password-123";
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
-    await database().query("INSERT INTO identity.users (id, email, password_hash) VALUES ($1, $2, $3)", [
-      userId,
-      `${userId}@integration.test`,
-      passwordHash
-    ]);
+    await database().query(
+      "INSERT INTO identity.users (id, email, password_hash) VALUES ($1, $2, $3)",
+      [userId, `${userId}@integration.test`, passwordHash]
+    );
     await database().query(
       "INSERT INTO identity.sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '10 minutes')",
       [randomUUID(), userId, hashSessionToken(token, pepper)]

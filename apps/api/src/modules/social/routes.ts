@@ -941,7 +941,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     try {
       await client.query("BEGIN");
       const resolved = await client.query<{ userId: string | null }>(
-        'SELECT moderation.resolve_audit_actor_identity($1, \'moderation.audit.actor.v1\') AS "userId"',
+        "SELECT moderation.resolve_audit_actor_identity($1, 'moderation.audit.actor.v1') AS \"userId\"",
         [input.actorRef]
       );
       const userId = resolved.rows[0]?.userId ?? null;
