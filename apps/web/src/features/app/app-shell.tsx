@@ -61,6 +61,19 @@ type ReportRecord = {
   status: string;
   createdAt: string;
 };
+type ModerationReport = ReportRecord & {
+  targetId: string;
+  details: string | null;
+  reporterHandle: string;
+  updatedAt: string;
+};
+type AppealRecord = {
+  id: string;
+  reportId: string;
+  details: string;
+  status: string;
+  createdAt: string;
+};
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${apiUrl}/v1${path}`, {
@@ -117,7 +130,10 @@ export function AppShell() {
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
-  const [tab, setTab] = useState<"home" | "discover" | "activity" | "profile" | "settings">("home");
+  const [tab, setTab] = useState<
+    "home" | "discover" | "activity" | "profile" | "settings" | "moderation"
+  >("home");
+  const [canModerate, setCanModerate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
@@ -146,6 +162,16 @@ export function AppShell() {
     void refresh();
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      setCanModerate(false);
+      return;
+    }
+    void request<{ reports: ModerationReport[] }>("/moderation/reports?limit=1")
+      .then(() => setCanModerate(true))
+      .catch(() => setCanModerate(false));
+  }, [user]);
+
   if (loading)
     return (
       <main className="app-loading">
@@ -169,7 +195,8 @@ export function AppShell() {
             ["discover", "Discover"],
             ["activity", `Activity${unread ? ` (${unread})` : ""}`],
             ["profile", "Profile"],
-            ["settings", "Settings"]
+            ["settings", "Settings"],
+            ...(canModerate ? ([["moderation", "Moderation"]] as const) : [])
           ] as const
         ).map(([id, label]) => (
           <button
@@ -213,6 +240,7 @@ export function AppShell() {
           />
         )}
         {tab === "settings" && <Settings user={user} setUser={setUser} onError={setError} />}
+        {tab === "moderation" && canModerate && <ModerationPanel onError={setError} />}
       </section>
     </main>
   );
@@ -887,6 +915,115 @@ function Profile({
           <p>Your posts will live here.</p>
         </section>
       )}
+    </>
+  );
+}
+
+function ModerationPanel({ onError }: { onError: (message: string) => void }) {
+  const [reports, setReports] = useState<ModerationReport[]>([]);
+  const [appeals, setAppeals] = useState<
+    { id: string; reportId: string; appellantHandle: string; details: string; status: string }[]
+  >([]);
+  const [filter, setFilter] = useState("open");
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function refresh() {
+    try {
+      const [reportResult, appealResult] = await Promise.all([
+        request<{ reports: ModerationReport[] }>(`/moderation/reports?status=${filter}&limit=50`),
+        request<{ appeals: typeof appeals }>("/moderation/appeals")
+      ]);
+      setReports(reportResult.reports);
+      setAppeals(appealResult.appeals);
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, [filter]);
+
+  async function updateReport(id: string, status: "reviewing" | "resolved" | "dismissed") {
+    setBusy(id);
+    try {
+      await request(`/moderation/reports/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
+      await refresh();
+    } catch (reason) {
+      onError((reason as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function reviewAppeal(id: string, status: "accepted" | "rejected") {
+    setBusy(id);
+    try {
+      await request(`/moderation/appeals/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
+      await refresh();
+    } catch (reason) {
+      onError((reason as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <>
+      <header className="pane-header">
+        <p className="eyebrow">Trust & Safety</p>
+        <h2>Moderation queue.</h2>
+        <p>Review reports and appeals. Every decision is recorded in the audit log.</p>
+      </header>
+      <section className="settings-section">
+        <label>
+          Report status
+          <select value={filter} onChange={(event) => setFilter(event.target.value)}>
+            <option value="open">Open</option>
+            <option value="reviewing">Reviewing</option>
+            <option value="resolved">Resolved</option>
+            <option value="dismissed">Dismissed</option>
+          </select>
+        </label>
+        {reports.length ? reports.map((report) => (
+          <article className="person" key={report.id}>
+            <div>
+              <strong>{report.category.replaceAll("_", " ")} · {report.targetType}</strong>
+              <span>Reported by @{report.reporterHandle} · {new Date(report.createdAt).toLocaleString()}</span>
+              {report.details && <p>{report.details}</p>}
+              <span className="status">{report.status}</span>
+            </div>
+            {report.status !== "resolved" && report.status !== "dismissed" && (
+              <div className="inline-actions">
+                <button disabled={busy === report.id} onClick={() => void updateReport(report.id, "reviewing")}>Review</button>
+                <button disabled={busy === report.id} onClick={() => void updateReport(report.id, "resolved")}>Resolve</button>
+                <button disabled={busy === report.id} onClick={() => void updateReport(report.id, "dismissed")}>Dismiss</button>
+              </div>
+            )}
+          </article>
+        )) : <p>No reports in this queue.</p>}
+      </section>
+      <section className="settings-section">
+        <p className="eyebrow">Appeals</p>
+        {appeals.length ? appeals.map((appeal) => (
+          <article className="person" key={appeal.id}>
+            <div>
+              <strong>@{appeal.appellantHandle} · Case {appeal.reportId.slice(0, 8)}</strong>
+              <span>{appeal.details}</span>
+            </div>
+            <div className="inline-actions">
+              <button disabled={busy === appeal.id} onClick={() => void reviewAppeal(appeal.id, "accepted")}>Accept</button>
+              <button disabled={busy === appeal.id} onClick={() => void reviewAppeal(appeal.id, "rejected")}>Reject</button>
+            </div>
+          </article>
+        )) : <p>No open appeals.</p>}
+      </section>
     </>
   );
 }
