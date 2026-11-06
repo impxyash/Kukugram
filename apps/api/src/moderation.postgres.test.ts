@@ -743,8 +743,10 @@ integration("PostgreSQL moderation guarantees", () => {
     const reportId = randomUUID();
     const appealId = randomUUID();
     const reporterHandle = `private_reporter_${reporterId.replaceAll("-", "").slice(0, 12)}`;
-    const reportDetails = "Reporter supplied private context that must not appear in the broad queue.";
-    const appealDetails = "Appellant supplied private context that must not appear in the broad queue.";
+    const reportDetails =
+      "Reporter supplied private context that must not appear in the broad queue.";
+    const appealDetails =
+      "Appellant supplied private context that must not appear in the broad queue.";
 
     await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
       reporterId,
@@ -852,12 +854,12 @@ integration("PostgreSQL moderation guarantees", () => {
       expect(reportDetail.payload).not.toContain(reporterId);
       expect(appealDetail.payload).not.toContain(reporterId);
 
-      const report = reportQueue.json<{ reports: Record<string, unknown>[] }>().reports.find(
-        (entry) => entry.id === reportId
-      );
-      const appeal = appealQueue.json<{ appeals: Record<string, unknown>[] }>().appeals.find(
-        (entry) => entry.id === appealId
-      );
+      const report = reportQueue
+        .json<{ reports: Record<string, unknown>[] }>()
+        .reports.find((entry) => entry.id === reportId);
+      const appeal = appealQueue
+        .json<{ appeals: Record<string, unknown>[] }>()
+        .appeals.find((entry) => entry.id === appealId);
       expect(report).toBeDefined();
       expect(appeal).toBeDefined();
       expect(Object.keys(report ?? {}).sort()).toEqual(
@@ -904,9 +906,9 @@ integration("PostgreSQL moderation guarantees", () => {
         headers: { cookie: admin.cookie }
       });
       expect(response.statusCode).toBe(200);
-      const event = response.json<{ events: Record<string, unknown>[] }>().events.find(
-        (entry) => entry.id === eventId
-      );
+      const event = response
+        .json<{ events: Record<string, unknown>[] }>()
+        .events.find((entry) => entry.id === eventId);
       expect(event).toBeDefined();
       expect(Object.keys(event ?? {}).sort()).toEqual(
         ["action", "caseRef", "createdAt", "id", "metadata"].sort()
