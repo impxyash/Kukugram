@@ -461,19 +461,11 @@ integration("PostgreSQL moderation guarantees", () => {
     expect(survivingLike.rowCount).toBe(1);
     expect(remainingLikes.rowCount).toBe(0);
 
-    for (const table of ["follows", "blocks", "mutes"]) {
-      const result = await database().query(
-        `SELECT 1 FROM social.${table} WHERE follower_id = $1 OR followee_id = $1`.replace(
-          "follower_id",
-          table === "follows" ? "follower_id" : table === "blocks" ? "blocker_id" : "muter_id"
-        ).replace(
-          "followee_id",
-          table === "follows" ? "followee_id" : table === "blocks" ? "blocked_id" : "muted_id"
-        ),
-        [deletedUser.userId]
-      );
-      expect(result.rowCount).toBe(0);
-    }
+    const remainingSocialRelations = await database().query(
+      "SELECT 'follow' AS relation FROM social.follows WHERE follower_id = $1 OR followee_id = $1 UNION ALL SELECT 'block' FROM social.blocks WHERE blocker_id = $1 OR blocked_id = $1 UNION ALL SELECT 'mute' FROM social.mutes WHERE muter_id = $1 OR muted_id = $1",
+      [deletedUser.userId]
+    );
+    expect(remainingSocialRelations.rowCount).toBe(0);
   });
 
   it("serializes concurrent appeal submissions and records only one appeal", async () => {
