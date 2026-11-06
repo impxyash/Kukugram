@@ -777,7 +777,7 @@ integration("PostgreSQL moderation guarantees", () => {
     const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
     const app = buildApp(config, appPool);
     try {
-      const [anonymousReports, anonymousAppeals, ordinaryReports, ordinaryAppeals, reportQueue, appealQueue] = await Promise.all([
+      const [anonymousReports, anonymousAppeals, ordinaryReports, ordinaryAppeals, reportQueue, appealQueue, reportDetail, appealDetail, ordinaryReportDetail, anonymousAppealDetail] = await Promise.all([
         app.inject({ method: "GET", url: "/v1/moderation/reports" }),
         app.inject({ method: "GET", url: "/v1/moderation/appeals" }),
         app.inject({
@@ -799,7 +799,23 @@ integration("PostgreSQL moderation guarantees", () => {
           method: "GET",
           url: "/v1/moderation/appeals",
           headers: { cookie: admin.cookie }
-        })
+        }),
+        app.inject({
+          method: "GET",
+          url: `/v1/moderation/reports/${reportId}`,
+          headers: { cookie: admin.cookie }
+        }),
+        app.inject({
+          method: "GET",
+          url: `/v1/moderation/appeals/${appealId}`,
+          headers: { cookie: admin.cookie }
+        }),
+        app.inject({
+          method: "GET",
+          url: `/v1/moderation/reports/${reportId}`,
+          headers: { cookie: `session=${ordinaryToken}` }
+        }),
+        app.inject({ method: "GET", url: `/v1/moderation/appeals/${appealId}` })
       ]);
 
       expect(anonymousReports.statusCode).toBe(401);
@@ -808,6 +824,22 @@ integration("PostgreSQL moderation guarantees", () => {
       expect(ordinaryAppeals.statusCode).toBe(403);
       expect(reportQueue.statusCode).toBe(200);
       expect(appealQueue.statusCode).toBe(200);
+      expect(reportDetail.statusCode).toBe(200);
+      expect(appealDetail.statusCode).toBe(200);
+      expect(ordinaryReportDetail.statusCode).toBe(403);
+      expect(anonymousAppealDetail.statusCode).toBe(401);
+      expect(reportDetail.json<{ report: Record<string, unknown> }>().report).toMatchObject({
+        id: reportId,
+        targetId,
+        details: reportDetails
+      });
+      expect(appealDetail.json<{ appeal: Record<string, unknown> }>().appeal).toMatchObject({
+        id: appealId,
+        reportId,
+        details: appealDetails
+      });
+      expect(reportDetail.payload).not.toContain(reporterId);
+      expect(appealDetail.payload).not.toContain(reporterId);
 
       const report = reportQueue.json<{ reports: Record<string, unknown>[] }>().reports.find(
         (entry) => entry.id === reportId
