@@ -159,10 +159,7 @@ describe("social privacy authorization", () => {
         if (sql.includes("SELECT id, status FROM moderation.reports")) {
           return {
             rows: [
-              {
-                id: "00000000-0000-4000-8000-000000000004",
-                status: options.reportStatus ?? "reviewing"
-              }
+              { id: "00000000-0000-4000-8000-000000000004", status: options.reportStatus ?? "reviewing" }
             ],
             rowCount: 1
           };
