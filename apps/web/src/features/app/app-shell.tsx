@@ -240,7 +240,7 @@ export function AppShell() {
           />
         )}
         {tab === "settings" && <Settings user={user} setUser={setUser} onError={setError} />}
-        {tab === "moderation" && canModerate && <ModerationPanel onError={setError} />}
+        {tab === "moderation" && canModerate && <ModerationPanel />}
       </section>
     </main>
   );
@@ -919,7 +919,7 @@ function Profile({
   );
 }
 
-function ModerationPanel({ onError }: { onError: (message: string) => void }) {
+function ModerationPanel() {
   const [reports, setReports] = useState<ModerationReport[]>([]);
   const [appeals, setAppeals] = useState<
     { id: string; reportId: string; appellantHandle: string; details: string; status: string }[]
