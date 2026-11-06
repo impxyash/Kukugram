@@ -301,6 +301,32 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     return reply.code(204).send();
   });
 
+  app.get("/me/blocked", async (request) => {
+    const current = await requireViewer(request);
+    const result = await app.pool.query<{ id: string; handle: string; displayName: string; avatarUrl: string | null; createdAt: Date }>(
+      `SELECT u.id, p.handle, p.display_name AS "displayName", p.avatar_url AS "avatarUrl", b.created_at AS "createdAt"
+       FROM social.blocks b JOIN identity.users u ON u.id = b.blocked_id
+       JOIN social.profiles p ON p.user_id = u.id
+       WHERE b.blocker_id = $1 AND u.is_active
+       ORDER BY b.created_at DESC LIMIT 200`,
+      [current.id]
+    );
+    return { users: result.rows };
+  });
+
+  app.get("/me/muted", async (request) => {
+    const current = await requireViewer(request);
+    const result = await app.pool.query<{ id: string; handle: string; displayName: string; avatarUrl: string | null; createdAt: Date }>(
+      `SELECT u.id, p.handle, p.display_name AS "displayName", p.avatar_url AS "avatarUrl", m.created_at AS "createdAt"
+       FROM social.mutes m JOIN identity.users u ON u.id = m.muted_id
+       JOIN social.profiles p ON p.user_id = u.id
+       WHERE m.muter_id = $1 AND u.is_active
+       ORDER BY m.created_at DESC LIMIT 200`,
+      [current.id]
+    );
+    return { users: result.rows };
+  });
+
   app.post("/users/:handle/block", async (request, reply) => {
     const current = await requireViewer(request);
     const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
