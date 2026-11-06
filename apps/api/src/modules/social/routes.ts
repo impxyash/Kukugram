@@ -198,8 +198,14 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const current = await requireViewer(request);
     const query = z.object({ q: z.string().trim().min(1).max(60) }).parse(request.query).q;
     const result = await app.pool.query<ProfileRow>(
-      `SELECT u.id, p.handle, p.display_name AS "displayName", p.bio, p.avatar_url AS "avatarUrl", '0' AS followers, '0' AS following,
-       EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id) AS "isFollowing"
+      `SELECT u.id, p.handle, p.display_name AS "displayName", p.bio, p.avatar_url AS "avatarUrl",
+       (SELECT count(*) FROM social.follows f WHERE f.followee_id = u.id AND f.status = 'accepted') AS followers,
+       (SELECT count(*) FROM social.follows f WHERE f.follower_id = u.id AND f.status = 'accepted') AS following,
+       EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id AND f.status = 'accepted') AS "isFollowing",
+       EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id AND f.status = 'pending') AS "isRequested",
+       p.privacy AS privacy,
+       (p.privacy <> 'private' OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id AND f.status = 'accepted')) AS "canViewContent",
+       false AS "isBlocked"
        FROM social.profiles p JOIN identity.users u ON u.id = p.user_id
        WHERE (p.handle ILIKE $1 OR p.display_name ILIKE $1) AND u.id <> $2
          AND NOT EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = u.id AND b.blocked_id = $2) OR (b.blocker_id = $2 AND b.blocked_id = u.id))
@@ -226,7 +232,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     if (target.isBlocked) throw Object.assign(new Error("This profile is unavailable."), { statusCode: 404 });
     const status = target.privacy === "private" ? "pending" : "accepted";
     const inserted = await app.pool.query(
-      "INSERT INTO social.follows (follower_id, followee_id, status) VALUES ($1, $2, $3) ON CONFLICT (follower_id, followee_id) DO NOTHING RETURNING status",
+      "INSERT INTO social.follows (follower_id, followee_id, status) VALUES ($1, $2, $3) ON CONFLICT (follower_id, followee_id) DO UPDATE SET status = EXCLUDED.status WHERE social.follows.status = 'pending' AND EXCLUDED.status = 'accepted' RETURNING status",
       [current.id, target.id, status]
     );
     if (inserted.rowCount) await app.pool.query(
