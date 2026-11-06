@@ -10,6 +10,7 @@ type Post = { id: string; body: string; createdAt: string; handle: string; displ
 type Notice = { id: string; type: "follow" | "follow_request" | "like" | "comment"; postId: string | null; createdAt: string; readAt: string | null; handle: string | null; displayName: string | null };
 type Comment = { id: string; body: string; handle: string; displayName: string; createdAt: string };
 type FollowRequest = { id: string; handle: string; displayName: string; avatarUrl: string | null; requestedAt: string };
+type AccountControl = { id: string; handle: string; displayName: string; avatarUrl: string | null; createdAt: string };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${apiUrl}/v1${path}`, {
@@ -466,10 +467,21 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
   const [privacy, setPrivacy] = useState(user.privacy);
   const [saved, setSaved] = useState(false);
   const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<AccountControl[]>([]);
+  const [mutedUsers, setMutedUsers] = useState<AccountControl[]>([]);
   useEffect(() => {
     void request<{ requests: FollowRequest[] }>("/me/follow-requests")
       .then((result) => setFollowRequests(result.requests))
       .catch((reason) => onError((reason as Error).message));
+  }, []);
+  useEffect(() => {
+    void Promise.all([
+      request<{ users: AccountControl[] }>("/me/blocked"),
+      request<{ users: AccountControl[] }>("/me/muted")
+    ]).then(([blocked, muted]) => {
+      setBlockedUsers(blocked.users);
+      setMutedUsers(muted.users);
+    }).catch((reason) => onError((reason as Error).message));
   }, []);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -521,6 +533,34 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
             }}>Decline</button>
           </article>
         )) : <p>No pending follow requests.</p>}
+      </section>
+      <section className="account-note">
+        <p className="eyebrow">Blocked accounts</p>
+        {blockedUsers.length ? blockedUsers.map((item) => (
+          <article className="person" key={item.id}>
+            <Avatar user={{ displayName: item.displayName, avatarUrl: item.avatarUrl }} />
+            <div><strong>{item.displayName}</strong><span>@{item.handle}</span></div>
+            <button className="secondary-button" onClick={() => {
+              void request(`/users/${item.handle}/block`, { method: "DELETE" })
+                .then(() => setBlockedUsers((items) => items.filter((entry) => entry.id !== item.id)))
+                .catch((reason) => onError((reason as Error).message));
+            }}>Unblock</button>
+          </article>
+        )) : <p>No blocked accounts.</p>}
+      </section>
+      <section className="account-note">
+        <p className="eyebrow">Muted accounts</p>
+        {mutedUsers.length ? mutedUsers.map((item) => (
+          <article className="person" key={item.id}>
+            <Avatar user={{ displayName: item.displayName, avatarUrl: item.avatarUrl }} />
+            <div><strong>{item.displayName}</strong><span>@{item.handle}</span></div>
+            <button className="secondary-button" onClick={() => {
+              void request(`/users/${item.handle}/mute`, { method: "DELETE" })
+                .then(() => setMutedUsers((items) => items.filter((entry) => entry.id !== item.id)))
+                .catch((reason) => onError((reason as Error).message));
+            }}>Unmute</button>
+          </article>
+        )) : <p>No muted accounts.</p>}
       </section>
       <section className="account-note">
         <p className="eyebrow">Account</p>
