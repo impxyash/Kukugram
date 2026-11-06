@@ -32,8 +32,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Debug Prettier output (temporary)
-        run: pnpm exec prettier apps/web/src/features/app/app-shell.tsx | diff -u apps/web/src/features/app/app-shell.tsx - || true
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
