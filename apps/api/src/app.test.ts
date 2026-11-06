@@ -74,7 +74,11 @@ describe("API", () => {
       { method: "GET" as const, url: "/v1/moderation/appeals" },
       { method: "GET" as const, url: "/v1/moderation/roles" },
       { method: "GET" as const, url: "/v1/moderation/audit" },
-      { method: "POST" as const, url: "/v1/reports/00000000-0000-4000-8000-000000000004/appeals", payload: { details: "I believe this decision was incorrect." } }
+      {
+        method: "POST" as const,
+        url: "/v1/reports/00000000-0000-4000-8000-000000000004/appeals",
+        payload: { details: "I believe this decision was incorrect." }
+      }
     ];
 
     for (const request of requests) {
