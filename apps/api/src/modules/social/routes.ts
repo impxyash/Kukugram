@@ -374,6 +374,24 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     return reply.code(204).send();
   });
 
+  app.get("/me/reports", async (request) => {
+    const current = await requireViewer(request);
+    const result = await app.pool.query<{
+      id: string;
+      targetType: string;
+      category: string;
+      status: string;
+      createdAt: Date;
+    }>(
+      `SELECT id, target_type AS "targetType", category, status, created_at AS "createdAt"
+       FROM moderation.reports
+       WHERE reporter_id = $1
+       ORDER BY created_at DESC LIMIT 100`,
+      [current.id]
+    );
+    return { reports: result.rows };
+  });
+
   app.post("/reports", async (request, reply) => {
     const current = await requireViewer(request);
     const input = z.object({
