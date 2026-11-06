@@ -69,6 +69,48 @@ integration("PostgreSQL moderation guarantees", () => {
     return { userId, token, cookie: `session=${token}` };
   }
 
+  it("issues production session cookies securely and stores only token hashes", async () => {
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp({ ...config, NODE_ENV: "production" }, appPool);
+    const userId = randomUUID();
+    const email = `cookie_${userId}@kukugram.test`;
+    const handle = `cookie_${userId.replaceAll("-", "").slice(0, 12)}`;
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/auth/signup",
+        payload: {
+          email,
+          password: "a-strong-test-password-123",
+          handle,
+          displayName: "Cookie Security Test"
+        }
+      });
+
+      expect(response.statusCode).toBe(201);
+      const setCookie = response.headers["set-cookie"];
+      const cookieHeader = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+      expect(cookieHeader).toContain("HttpOnly");
+      expect(cookieHeader).toContain("Secure");
+      expect(cookieHeader).toContain("SameSite=Lax");
+
+      const cookiePair = cookieHeader?.split(";")[0];
+      expect(cookiePair).toBeDefined();
+      const token = cookiePair!.slice(cookiePair!.indexOf("=") + 1);
+      expect(token.length).toBeGreaterThan(20);
+
+      const storedSession = await appPool.query<{ tokenHash: string }>(
+        'SELECT s.token_hash AS "tokenHash" FROM identity.sessions s JOIN identity.users u ON u.id = s.user_id WHERE u.email = $1',
+        [email]
+      );
+      expect(storedSession.rows).toEqual([{ tokenHash: hashSessionToken(token, pepper) }]);
+      expect(storedSession.rows[0]?.tokenHash).not.toBe(token);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("allows moderators to review reports but denies admin-only endpoints", async () => {
     const moderator = await seedAdmin();
     await database().query(
