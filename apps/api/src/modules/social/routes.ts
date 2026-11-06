@@ -44,6 +44,10 @@ type ProfileRow = {
   followers: string;
   following: string;
   isFollowing: boolean;
+  isRequested: boolean;
+  privacy: "public" | "private" | "restricted_creator";
+  canViewContent: boolean;
+  isBlocked: boolean;
 };
 
 function sessionCookie(app: FastifyInstance) {
@@ -79,14 +83,34 @@ async function requireViewer(request: FastifyRequest): Promise<Viewer> {
 async function profileFor(request: FastifyRequest, handle: string, viewerId?: string): Promise<ProfileRow | null> {
   const result = await request.server.pool.query<ProfileRow>(
     `SELECT u.id, p.handle, p.display_name AS "displayName", p.bio, p.avatar_url AS "avatarUrl",
-      (SELECT count(*) FROM social.follows f WHERE f.followee_id = u.id) AS followers,
-      (SELECT count(*) FROM social.follows f WHERE f.follower_id = u.id) AS following,
-      EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id) AS "isFollowing"
+      (SELECT count(*) FROM social.follows f WHERE f.followee_id = u.id AND f.status = 'accepted') AS followers,
+      (SELECT count(*) FROM social.follows f WHERE f.follower_id = u.id AND f.status = 'accepted') AS following,
+      EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id AND f.status = 'accepted') AS "isFollowing",
+      EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id AND f.status = 'pending') AS "isRequested",
+      p.privacy AS privacy,
+      (p.privacy <> 'private' OR u.id = $2 OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id AND f.status = 'accepted'))
+        AND NOT EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = u.id AND b.blocked_id = $2) OR (b.blocker_id = $2 AND b.blocked_id = u.id)) AS "canViewContent",
+      EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = u.id AND b.blocked_id = $2) OR (b.blocker_id = $2 AND b.blocked_id = u.id)) AS "isBlocked"
      FROM social.profiles p JOIN identity.users u ON u.id = p.user_id
      WHERE p.handle = $1 AND u.is_active`,
     [handle, viewerId ?? "00000000-0000-0000-0000-000000000000"]
   );
   return result.rows[0] ?? null;
+}
+
+async function canViewPost(request: FastifyRequest, postId: string, viewerId: string): Promise<boolean> {
+  const result = await request.server.pool.query<{ allowed: boolean }>(
+    `SELECT (pr.privacy <> 'private' OR p.author_id = $2 OR EXISTS(
+        SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = p.author_id AND f.status = 'accepted'
+      )) AND NOT EXISTS (
+        SELECT 1 FROM social.blocks b WHERE (b.blocker_id = p.author_id AND b.blocked_id = $2)
+          OR (b.blocker_id = $2 AND b.blocked_id = p.author_id)
+      ) AS allowed
+     FROM content.posts p JOIN social.profiles pr ON pr.user_id = p.author_id
+     WHERE p.id = $1 AND p.deleted_at IS NULL`,
+    [postId, viewerId]
+  );
+  return result.rows[0]?.allowed ?? false;
 }
 
 function postSelect() {
@@ -195,9 +219,56 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const target = await profileFor(request, handle, current.id);
     if (!target) throw Object.assign(new Error("Profile not found."), { statusCode: 404 });
     if (target.id === current.id) throw Object.assign(new Error("You cannot follow yourself."), { statusCode: 400 });
-    const inserted = await app.pool.query("INSERT INTO social.follows (follower_id, followee_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING followee_id", [current.id, target.id]);
-    if (inserted.rowCount) await app.pool.query("INSERT INTO notifications.notifications (id, recipient_id, actor_id, type) VALUES ($1, $2, $3, 'follow')", [randomUUID(), target.id, current.id]);
+    if (target.isBlocked) throw Object.assign(new Error("This profile is unavailable."), { statusCode: 404 });
+    const status = target.privacy === "private" ? "pending" : "accepted";
+    const inserted = await app.pool.query(
+      "INSERT INTO social.follows (follower_id, followee_id, status) VALUES ($1, $2, $3) ON CONFLICT (follower_id, followee_id) DO UPDATE SET status = EXCLUDED.status WHERE social.follows.status <> 'accepted' RETURNING status",
+      [current.id, target.id, status]
+    );
+    if (inserted.rowCount) await app.pool.query(
+      "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type) VALUES ($1, $2, $3, $4)",
+      [randomUUID(), target.id, current.id, status === "pending" ? "follow_request" : "follow"]
+    );
     return { user: await profileFor(request, handle, current.id) };
+  });
+
+  app.get("/me/follow-requests", async (request) => {
+    const current = await requireViewer(request);
+    const result = await app.pool.query(
+      `SELECT u.id, p.handle, p.display_name AS "displayName", p.avatar_url AS "avatarUrl", f.created_at AS "requestedAt"
+       FROM social.follows f JOIN identity.users u ON u.id = f.follower_id
+       JOIN social.profiles p ON p.user_id = u.id
+       WHERE f.followee_id = $1 AND f.status = 'pending' AND u.is_active
+       ORDER BY f.created_at DESC LIMIT 100`, [current.id]
+    );
+    return { requests: result.rows };
+  });
+
+  app.post("/me/follow-requests/:handle/accept", async (request, reply) => {
+    const current = await requireViewer(request);
+    const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
+    const result = await app.pool.query(
+      `UPDATE social.follows f SET status = 'accepted'
+       FROM social.profiles p WHERE f.follower_id = p.user_id AND p.handle = $1
+         AND f.followee_id = $2 AND f.status = 'pending' RETURNING f.follower_id`, [handle, current.id]
+    );
+    if (!result.rowCount) throw Object.assign(new Error("Follow request not found."), { statusCode: 404 });
+    await app.pool.query(
+      "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type) VALUES ($1, $2, $3, 'follow')",
+      [randomUUID(), current.id, result.rows[0]!.follower_id]
+    );
+    return reply.code(204).send();
+  });
+
+  app.delete("/me/follow-requests/:handle", async (request, reply) => {
+    const current = await requireViewer(request);
+    const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
+    await app.pool.query(
+      `DELETE FROM social.follows f USING social.profiles p
+       WHERE f.follower_id = p.user_id AND p.handle = $1 AND f.followee_id = $2 AND f.status = 'pending'`,
+      [handle, current.id]
+    );
+    return reply.code(204).send();
   });
 
   app.delete("/users/:handle/follow", async (request, reply) => {
@@ -209,9 +280,62 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     return reply.code(204).send();
   });
 
+  app.post("/users/:handle/block", async (request, reply) => {
+    const current = await requireViewer(request);
+    const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
+    const target = await profileFor(request, handle, current.id);
+    if (!target) throw Object.assign(new Error("Profile not found."), { statusCode: 404 });
+    if (target.id === current.id) throw Object.assign(new Error("You cannot block yourself."), { statusCode: 400 });
+    const client = await app.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("INSERT INTO social.blocks (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [current.id, target.id]);
+      await client.query("DELETE FROM social.follows WHERE (follower_id = $1 AND followee_id = $2) OR (follower_id = $2 AND followee_id = $1)", [current.id, target.id]);
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+    return reply.code(204).send();
+  });
+
+  app.delete("/users/:handle/block", async (request, reply) => {
+    const current = await requireViewer(request);
+    const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
+    await app.pool.query(
+      "DELETE FROM social.blocks b USING social.profiles p WHERE b.blocked_id = p.user_id AND b.blocker_id = $1 AND p.handle = $2",
+      [current.id, handle]
+    );
+    return reply.code(204).send();
+  });
+
+  app.post("/users/:handle/mute", async (request, reply) => {
+    const current = await requireViewer(request);
+    const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
+    const target = await profileFor(request, handle, current.id);
+    if (!target) throw Object.assign(new Error("Profile not found."), { statusCode: 404 });
+    if (target.id === current.id) throw Object.assign(new Error("You cannot mute yourself."), { statusCode: 400 });
+    await app.pool.query("INSERT INTO social.mutes (muter_id, muted_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [current.id, target.id]);
+    return reply.code(204).send();
+  });
+
+  app.delete("/users/:handle/mute", async (request, reply) => {
+    const current = await requireViewer(request);
+    const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
+    await app.pool.query(
+      "DELETE FROM social.mutes m USING social.profiles p WHERE m.muted_id = p.user_id AND m.muter_id = $1 AND p.handle = $2",
+      [current.id, handle]
+    );
+    return reply.code(204).send();
+  });
+
   app.get("/feed", async (request) => {
     const current = await requireViewer(request);
-    const result = await app.pool.query<PostRow>(`${postSelect()} WHERE p.deleted_at IS NULL AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id)) ORDER BY p.created_at DESC LIMIT 50`, [current.id]);
+    const result = await app.pool.query<PostRow>(`${postSelect()} WHERE p.deleted_at IS NULL
+      AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id AND f.status = 'accepted'))
+      AND NOT EXISTS(SELECT 1 FROM social.mutes m WHERE m.muter_id = $1 AND m.muted_id = p.author_id)
+      AND NOT EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = p.author_id AND b.blocked_id = $1) OR (b.blocker_id = $1 AND b.blocked_id = p.author_id))
+      AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.profiles pr WHERE pr.user_id = p.author_id AND pr.privacy <> 'private')
+        OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id AND f.status = 'accepted'))
+      ORDER BY p.created_at DESC LIMIT 50`, [current.id]);
     return { posts: result.rows };
   });
 
@@ -238,7 +362,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const current = await requireViewer(request);
     const id = z.object({ id: z.string().uuid() }).parse(request.params).id;
     const post = await app.pool.query<{ authorId: string }>("SELECT author_id AS \"authorId\" FROM content.posts WHERE id = $1 AND deleted_at IS NULL", [id]);
-    if (!post.rows[0]) throw Object.assign(new Error("Post not found."), { statusCode: 404 });
+    if (!post.rows[0] || !(await canViewPost(request, id, current.id))) throw Object.assign(new Error("Post not found."), { statusCode: 404 });
     const inserted = await app.pool.query("INSERT INTO content.likes (user_id, post_id) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING post_id", [current.id, id]);
     if (inserted.rowCount && post.rows[0].authorId !== current.id) await app.pool.query("INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, post_id) VALUES ($1, $2, $3, 'like', $4)", [randomUUID(), post.rows[0].authorId, current.id, id]);
     return { liked: true };
@@ -247,12 +371,15 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
   app.delete("/posts/:id/like", async (request, reply) => {
     const current = await requireViewer(request);
     const id = z.object({ id: z.string().uuid() }).parse(request.params).id;
+    if (!(await canViewPost(request, id, current.id))) throw Object.assign(new Error("Post not found."), { statusCode: 404 });
     await app.pool.query("DELETE FROM content.likes WHERE user_id = $1 AND post_id = $2", [current.id, id]);
     return reply.code(204).send();
   });
 
   app.get("/posts/:id/comments", async (request) => {
+    const current = await viewer(request);
     const id = z.object({ id: z.string().uuid() }).parse(request.params).id;
+    if (!current || !(await canViewPost(request, id, current.id))) throw Object.assign(new Error("Post not found."), { statusCode: 404 });
     const result = await app.pool.query(`SELECT c.id, c.body, c.created_at AS "createdAt", p.handle, p.display_name AS "displayName", p.avatar_url AS "avatarUrl" FROM content.comments c JOIN social.profiles p ON p.user_id = c.author_id WHERE c.post_id = $1 ORDER BY c.created_at ASC`, [id]);
     return { comments: result.rows };
   });
@@ -262,7 +389,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const id = z.object({ id: z.string().uuid() }).parse(request.params).id;
     const input = commentSchema.parse(request.body);
     const post = await app.pool.query<{ authorId: string }>("SELECT author_id AS \"authorId\" FROM content.posts WHERE id = $1 AND deleted_at IS NULL", [id]);
-    if (!post.rows[0]) throw Object.assign(new Error("Post not found."), { statusCode: 404 });
+    if (!post.rows[0] || !(await canViewPost(request, id, current.id))) throw Object.assign(new Error("Post not found."), { statusCode: 404 });
     const commentId = randomUUID();
     await app.pool.query("INSERT INTO content.comments (id, post_id, author_id, body) VALUES ($1, $2, $3, $4)", [commentId, id, current.id, input.body]);
     if (post.rows[0].authorId !== current.id) await app.pool.query("INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, post_id, comment_id) VALUES ($1, $2, $3, 'comment', $4, $5)", [randomUUID(), post.rows[0].authorId, current.id, id, commentId]);
