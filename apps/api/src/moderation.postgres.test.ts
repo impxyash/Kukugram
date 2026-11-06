@@ -384,6 +384,8 @@ integration("PostgreSQL moderation guarantees", () => {
     const deletedAuthorCommentId = randomUUID();
     const deletedPostCommentId = randomUUID();
     const survivingCommentId = randomUUID();
+    const deletedPostNotificationId = randomUUID();
+    const deletedCommentNotificationId = randomUUID();
 
     await database().query(
       "INSERT INTO content.posts (id, author_id, body) VALUES ($1, $2, 'Post owned by deleted user'), ($3, $4, 'Post owned by surviving user')",
@@ -426,6 +428,18 @@ integration("PostgreSQL moderation guarantees", () => {
       "INSERT INTO social.mutes (muter_id, muted_id) VALUES ($1, $2), ($2, $1)",
       [deletedUser.userId, survivingUser.userId]
     );
+    await database().query(
+      "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, post_id, comment_id) VALUES ($1, $2, $3, 'like', $4, NULL), ($5, $2, $3, 'comment', $6, $7)",
+      [
+        deletedPostNotificationId,
+        survivingUser.userId,
+        survivingUser.userId,
+        deletedPostId,
+        deletedCommentNotificationId,
+        survivingPostId,
+        deletedAuthorCommentId
+      ]
+    );
 
     await database().query("DELETE FROM identity.users WHERE id = $1", [deletedUser.userId]);
 
@@ -459,6 +473,11 @@ integration("PostgreSQL moderation guarantees", () => {
     expect(survivingComment.rowCount).toBe(1);
     expect(survivingLike.rowCount).toBe(1);
     expect(remainingLikes.rowCount).toBe(0);
+    const deletedContentNotifications = await database().query(
+      "SELECT id FROM notifications.notifications WHERE id = ANY($1::uuid[])",
+      [[deletedPostNotificationId, deletedCommentNotificationId]]
+    );
+    expect(deletedContentNotifications.rowCount).toBe(0);
 
     const remainingSocialRelations = await database().query(
       "SELECT 'follow' AS relation FROM social.follows WHERE follower_id = $1 OR followee_id = $1 UNION ALL SELECT 'block' FROM social.blocks WHERE blocker_id = $1 OR blocked_id = $1 UNION ALL SELECT 'mute' FROM social.mutes WHERE muter_id = $1 OR muted_id = $1",
