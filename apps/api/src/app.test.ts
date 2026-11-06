@@ -18,14 +18,23 @@ const config = {
 };
 
 describe("API configuration", () => {
+  const environment = {
+    NODE_ENV: "test",
+    API_HOST: "127.0.0.1",
+    WEB_ORIGIN: "http://localhost:3000",
+    DATABASE_URL: "postgresql://localhost/test",
+    REDIS_URL: "redis://localhost:6379",
+    SESSION_COOKIE_NAME: "session",
+    SESSION_TOKEN_PEPPER: "a-secure-test-pepper-that-is-long-enough"
+  };
+
   it("uses Railway's injected PORT when API_PORT is not set", () => {
-    const { API_PORT: _apiPort, ...baseEnvironment } = config;
-    const railwayConfig = loadConfig({ ...baseEnvironment, PORT: "8080" });
+    const railwayConfig = loadConfig({ ...environment, PORT: "8080" });
     expect(railwayConfig.API_PORT).toBe(8080);
   });
 
   it("prefers an explicit API_PORT over Railway's PORT", () => {
-    const railwayConfig = loadConfig({ ...config, PORT: "8080" });
+    const railwayConfig = loadConfig({ ...environment, API_PORT: "3001", PORT: "8080" });
     expect(railwayConfig.API_PORT).toBe(3001);
   });
 });
