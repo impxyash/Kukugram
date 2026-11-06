@@ -16,7 +16,8 @@ const loginSchema = z.object({ email: z.string().email().max(254), password: z.s
 const profileSchema = z.object({
   displayName: z.string().trim().min(1).max(60).optional(),
   bio: z.string().trim().max(500).nullable().optional(),
-  avatarUrl: z.string().url().max(2048).nullable().optional()
+  avatarUrl: z.string().url().max(2048).nullable().optional(),
+  privacy: z.enum(["public", "private", "restricted_creator"]).optional()
 });
 const postSchema = z.object({ body: z.string().trim().min(1).max(2000) });
 const commentSchema = z.object({ body: z.string().trim().min(1).max(1000) });
@@ -184,7 +185,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const input = profileSchema.parse(request.body);
     const fields: string[] = [];
     const values: unknown[] = [];
-    for (const [column, value] of [["display_name", input.displayName], ["bio", input.bio], ["avatar_url", input.avatarUrl]] as const) {
+    for (const [column, value] of [["display_name", input.displayName], ["bio", input.bio], ["avatar_url", input.avatarUrl], ["privacy", input.privacy]] as const) {
       if (value !== undefined) { values.push(value); fields.push(`${column} = $${values.length}`); }
     }
     if (fields.length) { values.push(current.id); await app.pool.query(`UPDATE social.profiles SET ${fields.join(", ")}, updated_at = now() WHERE user_id = $${values.length}`, values); }
@@ -199,7 +200,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       `SELECT u.id, p.handle, p.display_name AS "displayName", p.bio, p.avatar_url AS "avatarUrl", '0' AS followers, '0' AS following,
        EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $2 AND f.followee_id = u.id) AS "isFollowing"
        FROM social.profiles p JOIN identity.users u ON u.id = p.user_id
-       WHERE (p.handle ILIKE $1 OR p.display_name ILIKE $1) AND u.id <> $2 ORDER BY p.handle LIMIT 20`,
+       WHERE (p.handle ILIKE $1 OR p.display_name ILIKE $1) AND u.id <> $2
+         AND NOT EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = u.id AND b.blocked_id = $2) OR (b.blocker_id = $2 AND b.blocked_id = u.id))
+       ORDER BY p.handle LIMIT 20`,
       [`%${query}%`, current.id]
     );
     return { users: result.rows };
@@ -209,7 +212,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const current = await viewer(request);
     const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
     const profile = await profileFor(request, handle, current?.id);
-    if (!profile) throw Object.assign(new Error("Profile not found."), { statusCode: 404 });
+    if (!profile || profile.isBlocked) throw Object.assign(new Error("Profile not found."), { statusCode: 404 });
     return { user: profile };
   });
 
