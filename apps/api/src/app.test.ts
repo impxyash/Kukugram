@@ -388,6 +388,50 @@ describe("social privacy authorization", () => {
     await app.close();
   });
 
+  it("prevents an administrator from revoking their own admin role", async () => {
+    const pool = makePool({ moderatorRole: "admin" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/v1/moderation/roles/${viewerId}/admin`,
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(409);
+    expect(pool.statements.some((sql) => sql.includes("DELETE FROM moderation.moderator_roles"))).toBe(
+      false
+    );
+    await app.close();
+  });
+
+  it("does not expose the moderation audit log to moderators", async () => {
+    const pool = makePool({ moderatorRole: "moderator" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/moderation/audit",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(403);
+    expect(pool.statements.some((sql) => sql.includes("FROM moderation.audit_events"))).toBe(
+      false
+    );
+    await app.close();
+  });
+
+  it("does not allow ordinary users to change report status", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/reports/00000000-0000-4000-8000-000000000004",
+      headers: { cookie },
+      payload: { status: "resolved", note: "Reviewed" }
+    });
+    expect(response.statusCode).toBe(403);
+    expect(pool.statements.some((sql) => sql.includes("UPDATE moderation.reports"))).toBe(false);
+    await app.close();
+  });
+
   it("does not allow a user to appeal another reporter's case", async () => {
     const pool = makePool();
     const app = appWithPool(pool);
