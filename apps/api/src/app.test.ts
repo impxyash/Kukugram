@@ -52,6 +52,7 @@ describe("API", () => {
     const app = buildApp(config);
     const requests = [
       { method: "GET" as const, url: "/v1/me/blocked" },
+      { method: "POST" as const, url: "/v1/reports", payload: { targetType: "profile", targetId: "00000000-0000-0000-0000-000000000001", category: "spam" } },
       { method: "GET" as const, url: "/v1/me/muted" },
       { method: "GET" as const, url: "/v1/me/follow-requests" },
       { method: "POST" as const, url: "/v1/users/someone/block" },
