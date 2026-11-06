@@ -164,3 +164,38 @@ export const reports = moderation.table("reports", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
+
+export const moderatorRoles = moderation.table(
+  "moderator_roles",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 16 }).notNull(),
+    grantedBy: uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
+    grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.role] })]
+);
+
+export const moderationAuditEvents = moderation.table("audit_events", {
+  id: uuid("id").primaryKey(),
+  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  action: varchar("action", { length: 48 }).notNull(),
+  reportId: uuid("report_id").references(() => reports.id, { onDelete: "set null" }),
+  subjectUserId: uuid("subject_user_id").references(() => users.id, { onDelete: "set null" }),
+  details: jsonb("details").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const moderationAppeals = moderation.table("appeals", {
+  id: uuid("id").primaryKey(),
+  reportId: uuid("report_id").notNull().unique().references(() => reports.id, { onDelete: "cascade" }),
+  appellantId: uuid("appellant_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  details: varchar("details", { length: 2000 }).notNull(),
+  status: varchar("status", { length: 16 }).notNull().default("open"),
+  reviewerId: uuid("reviewer_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
