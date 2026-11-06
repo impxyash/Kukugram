@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Pool } from "pg";
-import { hashSessionToken } from "./platform/auth/session.js";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 
