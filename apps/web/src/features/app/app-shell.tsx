@@ -928,6 +928,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -947,18 +948,22 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   }
 
   useEffect(() => {
+    setActionNotice(null);
     void refresh();
   }, [filter]);
 
   async function updateReport(id: string, status: "reviewing" | "resolved" | "dismissed") {
     setBusy(id);
+    setActionNotice(null);
     try {
       await request(`/moderation/reports/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ status })
       });
+      setActionNotice(`Report marked as ${status.replaceAll("_", " ")}.`);
       await refresh();
     } catch (reason) {
+      setActionNotice(null);
       onError((reason as Error).message);
     } finally {
       setBusy(null);
@@ -967,13 +972,16 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
 
   async function reviewAppeal(id: string, status: "accepted" | "rejected") {
     setBusy(id);
+    setActionNotice(null);
     try {
       await request(`/moderation/appeals/${id}`, {
         method: "PATCH",
         body: JSON.stringify({ status })
       });
+      setActionNotice(`Appeal ${status}.`);
       await refresh();
     } catch (reason) {
+      setActionNotice(null);
       onError((reason as Error).message);
     } finally {
       setBusy(null);
@@ -987,6 +995,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         <h2>Moderation queue.</h2>
         <p>Review reports and appeals. Every decision is recorded in the audit log.</p>
       </header>
+      {actionNotice && <p className="success" role="status">{actionNotice}</p>}
       <section className="settings-section">
         <label>
           Report status
@@ -1021,7 +1030,9 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                 <span className="status">{report.status}</span>
               </div>
               {report.status !== "resolved" && report.status !== "dismissed" && (
-                <div className="inline-actions">
+                <>
+                  {busy === report.id && <p role="status">Saving report decision...</p>}
+                  <div className="inline-actions">
                   <button
                     disabled={busy === report.id}
                     onClick={() => void updateReport(report.id, "reviewing")}
@@ -1040,7 +1051,8 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                   >
                     Dismiss
                   </button>
-                </div>
+                  </div>
+                </>
               )}
             </article>
           ))
@@ -1063,6 +1075,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                 </strong>
                 <span>{appeal.details}</span>
               </div>
+              {busy === appeal.id && <p role="status">Saving appeal decision...</p>}
               <div className="inline-actions">
                 <button
                   disabled={busy === appeal.id}
