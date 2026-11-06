@@ -22,11 +22,16 @@ integration("PostgreSQL moderation guarantees", () => {
     SESSION_COOKIE_NAME: "session",
     SESSION_TOKEN_PEPPER: pepper
   });
-  let adminPool: Pool;
+  let adminPool: Pool | undefined;
+
+  function database() {
+    if (!adminPool) throw new Error("PostgreSQL integration pool was not initialized.");
+    return adminPool;
+  }
 
   beforeAll(async () => {
     adminPool = new Pool({ connectionString: databaseUrl, max: 8 });
-    await migrate(drizzle(adminPool), {
+    await migrate(drizzle(database()), {
       migrationsFolder: fileURLToPath(
         new URL("../../../packages/database/drizzle", import.meta.url)
       )
@@ -34,21 +39,21 @@ integration("PostgreSQL moderation guarantees", () => {
   });
 
   afterAll(async () => {
-    await adminPool.end();
+    await database().end();
   });
 
   async function seedAdmin() {
     const userId = randomUUID();
     const token = randomUUID();
-    await adminPool.query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
       userId,
       `${userId}@integration.test`
     ]);
-    await adminPool.query(
+    await database().query(
       "INSERT INTO identity.sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '10 minutes')",
       [randomUUID(), userId, hashSessionToken(token, pepper)]
     );
-    await adminPool.query(
+    await database().query(
       "INSERT INTO moderation.moderator_roles (user_id, role) VALUES ($1, 'admin')",
       [userId]
     );
@@ -59,15 +64,15 @@ integration("PostgreSQL moderation guarantees", () => {
     const actorId = randomUUID();
     const reportId = randomUUID();
     const eventId = randomUUID();
-    await adminPool.query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
       actorId,
       `${actorId}@audit.test`
     ]);
-    await adminPool.query(
+    await database().query(
       "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category) VALUES ($1, $2, 'profile', $3, 'spam')",
       [reportId, actorId, randomUUID()]
     );
-    await adminPool.query(
+    await database().query(
       "INSERT INTO moderation.audit_events (id, actor_id, action, report_id) VALUES ($1, $2, 'integration.audit_test', $3)",
       [eventId, actorId, reportId]
     );
@@ -81,7 +86,7 @@ integration("PostgreSQL moderation guarantees", () => {
       adminPool.query("DELETE FROM moderation.audit_events WHERE id = $1", [eventId])
     ).rejects.toThrow("Moderation audit events are immutable");
 
-    const persisted = await adminPool.query(
+    const persisted = await database().query(
       "SELECT action FROM moderation.audit_events WHERE id = $1",
       [eventId]
     );
@@ -92,17 +97,17 @@ integration("PostgreSQL moderation guarantees", () => {
     const admin = await seedAdmin();
     const reportId = randomUUID();
     const reporterId = randomUUID();
-    await adminPool.query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
       reporterId,
       `${reporterId}@reporter.test`
     ]);
-    await adminPool.query(
+    await database().query(
       "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category) VALUES ($1, $2, 'profile', $3, 'spam')",
       [reportId, reporterId, randomUUID()]
     );
 
     const constraint = `test_reject_audit_${randomUUID().replaceAll("-", "")}`;
-    await adminPool.query(
+    await database().query(
       `ALTER TABLE moderation.audit_events ADD CONSTRAINT ${constraint} CHECK (action <> 'report.status_changed') NOT VALID`
     );
     const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
@@ -116,19 +121,19 @@ integration("PostgreSQL moderation guarantees", () => {
       });
       expect(response.statusCode).toBe(500);
 
-      const report = await adminPool.query(
+      const report = await database().query(
         "SELECT status FROM moderation.reports WHERE id = $1",
         [reportId]
       );
       expect(report.rows).toEqual([{ status: "open" }]);
-      const audit = await adminPool.query(
+      const audit = await database().query(
         "SELECT id FROM moderation.audit_events WHERE report_id = $1",
         [reportId]
       );
       expect(audit.rowCount).toBe(0);
     } finally {
       await app.close();
-      await adminPool.query(`ALTER TABLE moderation.audit_events DROP CONSTRAINT ${constraint}`);
+      await database().query(`ALTER TABLE moderation.audit_events DROP CONSTRAINT ${constraint}`);
     }
   });
 
@@ -156,7 +161,7 @@ integration("PostgreSQL moderation guarantees", () => {
       expect(statuses.filter((status) => status === 204)).toHaveLength(1);
       expect(statuses.every((status) => [204, 403, 409].includes(status))).toBe(true);
 
-      const remaining = await adminPool.query(
+      const remaining = await database().query(
         "SELECT user_id FROM moderation.moderator_roles WHERE role = 'admin' AND user_id = ANY($1::uuid[])",
         [[first.userId, second.userId]]
       );
