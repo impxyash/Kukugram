@@ -69,6 +69,40 @@ integration("PostgreSQL moderation guarantees", () => {
     return { userId, token, cookie: `session=${token}` };
   }
 
+  it("allows moderators to review reports but denies admin-only endpoints", async () => {
+    const moderator = await seedAdmin();
+    await database().query(
+      "UPDATE moderation.moderator_roles SET role = 'moderator' WHERE user_id = $1",
+      [moderator.userId]
+    );
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+
+    try {
+      const queue = await app.inject({
+        method: "GET",
+        url: "/v1/moderation/reports",
+        headers: { cookie: moderator.cookie }
+      });
+      const audit = await app.inject({
+        method: "GET",
+        url: "/v1/moderation/audit",
+        headers: { cookie: moderator.cookie }
+      });
+      const roles = await app.inject({
+        method: "GET",
+        url: "/v1/moderation/roles",
+        headers: { cookie: moderator.cookie }
+      });
+
+      expect(queue.statusCode).toBe(200);
+      expect(audit.statusCode).toBe(403);
+      expect(roles.statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects UPDATE and DELETE against immutable audit events", async () => {
     const actorId = randomUUID();
     const reportId = randomUUID();
