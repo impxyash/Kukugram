@@ -564,7 +564,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     } catch (error) {
       try {
         await client.query("ROLLBACK");
-      } catch {}
+      } catch {
+        // Preserve the original transaction error; the connection is released in finally.
+      }
       throw error;
     } finally {
       client.release();
@@ -673,7 +675,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     } catch (error) {
       try {
         await client.query("ROLLBACK");
-      } catch {}
+      } catch {
+        // Preserve the original transaction error; the connection is released in finally.
+      }
       throw error;
     } finally {
       client.release();
@@ -722,7 +726,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     } catch (error) {
       try {
         await client.query("ROLLBACK");
-      } catch {}
+      } catch {
+        // Preserve the original transaction error; the connection is released in finally.
+      }
       throw error;
     } finally {
       client.release();
@@ -759,7 +765,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     } catch (error) {
       try {
         await client.query("ROLLBACK");
-      } catch {}
+      } catch {
+        // Preserve the original transaction error; the connection is released in finally.
+      }
       throw error;
     } finally {
       client.release();
