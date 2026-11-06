@@ -926,8 +926,12 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   >([]);
   const [filter, setFilter] = useState("open");
   const [busy, setBusy] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function refresh() {
+    setLoading(true);
+    setLoadError(null);
     try {
       const [reportResult, appealResult] = await Promise.all([
         request<{ reports: ModerationReport[] }>(`/moderation/reports?status=${filter}&limit=50`),
@@ -936,7 +940,9 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
       setReports(reportResult.reports);
       setAppeals(appealResult.appeals);
     } catch (reason) {
-      onError((reason as Error).message);
+      setLoadError((reason as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -991,7 +997,14 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
             <option value="dismissed">Dismissed</option>
           </select>
         </label>
-        {reports.length ? (
+        {loading ? (
+          <p role="status">Loading moderation queue...</p>
+        ) : loadError ? (
+          <div role="alert">
+            <p>{loadError}</p>
+            <button className="secondary-button" onClick={() => void refresh()}>Retry loading queue</button>
+          </div>
+        ) : reports.length ? (
           reports.map((report) => (
             <article className="person" key={report.id}>
               <div>
@@ -1035,7 +1048,11 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
       </section>
       <section className="settings-section">
         <p className="eyebrow">Appeals</p>
-        {appeals.length ? (
+        {loading ? (
+          <p role="status">Loading appeals...</p>
+        ) : loadError ? (
+          <p role="alert">Appeals could not be loaded. Retry the queue above.</p>
+        ) : appeals.length ? (
           appeals.map((appeal) => (
             <article className="person" key={appeal.id}>
               <div>
