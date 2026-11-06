@@ -1,0 +1,25 @@
+import type { FastifyPluginAsync } from "fastify";
+
+export const identityRoutes: FastifyPluginAsync = (app) => {
+  app.get(
+    "/auth/providers",
+    {
+      schema: {
+        tags: ["Identity"],
+        summary: "List configured sign-in providers",
+        response: {
+          200: {
+            type: "object",
+            required: ["password", "oauth"],
+            properties: {
+              password: { type: "boolean" },
+              oauth: { type: "array", items: { type: "string" } }
+            }
+          }
+        }
+      }
+    },
+    () => ({ password: true, oauth: [] })
+  );
+  return Promise.resolve();
+};

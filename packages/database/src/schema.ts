@@ -1,0 +1,110 @@
+import { boolean, jsonb, pgSchema, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+
+export const identity = pgSchema("identity");
+export const social = pgSchema("social");
+export const platform = pgSchema("platform");
+export const content = pgSchema("content");
+export const notifications = pgSchema("notifications");
+
+const timestamps = {
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+};
+
+export const users = identity.table("users", {
+  id: uuid("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash"),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  isActive: boolean("is_active").notNull().default(true),
+  ...timestamps
+});
+
+export const profiles = social.table("profiles", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  handle: varchar("handle", { length: 30 }).notNull().unique(),
+  displayName: varchar("display_name", { length: 60 }).notNull(),
+  bio: varchar("bio", { length: 500 }),
+  avatarUrl: text("avatar_url"),
+  privacy: varchar("privacy", { length: 32 }).notNull().default("public"),
+  ...timestamps
+});
+
+export const follows = social.table("follows", {
+  followerId: uuid("follower_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  followeeId: uuid("followee_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 16 }).notNull().default("accepted"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const posts = content.table("posts", {
+  id: uuid("id").primaryKey(),
+  authorId: uuid("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  body: varchar("body", { length: 2000 }).notNull(),
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true })
+});
+
+export const likes = content.table("likes", {
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  postId: uuid("post_id")
+    .notNull()
+    .references(() => posts.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const comments = content.table("comments", {
+  id: uuid("id").primaryKey(),
+  postId: uuid("post_id")
+    .notNull()
+    .references(() => posts.id, { onDelete: "cascade" }),
+  authorId: uuid("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  body: varchar("body", { length: 1000 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const userNotifications = notifications.table("notifications", {
+  id: uuid("id").primaryKey(),
+  recipientId: uuid("recipient_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  type: varchar("type", { length: 16 }).notNull(),
+  postId: uuid("post_id").references(() => posts.id, { onDelete: "cascade" }),
+  commentId: uuid("comment_id").references(() => comments.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  readAt: timestamp("read_at", { withTimezone: true })
+});
+
+export const sessions = identity.table("sessions", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  ...timestamps
+});
+
+export const outboxEvents = platform.table("outbox_events", {
+  id: uuid("id").primaryKey(),
+  topic: varchar("topic", { length: 128 }).notNull(),
+  payload: jsonb("payload").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp("published_at", { withTimezone: true })
+});

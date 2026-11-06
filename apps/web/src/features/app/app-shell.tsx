@@ -1,0 +1,443 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+
+const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+type User = { id: string; handle: string; displayName: string; bio: string | null; avatarUrl: string | null; followers: string; following: string; isFollowing: boolean };
+type Post = { id: string; body: string; createdAt: string; handle: string; displayName: string; avatarUrl: string | null; likeCount: string; commentCount: string; likedByViewer: boolean; authorId: string };
+type Notice = { id: string; type: "follow" | "like" | "comment"; postId: string | null; createdAt: string; readAt: string | null; handle: string | null; displayName: string | null };
+type Comment = { id: string; body: string; handle: string; displayName: string; createdAt: string };
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${apiUrl}/v1${path}`, {
+    credentials: "include",
+    headers: { "content-type": "application/json", ...options.headers },
+    ...options
+  });
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as { title?: string } | null;
+    throw new Error(problem?.title ?? "Something went wrong. Please try again.");
+  }
+  return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
+}
+
+function Avatar({ user, small = false }: { user: Pick<User | Post, "displayName" | "avatarUrl">; small?: boolean }) {
+  return user.avatarUrl
+    ? <img className={`avatar ${small ? "small" : ""}`} src={user.avatarUrl} alt="" />
+    : <span className={`avatar fallback ${small ? "small" : ""}`}>{user.displayName.slice(0, 1).toUpperCase()}</span>;
+}
+
+export function AppShell() {
+  const [user, setUser] = useState<User | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [tab, setTab] = useState<"home" | "discover" | "activity" | "profile" | "settings">("home");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      const me = await request<{ user: User }>("/me");
+      setUser(me.user);
+      const [feed, activity] = await Promise.all([
+        request<{ posts: Post[] }>("/feed"),
+        request<{ notifications: Notice[] }>("/notifications")
+      ]);
+      setPosts(feed.posts);
+      setNotices(activity.notifications);
+    } catch (reason) {
+      setUser(null);
+      if ((reason as Error).message !== "Internal server error") setError(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void refresh(); }, []);
+
+  if (loading) return <main className="app-loading"><span className="pulse-dot" /> Loading your corner...</main>;
+  if (!user) return <AuthScreen mode={authMode} setMode={setAuthMode} onAuthenticated={refresh} />;
+
+  const unread = notices.filter((notice) => !notice.readAt).length;
+
+  return (
+    <main className="app-shell">
+      <aside className="side-nav">
+        <a className="brand" href="/"><span className="brand-mark">k</span> kukugram</a>
+        <p className="nav-kicker">your social orbit</p>
+        {([
+          ["home", "Home"],
+          ["discover", "Discover"],
+          ["activity", `Activity${unread ? ` (${unread})` : ""}`],
+          ["profile", "Profile"],
+          ["settings", "Settings"]
+        ] as const).map(([id, label]) => (
+          <button key={id} className={tab === id ? "nav-item active" : "nav-item"} onClick={() => setTab(id)}>{label}</button>
+        ))}
+        <button
+          className="nav-item logout"
+          onClick={() => {
+            void (async () => {
+              try {
+                await request("/auth/logout", { method: "POST" });
+                setUser(null);
+                setPosts([]);
+              } catch (reason) {
+                setError((reason as Error).message);
+              }
+            })();
+          }}
+        >
+          Log out
+        </button>
+      </aside>
+      <section className="main-pane">
+        {error && <p className="banner error">{error}</p>}
+        {tab === "home" && <Home user={user} posts={posts} setPosts={setPosts} onError={setError} />}
+        {tab === "discover" && <Discover onError={setError} />}
+        {tab === "activity" && <Activity notices={notices} setNotices={setNotices} />}
+        {tab === "profile" && <Profile user={user} setUser={setUser} posts={posts.filter((post) => post.authorId === user.id)} onError={setError} />}
+        {tab === "settings" && <Settings user={user} setUser={setUser} onError={setError} />}
+      </section>
+    </main>
+  );
+}
+
+function AuthScreen({ mode, setMode, onAuthenticated }: { mode: "login" | "signup"; setMode: (mode: "login" | "signup") => void; onAuthenticated: () => Promise<void> }) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      await request(`/auth/${mode}`, { method: "POST", body: JSON.stringify(Object.fromEntries(form)) });
+      await onAuthenticated();
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-intro">
+        <a className="brand" href="/"><span className="brand-mark">k</span> kukugram</a>
+        <p className="eyebrow">Private MVP</p>
+        <h1>Make room for<br /><em>real connection.</em></h1>
+        <p>Start a quieter, brighter social orbit with the people you choose.</p>
+      </section>
+      <section className="auth-card">
+        <p className="eyebrow">{mode === "signup" ? "Join Kukugram" : "Welcome back"}</p>
+        <h2>{mode === "signup" ? "Claim your corner." : "Pick up where you left off."}</h2>
+        {error && <p className="form-error">{error}</p>}
+        <form onSubmit={(event) => { void submit(event); }}>
+          <label>Email<input required name="email" type="email" autoComplete="email" /></label>
+          <label>Password<input required name="password" type="password" minLength={mode === "signup" ? 12 : 1} autoComplete={mode === "signup" ? "new-password" : "current-password"} /></label>
+          {mode === "signup" && (
+            <>
+              <label>Username<input required name="handle" pattern="[a-z0-9_]{3,30}" title="Use 3-30 lowercase letters, numbers, or underscores." autoComplete="username" /></label>
+              <label>Display name<input required name="displayName" maxLength={60} autoComplete="name" /></label>
+              <label>Bio <span>(optional)</span><textarea name="bio" maxLength={500} /></label>
+            </>
+          )}
+          <button className="primary-button" disabled={busy}>{busy ? "Working..." : mode === "signup" ? "Create account" : "Log in"}</button>
+        </form>
+        <button className="text-button" onClick={() => setMode(mode === "signup" ? "login" : "signup")}>{mode === "signup" ? "Already here? Log in" : "New to Kukugram? Sign up"}</button>
+      </section>
+    </main>
+  );
+}
+
+function Home({ user, posts, setPosts, onError }: { user: User; posts: Post[]; setPosts: (posts: Post[]) => void; onError: (message: string | null) => void }) {
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function publish(event: FormEvent) {
+    event.preventDefault();
+    if (!body.trim()) return;
+    setBusy(true);
+    try {
+      const { post } = await request<{ post: Post }>("/posts", { method: "POST", body: JSON.stringify({ body }) });
+      setPosts([post, ...posts]);
+      setBody("");
+    } catch (reason) {
+      onError((reason as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <header className="pane-header"><p className="eyebrow">Following</p><h2>Your people, in motion.</h2></header>
+      <form className="composer" onSubmit={(event) => { void publish(event); }}>
+        <Avatar user={user} />
+        <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="What is moving through your mind?" maxLength={2000} />
+        <div><span>{body.length}/2000</span><button className="primary-button" disabled={busy || !body.trim()}>{busy ? "Posting..." : "Publish"}</button></div>
+      </form>
+      {posts.length ? (
+        <div className="feed">
+          {posts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              user={user}
+              onChange={(updated) => setPosts(posts.map((item) => item.id === updated.id ? updated : item))}
+              onDelete={() => setPosts(posts.filter((item) => item.id !== post.id))}
+              onError={onError}
+            />
+          ))}
+        </div>
+      ) : (
+        <section className="empty-state"><span className="orbit">*</span><h3>Your feed is waiting.</h3><p>Follow people in Discover, or make the first post in your corner.</p></section>
+      )}
+    </>
+  );
+}
+
+function PostCard({ post, user, onChange, onDelete, onError }: { post: Post; user: User; onChange: (post: Post) => void; onDelete: () => void; onError: (message: string) => void }) {
+  const [comments, setComments] = useState<Comment[] | null>(null);
+  const [comment, setComment] = useState("");
+
+  async function toggleLike() {
+    try {
+      await request(`/posts/${post.id}/like`, { method: post.likedByViewer ? "DELETE" : "POST" });
+      onChange({
+        ...post,
+        likedByViewer: !post.likedByViewer,
+        likeCount: String(Number(post.likeCount) + (post.likedByViewer ? -1 : 1))
+      });
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  async function showComments() {
+    if (comments) {
+      setComments(null);
+      return;
+    }
+    try {
+      setComments((await request<{ comments: Comment[] }>(`/posts/${post.id}/comments`)).comments);
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  async function addComment(event: FormEvent) {
+    event.preventDefault();
+    if (!comment.trim()) return;
+    try {
+      await request(`/posts/${post.id}/comments`, { method: "POST", body: JSON.stringify({ body: comment }) });
+      setComment("");
+      setComments(null);
+      onChange({ ...post, commentCount: String(Number(post.commentCount) + 1) });
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  async function deletePost() {
+    try {
+      await request(`/posts/${post.id}`, { method: "DELETE" });
+      onDelete();
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  return (
+    <article className="post-card">
+      <header>
+        <Avatar user={post} small />
+        <div><strong>{post.displayName}</strong><span>@{post.handle} · {new Date(post.createdAt).toLocaleDateString()}</span></div>
+        {post.authorId === user.id && <button className="icon-button delete" onClick={() => { void deletePost(); }}>Delete</button>}
+      </header>
+      <p className="post-body">{post.body}</p>
+      <div className="post-actions">
+        <button className={post.likedByViewer ? "liked" : ""} onClick={() => { void toggleLike(); }}>♥ {post.likeCount}</button>
+        <button onClick={() => { void showComments(); }}>Reply {post.commentCount}</button>
+      </div>
+      {comments && (
+        <div className="comments">
+          {comments.map((item) => <p key={item.id}><b>{item.displayName}</b> <span>@{item.handle}</span> {item.body}</p>)}
+          <form onSubmit={(event) => { void addComment(event); }}>
+            <input value={comment} onChange={(event) => setComment(event.target.value)} maxLength={1000} placeholder="Add to the conversation" />
+            <button>Send</button>
+          </form>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function Discover({ onError }: { onError: (message: string) => void }) {
+  const [query, setQuery] = useState("");
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function search(event: FormEvent) {
+    event.preventDefault();
+    if (!query.trim()) return;
+    setLoading(true);
+    try {
+      setUsers((await request<{ users: User[] }>(`/users/search?q=${encodeURIComponent(query)}`)).users);
+    } catch (reason) {
+      onError((reason as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleFollow(person: User) {
+    try {
+      if (person.isFollowing) {
+        await request(`/users/${person.handle}/follow`, { method: "DELETE" });
+      } else {
+        await request(`/users/${person.handle}/follow`, { method: "POST" });
+      }
+      setUsers(users.map((item) => item.id === person.id ? { ...item, isFollowing: !item.isFollowing } : item));
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <header className="pane-header"><p className="eyebrow">Discover</p><h2>Find your next familiar face.</h2></header>
+      <form className="search" onSubmit={(event) => { void search(event); }}>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search username or name" />
+        <button className="primary-button" disabled={loading}>{loading ? "Searching..." : "Search"}</button>
+      </form>
+      <div className="results">
+        {users.map((person) => (
+          <article key={person.id} className="person">
+            <Avatar user={person} />
+            <div><strong>{person.displayName}</strong><span>@{person.handle}</span><p>{person.bio}</p></div>
+            <button className={person.isFollowing ? "secondary-button" : "primary-button"} onClick={() => { void toggleFollow(person); }}>
+              {person.isFollowing ? "Following" : "Follow"}
+            </button>
+          </article>
+        ))}
+      </div>
+      {query && !loading && !users.length && <section className="empty-state"><h3>No one surfaced yet.</h3><p>Try another name or username.</p></section>}
+    </>
+  );
+}
+
+function Activity({ notices, setNotices }: { notices: Notice[]; setNotices: (notices: Notice[]) => void }) {
+  useEffect(() => {
+    void request("/notifications/read", { method: "POST" }).then(() => {
+      setNotices(notices.map((notice) => ({ ...notice, readAt: notice.readAt ?? new Date().toISOString() })));
+    });
+  }, []);
+
+  return (
+    <>
+      <header className="pane-header"><p className="eyebrow">Activity</p><h2>The ripples from your corner.</h2></header>
+      {notices.length ? (
+        <div className="results">
+          {notices.map((notice) => (
+            <article className="notice" key={notice.id}>
+              <span className="notice-mark">{notice.type === "follow" ? "+" : notice.type === "like" ? "♥" : "↳"}</span>
+              <p><b>{notice.displayName ?? "Someone"}</b> {notice.type === "follow" ? "followed you" : notice.type === "like" ? "liked your post" : "replied to your post"}.<span>{new Date(notice.createdAt).toLocaleDateString()}</span></p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <section className="empty-state"><h3>Quiet, for now.</h3><p>Your follows and conversations will collect here.</p></section>
+      )}
+    </>
+  );
+}
+
+function Profile({ user, setUser, posts, onError }: { user: User; setUser: (user: User) => void; posts: Post[]; onError: (message: string) => void }) {
+  async function editProfile() {
+    const name = window.prompt("Display name", user.displayName);
+    if (!name) return;
+    try {
+      const result = await request<{ user: User }>("/me/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ displayName: name })
+      });
+      setUser(result.user);
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <header className="profile-hero">
+        <Avatar user={user} />
+        <div>
+          <p className="eyebrow">@{user.handle}</p>
+          <h2>{user.displayName}</h2>
+          <p>{user.bio || "No bio yet. Let your posts do the talking."}</p>
+          <span>{user.followers} followers · {user.following} following</span>
+        </div>
+      </header>
+      <button className="secondary-button" onClick={() => { void editProfile(); }}>Edit profile</button>
+      <h3 className="section-title">Your posts</h3>
+      {posts.length ? (
+        <div className="feed">
+          {posts.map((post) => (
+            <article className="post-card compact" key={post.id}>
+              <p className="post-body">{post.body}</p>
+              <span>{post.likeCount} likes · {post.commentCount} replies</span>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <section className="empty-state"><h3>Nothing published yet.</h3><p>Your posts will live here.</p></section>
+      )}
+    </>
+  );
+}
+
+function Settings({ user, setUser, onError }: { user: User; setUser: (user: User) => void; onError: (message: string) => void }) {
+  const [name, setName] = useState(user.displayName);
+  const [bio, setBio] = useState(user.bio ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
+  const [saved, setSaved] = useState(false);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      const result = await request<{ user: User }>("/me/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ displayName: name, bio: bio || null, avatarUrl: avatarUrl || null })
+      });
+      setUser(result.user);
+      setSaved(true);
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <header className="pane-header"><p className="eyebrow">Settings</p><h2>Shape your presence.</h2></header>
+      <form className="settings-form" onSubmit={(event) => { void save(event); }}>
+        <label>Display name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={60} /></label>
+        <label>Bio<textarea value={bio} onChange={(event) => setBio(event.target.value)} maxLength={500} /></label>
+        <label>Avatar image URL<input value={avatarUrl} onChange={(event) => setAvatarUrl(event.target.value)} type="url" placeholder="https://..." /></label>
+        <button className="primary-button">Save profile</button>
+        {saved && <p className="success">Profile saved.</p>}
+      </form>
+      <section className="account-note">
+        <p className="eyebrow">Account</p>
+        <p>Sessions use opaque, secure cookies. Password changes and image uploads are not available in this phase.</p>
+      </section>
+    </>
+  );
+}

@@ -1,0 +1,9 @@
+node_modules/
+.next/
+dist/
+coverage/
+pnpm-lock.yaml
+KUKUGRAM_BLUEPRINT.md
+AI_TEST.md
+nodesource_setup.sh
+*.env

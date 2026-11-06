@@ -1,0 +1,31 @@
+{
+  "name": "kukugram",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "corepack pnpm --parallel --filter @kukugram/web --filter @kukugram/api dev",
+    "dev:web": "corepack pnpm --filter @kukugram/web dev",
+    "dev:api": "corepack pnpm --filter @kukugram/api dev",
+    "build": "corepack pnpm -r --if-present build",
+    "typecheck": "corepack pnpm -r --if-present typecheck",
+    "lint": "corepack pnpm -r --if-present lint",
+    "test": "corepack pnpm -r --if-present test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "corepack pnpm --filter @kukugram/database generate",
+    "db:migrate": "corepack pnpm --filter @kukugram/database migrate"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.25.1",
+    "@types/node": "22.15.3",
+    "eslint": "9.25.1",
+    "prettier": "3.5.3",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.30.1"
+  }
+}
