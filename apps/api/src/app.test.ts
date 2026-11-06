@@ -155,7 +155,13 @@ describe("social privacy authorization", () => {
           };
         }
         if (sql.includes('SELECT user_id AS "userId" FROM social.profiles')) {
-          return { rows: [{ userId: targetId }], rowCount: 1 };
+          return { rows: [{ userId: options.targetOwnerId ?? targetId }], rowCount: 1 };
+        }
+        if (sql.includes("UPDATE social.follows f SET status = 'accepted'")) {
+          return { rows: options.followRequest ? [{ follower_id: targetId }] : [], rowCount: options.followRequest ? 1 : 0 };
+        }
+        if (sql.includes("DELETE FROM social.follows f USING social.profiles p")) {
+          return { rows: options.followRequest ? [{ follower_id: targetId }] : [], rowCount: options.followRequest ? 1 : 0 };
         }
         if (sql.includes("INSERT INTO moderation.reports")) {
           return { rows: [{ id: "00000000-0000-4000-8000-000000000004" }], rowCount: 1 };
@@ -245,6 +251,57 @@ describe("social privacy authorization", () => {
       reportId: "00000000-0000-4000-8000-000000000004",
       status: "open"
     });
+    await app.close();
+  });
+
+  it("accepts only a pending follow request addressed to the authenticated profile", async () => {
+    const pool = makePool({ followRequest: true });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/me/follow-requests/target_user/accept",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(204);
+    const update = pool.statements.findIndex((sql) => sql.includes("UPDATE social.follows f SET status = 'accepted'"));
+    expect(update).toBeGreaterThanOrEqual(0);
+    expect(pool.parameters[update]).toEqual(["target_user", viewerId]);
+    expect(pool.statements.some((sql) => sql.includes("type = 'follow_request'"))).toBe(true);
+    expect(pool.statements.some((sql) => sql.includes("VALUES ($1, $2, $3, 'follow')"))).toBe(true);
+    await app.close();
+  });
+
+  it("declines only a pending follow request addressed to the authenticated profile", async () => {
+    const pool = makePool({ followRequest: true });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/me/follow-requests/target_user",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(204);
+    const deletion = pool.statements.findIndex((sql) => sql.includes("DELETE FROM social.follows f USING social.profiles p"));
+    expect(deletion).toBeGreaterThanOrEqual(0);
+    expect(pool.parameters[deletion]).toEqual(["target_user", viewerId]);
+    expect(pool.statements.some((sql) => sql.includes("type = 'follow_request'"))).toBe(true);
+    await app.close();
+  });
+
+  it("prevents users from reporting their own profile", async () => {
+    const pool = makePool({ targetOwnerId: viewerId });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/reports",
+      headers: { cookie },
+      payload: {
+        targetType: "profile",
+        targetId: viewerId,
+        category: "other"
+      }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.reports"))).toBe(false);
     await app.close();
   });
 
