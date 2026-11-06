@@ -137,6 +137,12 @@ describe("social privacy authorization", () => {
             rowCount: 1
           };
         }
+        if (sql.includes("SELECT user_id AS \"userId\" FROM social.profiles")) {
+          return { rows: [{ userId: targetId }], rowCount: 1 };
+        }
+        if (sql.includes("INSERT INTO moderation.reports")) {
+          return { rows: [{ id: "00000000-0000-4000-8000-000000000004" }], rowCount: 1 };
+        }
         if (sql.includes("INSERT INTO social.follows")) {
           return { rows: [{ status: "pending" }], rowCount: 1 };
         }
@@ -185,6 +191,28 @@ describe("social privacy authorization", () => {
     const feedQuery = pool.statements.find((sql) => sql.includes("FROM content.posts p"));
     expect(feedQuery).toContain("social.mutes");
     expect(feedQuery).toContain("social.blocks");
+    await app.close();
+  });
+
+  it("accepts a report for another user's profile and creates a moderation case", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/reports",
+      headers: { cookie },
+      payload: {
+        targetType: "profile",
+        targetId,
+        category: "impersonation",
+        details: "This account is impersonating someone."
+      }
+    });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      reportId: "00000000-0000-4000-8000-000000000004",
+      status: "open"
+    });
     await app.close();
   });
 
