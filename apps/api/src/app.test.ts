@@ -108,7 +108,13 @@ describe("social privacy authorization", () => {
   const cookie = `session=${token}`;
 
   function makePool(
-    options: { blocked?: boolean; privacy?: "public" | "private"; accepted?: boolean } = {}
+    options: {
+      blocked?: boolean;
+      privacy?: "public" | "private";
+      accepted?: boolean;
+      targetOwnerId?: string;
+      followRequest?: boolean;
+    } = {}
   ) {
     const statements: string[] = [];
     const parameters: unknown[][] = [];
