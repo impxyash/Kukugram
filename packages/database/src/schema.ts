@@ -153,9 +153,8 @@ export const outboxEvents = platform.table("outbox_events", {
 
 export const reports = moderation.table("reports", {
   id: uuid("id").primaryKey(),
-  reporterId: uuid("reporter_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  reporterId: uuid("reporter_id").references(() => users.id, { onDelete: "set null" }),
+  reporterPseudonymId: uuid("reporter_pseudonym_id").notNull().defaultRandom().unique(),
   targetType: varchar("target_type", { length: 16 }).notNull(),
   targetId: uuid("target_id").notNull(),
   category: varchar("category", { length: 24 }).notNull(),
@@ -194,9 +193,8 @@ export const moderationAppeals = moderation.table("appeals", {
     .notNull()
     .unique()
     .references(() => reports.id, { onDelete: "cascade" }),
-  appellantId: uuid("appellant_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
+  appellantId: uuid("appellant_id").references(() => users.id, { onDelete: "set null" }),
+  appellantPseudonymId: uuid("appellant_pseudonym_id").notNull().defaultRandom().unique(),
   details: varchar("details", { length: 2000 }).notNull(),
   status: varchar("status", { length: 16 }).notNull().default("open"),
   reviewerId: uuid("reviewer_id").references(() => users.id, { onDelete: "set null" }),

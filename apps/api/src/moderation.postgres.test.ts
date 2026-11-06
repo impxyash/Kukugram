@@ -216,11 +216,13 @@ integration("PostgreSQL moderation guarantees", () => {
       [eventId]
     );
     expect(event.rows).toEqual([{ actorId, reportId, subjectUserId: actorId }]);
-    const deletedReport = await database().query(
-      "SELECT id FROM moderation.reports WHERE id = $1",
+    const retainedReport = await database().query(
+      'SELECT reporter_id AS "reporterId", reporter_pseudonym_id AS "reporterPseudonymId" FROM moderation.reports WHERE id = $1',
       [reportId]
     );
-    expect(deletedReport.rowCount).toBe(0);
+    expect(retainedReport.rows).toHaveLength(1);
+    expect(retainedReport.rows[0]?.reporterId).toBeNull();
+    expect(retainedReport.rows[0]?.reporterPseudonymId).toEqual(expect.any(String));
   });
 
   it("rolls back a report decision when its audit insert fails", async () => {
@@ -350,16 +352,45 @@ integration("PostgreSQL moderation guarantees", () => {
     );
     expect(survivingRecipientNotification.rows).toEqual([{ actorId: null }]);
 
-    const deletedReport = await database().query(
-      "SELECT id FROM moderation.reports WHERE id = $1",
+    const retainedReport = await database().query(
+      'SELECT reporter_id AS "reporterId", reporter_pseudonym_id AS "reporterPseudonymId" FROM moderation.reports WHERE id = $1',
       [reportId]
     );
-    const deletedAppeal = await database().query(
-      "SELECT id FROM moderation.appeals WHERE id = $1",
+    const retainedAppeal = await database().query(
+      'SELECT appellant_id AS "appellantId", appellant_pseudonym_id AS "appellantPseudonymId" FROM moderation.appeals WHERE id = $1',
       [appealId]
     );
-    expect(deletedReport.rowCount).toBe(0);
-    expect(deletedAppeal.rowCount).toBe(0);
+    expect(retainedReport.rows).toHaveLength(1);
+    expect(retainedReport.rows[0]?.reporterId).toBeNull();
+    expect(retainedReport.rows[0]?.reporterPseudonymId).toEqual(expect.any(String));
+    expect(retainedAppeal.rows).toHaveLength(1);
+    expect(retainedAppeal.rows[0]?.appellantId).toBeNull();
+    expect(retainedAppeal.rows[0]?.appellantPseudonymId).toEqual(expect.any(String));
+
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+    try {
+      const [reportQueue, appealQueue] = await Promise.all([
+        app.inject({
+          method: "GET",
+          url: "/v1/moderation/reports?status=resolved",
+          headers: { cookie: survivingUser.cookie }
+        }),
+        app.inject({
+          method: "GET",
+          url: "/v1/moderation/appeals",
+          headers: { cookie: survivingUser.cookie }
+        })
+      ]);
+      expect(reportQueue.statusCode).toBe(200);
+      expect(appealQueue.statusCode).toBe(200);
+      expect(reportQueue.payload).toContain("Deleted account");
+      expect(appealQueue.payload).toContain("Deleted account");
+      expect(reportQueue.payload).toContain(reportId);
+      expect(appealQueue.payload).toContain(appealId);
+    } finally {
+      await app.close();
+    }
 
     const retainedAudit = await database().query(
       'SELECT actor_id AS "actorId", report_id AS "reportId", subject_user_id AS "subjectUserId" FROM moderation.audit_events WHERE id = $1',
@@ -375,9 +406,10 @@ integration("PostgreSQL moderation guarantees", () => {
     const targetId = randomUUID();
     const reportId = randomUUID();
 
+    const reporterHandle = `reporter_${reporter.userId.replaceAll("-", "").slice(0, 12)}`;
     await database().query(
       "INSERT INTO social.profiles (user_id, handle, display_name) VALUES ($1, $2, 'Report author')",
-      [reporter.userId, `reporter_${reporter.userId.replaceAll("-", "").slice(0, 12)}`]
+      [reporter.userId, reporterHandle]
     );
     await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
       targetId,
@@ -412,7 +444,8 @@ integration("PostgreSQL moderation guarantees", () => {
       expect(queue.statusCode).toBe(200);
       expect(queue.payload).toContain(reportId);
       expect(queue.payload).toContain(targetId);
-      expect(queue.payload).toContain(reporter.userId);
+      expect(queue.payload).toContain(reporterHandle);
+      expect(queue.payload).not.toContain(reporter.userId);
     } finally {
       await app.close();
     }

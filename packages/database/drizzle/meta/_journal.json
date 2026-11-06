@@ -43,6 +43,13 @@
       "when": 1794000003000,
       "tag": "0005_immutable_audit_references",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794000004000,
+      "tag": "0006_moderation_pseudonymization",
+      "breakpoints": true
     }
   ]
 }

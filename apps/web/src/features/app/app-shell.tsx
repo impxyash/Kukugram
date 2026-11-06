@@ -64,7 +64,7 @@ type ReportRecord = {
 type ModerationReport = ReportRecord & {
   targetId: string;
   details: string | null;
-  reporterHandle: string;
+  reporterHandle: string | null;
   updatedAt: string;
 };
 type AppealRecord = {
@@ -922,7 +922,7 @@ function Profile({
 function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   const [reports, setReports] = useState<ModerationReport[]>([]);
   const [appeals, setAppeals] = useState<
-    { id: string; reportId: string; appellantHandle: string; details: string; status: string }[]
+    { id: string; reportId: string; appellantHandle: string | null; details: string; status: string }[]
   >([]);
   const [filter, setFilter] = useState("open");
   const [busy, setBusy] = useState<string | null>(null);
@@ -1027,8 +1027,10 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                   {report.category.replaceAll("_", " ")} · {report.targetType}
                 </strong>
                 <span>
-                  Reported by @{report.reporterHandle} ·{" "}
-                  {new Date(report.createdAt).toLocaleString()}
+                  {report.reporterHandle
+                    ? `Reported by @${report.reporterHandle}`
+                    : "Reported by Deleted account"}{" "}
+                  · {new Date(report.createdAt).toLocaleString()}
                 </span>
                 {report.details && <p>{report.details}</p>}
                 <span className="status">{report.status}</span>
@@ -1078,7 +1080,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
             <article className="person" key={appeal.id} aria-busy={busy === appeal.id}>
               <div>
                 <strong>
-                  @{appeal.appellantHandle} · Case {appeal.reportId.slice(0, 8)}
+                  {appeal.appellantHandle ? `@${appeal.appellantHandle}` : "Deleted account"} · Case {appeal.reportId.slice(0, 8)}
                 </strong>
                 <span>{appeal.details}</span>
               </div>

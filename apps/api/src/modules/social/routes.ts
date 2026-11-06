@@ -507,10 +507,10 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const result = await app.pool.query(
       `SELECT r.id, r.target_type AS "targetType", r.target_id AS "targetId",
         r.category, r.details, r.status, r.created_at AS "createdAt",
-        r.updated_at AS "updatedAt", r.reporter_id AS "reporterId",
+        r.updated_at AS "updatedAt",
         p.handle AS "reporterHandle"
        FROM moderation.reports r
-       JOIN social.profiles p ON p.user_id = r.reporter_id
+       LEFT JOIN social.profiles p ON p.user_id = r.reporter_id
        WHERE ($1::varchar IS NULL OR r.status = $1)
        ORDER BY CASE r.status WHEN 'open' THEN 0 WHEN 'reviewing' THEN 1 ELSE 2 END,
          r.created_at ASC
@@ -636,11 +636,11 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
   app.get("/moderation/appeals", async (request) => {
     await requireModerationRole(request, ["moderator", "admin"]);
     const result = await app.pool.query(
-      `SELECT a.id, a.report_id AS "reportId", a.appellant_id AS "appellantId",
+      `SELECT a.id, a.report_id AS "reportId",
         p.handle AS "appellantHandle", a.details, a.status,
         a.created_at AS "createdAt"
        FROM moderation.appeals a
-       JOIN social.profiles p ON p.user_id = a.appellant_id
+       LEFT JOIN social.profiles p ON p.user_id = a.appellant_id
        WHERE a.status = 'open' ORDER BY a.created_at ASC LIMIT 100`
     );
     return { appeals: result.rows };

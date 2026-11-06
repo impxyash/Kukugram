@@ -42,6 +42,14 @@ Migration `0005_immutable_audit_references.sql` removes foreign keys from `moder
 
 Re-adding those foreign keys is not a safe automatic rollback: dangling historical references can make constraint creation fail, while `ON DELETE SET NULL` would reintroduce mutation of immutable audit rows. Do not restore those constraints as a rollback step. Any future change to this retention model requires a separately reviewed audit-history design and migration plan.
 
+## Moderation reporter and appellant pseudonymization
+
+Migration `0006_moderation_pseudonymization.sql` changes report reporter and appeal appellant references to nullable foreign keys with `ON DELETE SET NULL`. Each report and appeal receives its own random, case-scoped pseudonym UUID. These identifiers are not derived from account IDs, are not shared across separate cases, and are never exposed by the moderation API. Moderators see "Deleted account" after the account/profile link is removed.
+
+This preserves moderation cases while removing their direct account/profile joins. Reports and appeals remain connected through the case's report ID. The immutable audit log retains historical UUID references under migration 0005; these are still sensitive pseudonymous data, not anonymous data, and access remains admin-only.
+
+No numeric retention period is defined by this migration. Before launch, privacy/legal review must approve purpose-specific retention periods, legal-hold handling, evidence minimization, and deletion/expiry procedures. Pseudonymization does not make free-text case details anonymous; those details may still contain personal information and require an appropriate access and retention policy.
+
 ## Environment safety
 
 Migration validation and rollback rehearsals must use disposable databases or isolated restored snapshots. Never point CI, local development, or migration experiments at production PostgreSQL or Redis volumes.
