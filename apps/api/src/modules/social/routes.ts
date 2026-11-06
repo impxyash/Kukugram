@@ -766,6 +766,8 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     try {
       await client.query("BEGIN");
       if (params.role === "admin") {
+        // Serialize concurrent administrator revocations before counting remaining admins.
+        await client.query("SELECT pg_advisory_xact_lock(124710, 1)");
         const administrators = await client.query<{ userId: string }>(
           "SELECT user_id AS \"userId\" FROM moderation.moderator_roles WHERE role = 'admin' ORDER BY user_id FOR UPDATE"
         );
