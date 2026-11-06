@@ -931,6 +931,46 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [expandedReport, setExpandedReport] = useState<string | null>(null);
+  const [expandedAppeal, setExpandedAppeal] = useState<string | null>(null);
+  const [reportDetails, setReportDetails] = useState<
+    Record<string, { targetId: string; details: string | null }>
+  >({});
+  const [appealDetails, setAppealDetails] = useState<Record<string, string>>({});
+
+  async function toggleReportDetails(id: string) {
+    if (expandedReport === id) {
+      setExpandedReport(null);
+      return;
+    }
+    setExpandedReport(id);
+    if (reportDetails[id]) return;
+    try {
+      const result = await request<{
+        report: { targetId: string; details: string | null };
+      }>(`/moderation/reports/${id}`);
+      setReportDetails((current) => ({ ...current, [id]: result.report }));
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
+
+  async function toggleAppealDetails(id: string) {
+    if (expandedAppeal === id) {
+      setExpandedAppeal(null);
+      return;
+    }
+    setExpandedAppeal(id);
+    if (appealDetails[id] !== undefined) return;
+    try {
+      const result = await request<{ appeal: { details: string } }>(
+        `/moderation/appeals/${id}`
+      );
+      setAppealDetails((current) => ({ ...current, [id]: result.appeal.details }));
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
 
   async function refresh() {
     setLoading(true);
@@ -1030,6 +1070,15 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                 </strong>
                 <span>{new Date(report.createdAt).toLocaleString()}</span>
                 <span className="status">{report.status}</span>
+                <button className="secondary-button" onClick={() => void toggleReportDetails(report.id)}>
+                  {expandedReport === report.id ? "Hide case details" : "View case details"}
+                </button>
+                {expandedReport === report.id && reportDetails[report.id] && (
+                  <div className="account-note">
+                    <span>Target reference: {reportDetails[report.id].targetId}</span>
+                    {reportDetails[report.id].details && <p>{reportDetails[report.id].details}</p>}
+                  </div>
+                )}
               </div>
               {report.status !== "resolved" && report.status !== "dismissed" && (
                 <>
@@ -1077,6 +1126,12 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
               <div>
                 <strong>Case {appeal.reportId.slice(0, 8)}</strong>
                 <span>{new Date(appeal.createdAt).toLocaleString()}</span>
+                <button className="secondary-button" onClick={() => void toggleAppealDetails(appeal.id)}>
+                  {expandedAppeal === appeal.id ? "Hide appeal details" : "View appeal details"}
+                </button>
+                {expandedAppeal === appeal.id && appealDetails[appeal.id] !== undefined && (
+                  <p>{appealDetails[appeal.id]}</p>
+                )}
               </div>
               {busy === appeal.id && <p role="status">Saving appeal decision...</p>}
               <div className="inline-actions">
