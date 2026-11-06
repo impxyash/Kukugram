@@ -55,6 +55,8 @@ Replace both placeholders with values verified directly by the operator. Run the
 
 ## Audit log
 
+The purpose-scoped audit actor mapping lives in `moderation.audit_actor_identity_map`, separate from immutable events. Public table privileges are revoked; the API writes references through `moderation.resolve_audit_actor_ref` and the ordinary audit response exposes only the opaque reference. Production must use a dedicated, non-owner runtime database role that cannot SELECT the mapping table; grant that role only the function execution privilege it needs. The migration/owner role must remain separate from the application runtime role. The current repository does not provision or verify production database roles, so this separation is a launch prerequisite, not a claim that the current deployment is already isolated.
+
 The application treats moderation audit events as append-only. A database trigger rejects UPDATE and DELETE statements. Keep database ownership and privileges restricted to trusted operators; the trigger is defense in depth, not protection against a database owner or superuser deliberately disabling it. Backups and external retention controls should be considered for production.
 
 Report status changes, appeal submissions/reviews, and role grants/revocations must be committed in the same transaction as their corresponding audit event. Review production database permissions before launch so the runtime application role cannot alter or truncate the audit table or disable its trigger.
