@@ -32,8 +32,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Debug Prettier output (temporary)
-        run: pnpm exec prettier apps/api/src/moderation.postgres.test.ts | diff -u apps/api/src/moderation.postgres.test.ts - || true
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint

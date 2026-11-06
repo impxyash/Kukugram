@@ -433,10 +433,9 @@ integration("PostgreSQL moderation guarantees", () => {
       "SELECT id FROM content.posts WHERE author_id = $1",
       [deletedUser.userId]
     );
-    const survivingPost = await database().query(
-      "SELECT id FROM content.posts WHERE id = $1",
-      [survivingPostId]
-    );
+    const survivingPost = await database().query("SELECT id FROM content.posts WHERE id = $1", [
+      survivingPostId
+    ]);
     const deletedComments = await database().query(
       "SELECT id FROM content.comments WHERE id = ANY($1::uuid[])",
       [[deletedAuthorCommentId, deletedPostCommentId]]
