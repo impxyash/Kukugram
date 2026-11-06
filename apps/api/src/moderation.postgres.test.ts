@@ -259,7 +259,6 @@ integration("PostgreSQL moderation guarantees", () => {
     }
   });
 
-
   it("serializes concurrent appeal submissions and records only one appeal", async () => {
     const appellant = await seedAdmin();
     const reportId = randomUUID();
@@ -303,7 +302,14 @@ integration("PostgreSQL moderation guarantees", () => {
     const foreignClosedReport = randomUUID();
     await database().query(
       "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, status) VALUES ($1, $2, 'profile', $3, 'spam', 'open'), ($4, $5, 'profile', $6, 'spam', 'resolved')",
-      [ownedOpenReport, appellant.userId, randomUUID(), foreignClosedReport, otherUser.userId, randomUUID()]
+      [
+        ownedOpenReport,
+        appellant.userId,
+        randomUUID(),
+        foreignClosedReport,
+        otherUser.userId,
+        randomUUID()
+      ]
     );
     const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
     const app = buildApp(config, appPool);
