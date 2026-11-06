@@ -374,6 +374,61 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     return reply.code(204).send();
   });
 
+  app.post("/reports", async (request, reply) => {
+    const current = await requireViewer(request);
+    const input = z.object({
+      targetType: z.enum(["profile", "post", "comment"]),
+      targetId: z.string().uuid(),
+      category: z.enum(["harassment", "spam", "impersonation", "self_harm", "violence", "nudity", "copyright", "other"]),
+      details: z.string().trim().max(1000).optional()
+    }).parse(request.body);
+
+    let targetOwnerId: string | null = null;
+    if (input.targetType === "profile") {
+      const target = await app.pool.query<{ userId: string }>(
+        "SELECT user_id AS \"userId\" FROM social.profiles WHERE user_id = $1",
+        [input.targetId]
+      );
+      targetOwnerId = target.rows[0]?.userId ?? null;
+    } else if (input.targetType === "post") {
+      const target = await app.pool.query<{ authorId: string }>(
+        "SELECT author_id AS \"authorId\" FROM content.posts WHERE id = $1 AND deleted_at IS NULL",
+        [input.targetId]
+      );
+      targetOwnerId = target.rows[0]?.authorId ?? null;
+      if (targetOwnerId && !(await canViewPost(request, input.targetId, current.id))) targetOwnerId = null;
+    } else {
+      const target = await app.pool.query<{ authorId: string; postId: string }>(
+        "SELECT author_id AS \"authorId\", post_id AS \"postId\" FROM content.comments WHERE id = $1",
+        [input.targetId]
+      );
+      targetOwnerId = target.rows[0]?.authorId ?? null;
+      if (targetOwnerId && !(await canViewPost(request, target.rows[0]!.postId, current.id))) targetOwnerId = null;
+    }
+
+    if (!targetOwnerId) throw Object.assign(new Error("Report target not found."), { statusCode: 404 });
+    if (targetOwnerId === current.id) throw Object.assign(new Error("You cannot report your own content."), { statusCode: 400 });
+
+    const reportId = randomUUID();
+    const inserted = await app.pool.query<{ id: string }>(
+      `INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, details)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (reporter_id, target_type, target_id)
+         WHERE status IN ('open', 'reviewing')
+       DO NOTHING
+       RETURNING id`,
+      [reportId, current.id, input.targetType, input.targetId, input.category, input.details ?? null]
+    );
+    const caseId = inserted.rows[0]?.id ?? (await app.pool.query<{ id: string }>(
+      `SELECT id FROM moderation.reports
+       WHERE reporter_id = $1 AND target_type = $2 AND target_id = $3
+         AND status IN ('open', 'reviewing') LIMIT 1`,
+      [current.id, input.targetType, input.targetId]
+    )).rows[0]?.id;
+
+    return reply.code(202).send({ reportId: caseId, status: "open" });
+  });
+
   app.get("/feed", async (request) => {
     const current = await requireViewer(request);
     const result = await app.pool.query<PostRow>(`${postSelect()} WHERE p.deleted_at IS NULL
