@@ -517,6 +517,21 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     return { reports: result.rows };
   });
 
+  app.get("/moderation/reports/:id", async (request) => {
+    await requireModerationRole(request, ["moderator", "admin"]);
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const result = await app.pool.query(
+      `SELECT id, target_type AS "targetType", target_id AS "targetId",
+        category, details, status, created_at AS "createdAt",
+        updated_at AS "updatedAt"
+       FROM moderation.reports WHERE id = $1`,
+      [params.id]
+    );
+    const report = result.rows[0];
+    if (!report) throw Object.assign(new Error("Report not found."), { statusCode: 404 });
+    return { report };
+  });
+
   app.patch("/moderation/reports/:id", async (request, reply) => {
     const actor = await requireModerationRole(request, ["moderator", "admin"]);
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
@@ -638,6 +653,20 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
        WHERE a.status = 'open' ORDER BY a.created_at ASC LIMIT 100`
     );
     return { appeals: result.rows };
+  });
+
+  app.get("/moderation/appeals/:id", async (request) => {
+    await requireModerationRole(request, ["moderator", "admin"]);
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const result = await app.pool.query(
+      `SELECT id, report_id AS "reportId", details, status,
+        created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM moderation.appeals WHERE id = $1`,
+      [params.id]
+    );
+    const appeal = result.rows[0];
+    if (!appeal) throw Object.assign(new Error("Appeal not found."), { statusCode: 404 });
+    return { appeal };
   });
 
   app.patch("/moderation/appeals/:id", async (request, reply) => {
