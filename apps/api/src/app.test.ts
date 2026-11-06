@@ -110,6 +110,14 @@ describe("social privacy authorization", () => {
         if (sql.includes("FROM identity.sessions")) {
           return { rows: [{ id: viewerId, email: "viewer@example.test" }], rowCount: 1 };
         }
+        if (sql.includes("SELECT (pr.privacy <> 'private'")) {
+          return {
+            rows: [{
+              allowed: (options.privacy === "public" || options.accepted === true) && options.blocked !== true
+            }],
+            rowCount: 1
+          };
+        }
         if (sql.includes("FROM social.profiles p JOIN identity.users u")) {
           return {
             rows: [{
@@ -177,6 +185,44 @@ describe("social privacy authorization", () => {
     const feedQuery = pool.statements.find((sql) => sql.includes("FROM content.posts p"));
     expect(feedQuery).toContain("social.mutes");
     expect(feedQuery).toContain("social.blocks");
+    await app.close();
+  });
+
+  it("denies private post comments to viewers without an accepted follow", async () => {
+    const pool = makePool({ privacy: "private", accepted: false });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/posts/00000000-0000-4000-8000-000000000003/comments",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("allows private post comments to accepted followers", async () => {
+    const pool = makePool({ privacy: "private", accepted: true });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/posts/00000000-0000-4000-8000-000000000003/comments",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(pool.statements.some((sql) => sql.includes("f.status = 'accepted'"))).toBe(true);
+    await app.close();
+  });
+
+  it("denies private post comments even when a follow exists if either side blocked", async () => {
+    const pool = makePool({ privacy: "private", accepted: true, blocked: true });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/posts/00000000-0000-4000-8000-000000000003/comments",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(404);
+    expect(pool.statements.some((sql) => sql.includes("social.blocks"))).toBe(true);
     await app.close();
   });
 
