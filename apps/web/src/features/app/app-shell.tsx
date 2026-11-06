@@ -991,38 +991,78 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
             <option value="dismissed">Dismissed</option>
           </select>
         </label>
-        {reports.length ? reports.map((report) => (
-          <article className="person" key={report.id}>
-            <div>
-              <strong>{report.category.replaceAll("_", " ")} · {report.targetType}</strong>
-              <span>Reported by @{report.reporterHandle} · {new Date(report.createdAt).toLocaleString()}</span>
-              {report.details && <p>{report.details}</p>}
-              <span className="status">{report.status}</span>
-            </div>
-            {report.status !== "resolved" && report.status !== "dismissed" && (
-              <div className="inline-actions">
-                <button disabled={busy === report.id} onClick={() => void updateReport(report.id, "reviewing")}>Review</button>
-                <button disabled={busy === report.id} onClick={() => void updateReport(report.id, "resolved")}>Resolve</button>
-                <button disabled={busy === report.id} onClick={() => void updateReport(report.id, "dismissed")}>Dismiss</button>
+        {reports.length ? (
+          reports.map((report) => (
+            <article className="person" key={report.id}>
+              <div>
+                <strong>
+                  {report.category.replaceAll("_", " ")} · {report.targetType}
+                </strong>
+                <span>
+                  Reported by @{report.reporterHandle} ·{" "}
+                  {new Date(report.createdAt).toLocaleString()}
+                </span>
+                {report.details && <p>{report.details}</p>}
+                <span className="status">{report.status}</span>
               </div>
-            )}
-          </article>
-        )) : <p>No reports in this queue.</p>}
+              {report.status !== "resolved" && report.status !== "dismissed" && (
+                <div className="inline-actions">
+                  <button
+                    disabled={busy === report.id}
+                    onClick={() => void updateReport(report.id, "reviewing")}
+                  >
+                    Review
+                  </button>
+                  <button
+                    disabled={busy === report.id}
+                    onClick={() => void updateReport(report.id, "resolved")}
+                  >
+                    Resolve
+                  </button>
+                  <button
+                    disabled={busy === report.id}
+                    onClick={() => void updateReport(report.id, "dismissed")}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+            </article>
+          ))
+        ) : (
+          <p>No reports in this queue.</p>
+        )}
       </section>
       <section className="settings-section">
         <p className="eyebrow">Appeals</p>
-        {appeals.length ? appeals.map((appeal) => (
-          <article className="person" key={appeal.id}>
-            <div>
-              <strong>@{appeal.appellantHandle} · Case {appeal.reportId.slice(0, 8)}</strong>
-              <span>{appeal.details}</span>
-            </div>
-            <div className="inline-actions">
-              <button disabled={busy === appeal.id} onClick={() => void reviewAppeal(appeal.id, "accepted")}>Accept</button>
-              <button disabled={busy === appeal.id} onClick={() => void reviewAppeal(appeal.id, "rejected")}>Reject</button>
-            </div>
-          </article>
-        )) : <p>No open appeals.</p>}
+        {appeals.length ? (
+          appeals.map((appeal) => (
+            <article className="person" key={appeal.id}>
+              <div>
+                <strong>
+                  @{appeal.appellantHandle} · Case {appeal.reportId.slice(0, 8)}
+                </strong>
+                <span>{appeal.details}</span>
+              </div>
+              <div className="inline-actions">
+                <button
+                  disabled={busy === appeal.id}
+                  onClick={() => void reviewAppeal(appeal.id, "accepted")}
+                >
+                  Accept
+                </button>
+                <button
+                  disabled={busy === appeal.id}
+                  onClick={() => void reviewAppeal(appeal.id, "rejected")}
+                >
+                  Reject
+                </button>
+              </div>
+            </article>
+          ))
+        ) : (
+          <p>No open appeals.</p>
+        )}
       </section>
     </>
   );
@@ -1075,7 +1115,9 @@ function Settings({
   }, []);
 
   async function submitAppeal(reportId: string) {
-    const details = window.prompt("Explain why this report decision should be reconsidered (20–2000 characters):");
+    const details = window.prompt(
+      "Explain why this report decision should be reconsidered (20–2000 characters):"
+    );
     if (!details) return;
     try {
       await request(`/reports/${reportId}/appeals`, {
@@ -1273,15 +1315,19 @@ function Settings({
       </section>
       <section className="account-note">
         <p className="eyebrow">Your appeals</p>
-        {appealHistory.length ? appealHistory.map((appeal) => (
-          <article className="person" key={appeal.id}>
-            <div>
-              <strong>Case {appeal.reportId.slice(0, 8)}</strong>
-              <span>{new Date(appeal.createdAt).toLocaleDateString()}</span>
-            </div>
-            <span className="status">{appeal.status}</span>
-          </article>
-        )) : <p>You have not submitted any appeals.</p>}
+        {appealHistory.length ? (
+          appealHistory.map((appeal) => (
+            <article className="person" key={appeal.id}>
+              <div>
+                <strong>Case {appeal.reportId.slice(0, 8)}</strong>
+                <span>{new Date(appeal.createdAt).toLocaleDateString()}</span>
+              </div>
+              <span className="status">{appeal.status}</span>
+            </article>
+          ))
+        ) : (
+          <p>You have not submitted any appeals.</p>
+        )}
       </section>
       <section className="account-note">
         <p className="eyebrow">Account</p>
