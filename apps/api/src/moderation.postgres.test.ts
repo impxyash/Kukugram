@@ -136,6 +136,37 @@ integration("PostgreSQL moderation guarantees", () => {
     expect(persisted.rows).toEqual([{ action: "integration.audit_test" }]);
   });
 
+  it("preserves historical audit identifiers when an account is deleted", async () => {
+    const actorId = randomUUID();
+    const reportId = randomUUID();
+    const eventId = randomUUID();
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+      actorId,
+      `${actorId}@retention.test`
+    ]);
+    await database().query(
+      "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category) VALUES ($1, $2, 'profile', $3, 'spam')",
+      [reportId, actorId, randomUUID()]
+    );
+    await database().query(
+      "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, subject_user_id) VALUES ($1, $2, 'integration.account_deleted', $3, $2)",
+      [eventId, actorId, reportId]
+    );
+
+    await database().query("DELETE FROM identity.users WHERE id = $1", [actorId]);
+
+    const event = await database().query(
+      'SELECT actor_id AS "actorId", report_id AS "reportId", subject_user_id AS "subjectUserId" FROM moderation.audit_events WHERE id = $1',
+      [eventId]
+    );
+    expect(event.rows).toEqual([{ actorId, reportId, subjectUserId: actorId }]);
+    const deletedReport = await database().query(
+      "SELECT id FROM moderation.reports WHERE id = $1",
+      [reportId]
+    );
+    expect(deletedReport.rowCount).toBe(0);
+  });
+
   it("rolls back a report decision when its audit insert fails", async () => {
     const admin = await seedAdmin();
     const reportId = randomUUID();
