@@ -309,30 +309,27 @@ describe("social privacy authorization", () => {
     await app.close();
   });
 
-  it(
-    "returns the existing open case when the same reporter submits a duplicate report",
-    async () => {
-      const pool = makePool({ duplicateReport: true, reportStatus: "reviewing" });
-      const app = appWithPool(pool);
-      const response = await app.inject({
-        method: "POST",
-        url: "/v1/reports",
-        headers: { cookie },
-        payload: { targetType: "profile", targetId, category: "spam" }
-      });
-      expect(response.statusCode).toBe(202);
-      expect(response.json()).toMatchObject({
-        reportId: "00000000-0000-4000-8000-000000000004",
-        status: "reviewing"
-      });
-      expect(
-        pool.statements.some((sql) =>
-          sql.includes("ON CONFLICT (reporter_id, target_type, target_id)")
-        )
-      ).toBe(true);
-      await app.close();
-    }
-  );
+  it("returns the existing open case when the same reporter submits a duplicate report", async () => {
+    const pool = makePool({ duplicateReport: true, reportStatus: "reviewing" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/reports",
+      headers: { cookie },
+      payload: { targetType: "profile", targetId, category: "spam" }
+    });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      reportId: "00000000-0000-4000-8000-000000000004",
+      status: "reviewing"
+    });
+    expect(
+      pool.statements.some((sql) =>
+        sql.includes("ON CONFLICT (reporter_id, target_type, target_id)")
+      )
+    ).toBe(true);
+    await app.close();
+  });
 
   it("accepts a report for another user's profile and creates a moderation case", async () => {
     const pool = makePool();
@@ -462,9 +459,9 @@ describe("social privacy authorization", () => {
     });
     expect(response.statusCode).toBe(409);
     expect(pool.statements.some((sql) => sql.includes("UPDATE moderation.reports"))).toBe(false);
-    expect(
-      pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))
-    ).toBe(false);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(
+      false
+    );
     expect(pool.statements).toContain("ROLLBACK");
     await app.close();
   });
@@ -550,9 +547,9 @@ describe("social privacy authorization", () => {
     expect(
       pool.statements.some((sql) => sql.includes("DELETE FROM moderation.moderator_roles"))
     ).toBe(true);
-    expect(
-      pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))
-    ).toBe(true);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(
+      true
+    );
     expect(pool.statements).toContain("COMMIT");
     await app.close();
   });
@@ -609,12 +606,12 @@ describe("social privacy authorization", () => {
       payload: { details: "I believe this decision was incorrect." }
     });
     expect(response.statusCode).toBe(202);
-    expect(
-      pool.statements.some((sql) => sql.includes("INSERT INTO moderation.appeals"))
-    ).toBe(true);
-    expect(
-      pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))
-    ).toBe(true);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.appeals"))).toBe(
+      true
+    );
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(
+      true
+    );
     expect(pool.statements).toContain("COMMIT");
     await app.close();
   });
