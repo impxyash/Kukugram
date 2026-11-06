@@ -1,0 +1,34 @@
+name: Format moderation routes
+
+on:
+  push:
+    branches: [feature/privacy-controls]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.ref == 'refs/heads/feature/privacy-controls' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/privacy-controls
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/api/src/modules/social/routes.ts
+      - name: Commit formatted routes
+        run: |
+          if [[ -n "$(git status --short)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add apps/api/src/modules/social/routes.ts
+            git commit -m "chore: format moderation route error handling"
+            git push origin HEAD:feature/privacy-controls
+          fi
