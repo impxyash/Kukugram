@@ -26,7 +26,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
 }
 
-async function reportContent(targetType: "profile" | "post", targetId: string, onError: (message: string) => void) {
+async function reportContent(targetType: "profile" | "post" | "comment", targetId: string, onError: (message: string) => void) {
   const category = window.prompt("Report reason: harassment, spam, impersonation, self_harm, violence, nudity, copyright, other", "spam");
   if (!category) return;
   const details = window.prompt("Additional context (optional, up to 1000 characters):") ?? "";
