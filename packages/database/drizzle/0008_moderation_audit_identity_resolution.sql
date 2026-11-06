@@ -4,11 +4,11 @@ CREATE TABLE moderation.audit_identity_resolution_log (
   requester_user_id uuid,
   actor_ref uuid NOT NULL,
   purpose_scope varchar(96) NOT NULL
-    CHECK (purpose_scope ~ '^moderation\\.audit\\.[a-z0-9_.-]{1,64}$'),
+    CHECK (purpose_scope ~ '^moderation\.audit\.[a-z0-9_.-]{1,64}$'),
   reason varchar(500) NOT NULL
     CHECK (length(btrim(reason)) >= 20),
   outcome varchar(24) NOT NULL
-    CHECK (outcome IN ('denied_role', 'denied_step_up', 'resolved', 'not_found')),
+    CHECK (outcome IN ('invalid_request', 'denied_role', 'denied_step_up', 'resolved', 'not_found')),
   request_id varchar(128) NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -41,7 +41,7 @@ DECLARE
   resolved_user_id uuid;
 BEGIN
   IF p_actor_ref IS NULL OR p_purpose_scope IS NULL
-     OR p_purpose_scope !~ '^moderation\\.audit\\.[a-z0-9_.-]{1,64}$' THEN
+     OR p_purpose_scope !~ '^moderation\.audit\.[a-z0-9_.-]{1,64}$' THEN
     RAISE EXCEPTION 'Invalid audit identity reference';
   END IF;
 
