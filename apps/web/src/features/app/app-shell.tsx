@@ -962,9 +962,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
     setExpandedAppeal(id);
     if (appealDetails[id] !== undefined) return;
     try {
-      const result = await request<{ appeal: { details: string } }>(
-        `/moderation/appeals/${id}`
-      );
+      const result = await request<{ appeal: { details: string } }>(`/moderation/appeals/${id}`);
       setAppealDetails((current) => ({ ...current, [id]: result.appeal.details }));
     } catch (reason) {
       onError((reason as Error).message);
