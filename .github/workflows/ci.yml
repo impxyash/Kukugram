@@ -32,10 +32,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Diagnose formatter output
-        run: |
-          pnpm exec prettier --write apps/api/src/moderation.postgres.test.ts apps/web/src/features/app/app-shell.tsx
-          git diff -- apps/api/src/moderation.postgres.test.ts apps/web/src/features/app/app-shell.tsx
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
