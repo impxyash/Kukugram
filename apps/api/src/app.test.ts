@@ -137,6 +137,15 @@ describe("social privacy authorization", () => {
         if (sql.includes("ORDER BY user_id FOR UPDATE")) {
           return { rows: [{ userId: targetId }], rowCount: 1 };
         }
+        if (sql.includes("SELECT status FROM moderation.reports WHERE id = $1 FOR UPDATE")) {
+          return { rows: [{ status: "open" }], rowCount: 1 };
+        }
+        if (sql.includes('SELECT report_id AS "reportId", status FROM moderation.appeals')) {
+          return {
+            rows: [{ reportId: "00000000-0000-4000-8000-000000000004", status: "open" }],
+            rowCount: 1
+          };
+        }
         if (sql.includes("FROM moderation.moderator_roles")) {
           const allowedRoles = values?.[1] as string[] | undefined;
           const allowed = Boolean(
@@ -385,6 +394,42 @@ describe("social privacy authorization", () => {
       headers: { cookie }
     });
     expect(response.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it("records moderator report decisions in the audit log", async () => {
+    const pool = makePool({ moderatorRole: "moderator" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/reports/00000000-0000-4000-8000-000000000004",
+      headers: { cookie },
+      payload: { status: "resolved", note: "Reviewed by safety team." }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(pool.statements.some((sql) => sql.includes("UPDATE moderation.reports"))).toBe(true);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(
+      true
+    );
+    expect(pool.statements).toContain("COMMIT");
+    await app.close();
+  });
+
+  it("records appeal decisions in the audit log", async () => {
+    const pool = makePool({ moderatorRole: "moderator" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/v1/moderation/appeals/00000000-0000-4000-8000-000000000005",
+      headers: { cookie },
+      payload: { status: "accepted" }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(pool.statements.some((sql) => sql.includes("UPDATE moderation.appeals"))).toBe(true);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))).toBe(
+      true
+    );
+    expect(pool.statements).toContain("COMMIT");
     await app.close();
   });
 
