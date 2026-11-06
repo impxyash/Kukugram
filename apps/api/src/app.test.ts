@@ -135,9 +135,13 @@ describe("social privacy authorization", () => {
         statements.push(sql);
         parameters.push(values ?? []);
         if (sql.includes("FROM moderation.moderator_roles")) {
+          const allowedRoles = values?.[1] as string[] | undefined;
+          const allowed = Boolean(
+            options.moderatorRole && allowedRoles?.includes(options.moderatorRole)
+          );
           return {
-            rows: options.moderatorRole ? [{ role: options.moderatorRole }] : [],
-            rowCount: options.moderatorRole ? 1 : 0
+            rows: allowed ? [{ role: options.moderatorRole }] : [],
+            rowCount: allowed ? 1 : 0
           };
         }
         if (sql.includes("FROM identity.sessions")) {
