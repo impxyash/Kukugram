@@ -513,7 +513,9 @@ describe("social privacy authorization", () => {
     const appealUpdate = pool.statements.findIndex((sql) =>
       sql.includes("UPDATE moderation.appeals")
     );
-    const auditInsert = pool.statements.findIndex((sql) => sql.includes("INSERT INTO moderation.audit_events"));
+    const auditInsert = pool.statements.findIndex((sql) =>
+      sql.includes("INSERT INTO moderation.audit_events")
+    );
     const commit = pool.statements.indexOf("COMMIT");
     expect(appealUpdate).toBeGreaterThanOrEqual(0);
     expect(appealUpdate).toBeLessThan(auditInsert);
