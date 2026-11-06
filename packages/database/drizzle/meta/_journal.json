@@ -36,6 +36,13 @@
       "when": 1794000002000,
       "tag": "0004_moderation_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794000003000,
+      "tag": "0005_immutable_audit_references",
+      "breakpoints": true
     }
   ]
 }
