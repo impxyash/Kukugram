@@ -878,6 +878,67 @@ integration("PostgreSQL moderation guarantees", () => {
     }
   });
 
+  it("uses stable purpose-scoped actor references for new audit events", async () => {
+    const admin = await seedAdmin();
+    const reportId = randomUUID();
+    await database().query(
+      "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category) VALUES ($1, $2, 'profile', $3, 'spam')",
+      [reportId, admin.userId, randomUUID()]
+    );
+
+    const scopeRefs = await database().query<{
+      first: string;
+      repeated: string;
+      otherPurpose: string;
+    }>(
+      "SELECT moderation.resolve_audit_actor_ref($1, 'moderation.audit.actor.v1') AS first, moderation.resolve_audit_actor_ref($1, 'moderation.audit.actor.v1') AS repeated, moderation.resolve_audit_actor_ref($1, 'moderation.audit.export.v1') AS \"otherPurpose\"",
+      [admin.userId]
+    );
+    const refs = scopeRefs.rows[0];
+    expect(refs).toBeDefined();
+    expect(refs?.first).toEqual(expect.any(String));
+    expect(refs?.first).toBe(refs?.repeated);
+    expect(refs?.first).not.toBe(refs?.otherPurpose);
+    expect(refs?.first).not.toBe(admin.userId);
+
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+    try {
+      const decision = await app.inject({
+        method: "PATCH",
+        url: `/v1/moderation/reports/${reportId}`,
+        headers: { cookie: admin.cookie },
+        payload: { status: "reviewing" }
+      });
+      expect(decision.statusCode).toBe(200);
+
+      const stored = await database().query<{
+        actorId: string | null;
+        actorRef: string | null;
+      }>(
+        'SELECT actor_id AS "actorId", actor_ref AS "actorRef" FROM moderation.audit_events WHERE report_id = $1 AND action = \'report.status_changed\'',
+        [reportId]
+      );
+      expect(stored.rows).toHaveLength(1);
+      expect(stored.rows[0]?.actorId).toBeNull();
+      expect(stored.rows[0]?.actorRef).toEqual(expect.any(String));
+      expect(stored.rows[0]?.actorRef).not.toBe(admin.userId);
+
+      const response = await app.inject({
+        method: "GET",
+        url: `/v1/moderation/audit?reportId=${reportId}`,
+        headers: { cookie: admin.cookie }
+      });
+      expect(response.statusCode).toBe(200);
+      const event = response.json<{ events: Record<string, unknown>[] }>().events[0];
+      expect(event).toMatchObject({ actorRef: stored.rows[0]?.actorRef, caseRef: reportId });
+      expect(response.payload).not.toContain(admin.userId);
+      expect(response.payload).not.toContain("actorId");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("redacts legacy actor UUIDs and free-text notes from the admin audit API", async () => {
     const admin = await seedAdmin();
     const reportId = randomUUID();
@@ -911,7 +972,7 @@ integration("PostgreSQL moderation guarantees", () => {
         .events.find((entry) => entry.id === eventId);
       expect(event).toBeDefined();
       expect(Object.keys(event ?? {}).sort()).toEqual(
-        ["action", "caseRef", "createdAt", "id", "metadata"].sort()
+        ["action", "actorRef", "caseRef", "createdAt", "id", "metadata"].sort()
       );
       expect(event?.metadata).toEqual({ from: "open", to: "resolved" });
       expect(response.payload).not.toContain(admin.userId);
