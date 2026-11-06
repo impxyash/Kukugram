@@ -17,6 +17,8 @@ ALTER TABLE moderation.audit_events
 CREATE INDEX moderation_audit_by_actor_ref
   ON moderation.audit_events (actor_ref, created_at DESC);
 
+REVOKE ALL ON TABLE moderation.audit_actor_identity_map FROM PUBLIC;
+
 CREATE FUNCTION moderation.resolve_audit_actor_ref(
   p_actor_user_id uuid,
   p_purpose_scope varchar
