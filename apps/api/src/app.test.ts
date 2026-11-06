@@ -134,6 +134,9 @@ describe("social privacy authorization", () => {
       query: vi.fn((sql: string, values?: unknown[]) => {
         statements.push(sql);
         parameters.push(values ?? []);
+        if (sql.includes("ORDER BY user_id FOR UPDATE")) {
+          return { rows: [{ userId: targetId }], rowCount: 1 };
+        }
         if (sql.includes("FROM moderation.moderator_roles")) {
           const allowedRoles = values?.[1] as string[] | undefined;
           const allowed = Boolean(
@@ -397,6 +400,21 @@ describe("social privacy authorization", () => {
     expect(
       pool.statements.some((sql) => sql.includes("DELETE FROM moderation.moderator_roles"))
     ).toBe(false);
+    await app.close();
+  });
+
+  it("prevents revoking the only remaining administrator", async () => {
+    const pool = makePool({ moderatorRole: "admin" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/v1/moderation/roles/${targetId}/admin`,
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(409);
+    expect(pool.statements.some((sql) => sql.includes("DELETE FROM moderation.moderator_roles"))).toBe(
+      false
+    );
     await app.close();
   });
 
