@@ -277,11 +277,18 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
   app.delete("/me/follow-requests/:handle", async (request, reply) => {
     const current = await requireViewer(request);
     const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
-    await app.pool.query(
+    const rejected = await app.pool.query<{ follower_id: string }>(
       `DELETE FROM social.follows f USING social.profiles p
-       WHERE f.follower_id = p.user_id AND p.handle = $1 AND f.followee_id = $2 AND f.status = 'pending'`,
+       WHERE f.follower_id = p.user_id AND p.handle = $1 AND f.followee_id = $2 AND f.status = 'pending'
+       RETURNING f.follower_id`,
       [handle, current.id]
     );
+    if (rejected.rowCount) {
+      await app.pool.query(
+        "DELETE FROM notifications.notifications WHERE recipient_id = $1 AND actor_id = $2 AND type = 'follow_request'",
+        [current.id, rejected.rows[0]!.follower_id]
+      );
+    }
     return reply.code(204).send();
   });
 
