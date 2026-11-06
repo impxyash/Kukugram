@@ -419,13 +419,12 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
        RETURNING id`,
       [reportId, current.id, input.targetType, input.targetId, input.category, input.details ?? null]
     );
-    const existing = inserted.rows[0] ? null : (await app.pool.query<{ id: string; status: string }>(
+    const existing = inserted.rows[0] ? null : await app.pool.query<{ id: string; status: string }>(
       `SELECT id, status FROM moderation.reports
        WHERE reporter_id = $1 AND target_type = $2 AND target_id = $3
          AND status IN ('open', 'reviewing') LIMIT 1`,
       [current.id, input.targetType, input.targetId]
-    )).rows[0]?.id;
-
+    );
     const caseId = inserted.rows[0]?.id ?? existing?.rows[0]?.id;
     const caseStatus = inserted.rows[0] ? "open" : existing?.rows[0]?.status;
     return reply.code(202).send({ reportId: caseId, status: caseStatus ?? "open" });
