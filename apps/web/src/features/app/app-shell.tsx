@@ -1033,24 +1033,24 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                 <>
                   {busy === report.id && <p role="status">Saving report decision...</p>}
                   <div className="inline-actions">
-                  <button
-                    disabled={busy === report.id}
-                    onClick={() => void updateReport(report.id, "reviewing")}
-                  >
-                    Review
-                  </button>
-                  <button
-                    disabled={busy === report.id}
-                    onClick={() => void updateReport(report.id, "resolved")}
-                  >
-                    Resolve
-                  </button>
-                  <button
-                    disabled={busy === report.id}
-                    onClick={() => void updateReport(report.id, "dismissed")}
-                  >
-                    Dismiss
-                  </button>
+                    <button
+                      disabled={busy === report.id}
+                      onClick={() => void updateReport(report.id, "reviewing")}
+                    >
+                      Review
+                    </button>
+                    <button
+                      disabled={busy === report.id}
+                      onClick={() => void updateReport(report.id, "resolved")}
+                    >
+                      Resolve
+                    </button>
+                    <button
+                      disabled={busy === report.id}
+                      onClick={() => void updateReport(report.id, "dismissed")}
+                    >
+                      Dismiss
+                    </button>
                   </div>
                 </>
               )}
