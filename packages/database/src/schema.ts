@@ -180,6 +180,7 @@ export const moderatorRoles = moderation.table(
 export const moderationAuditEvents = moderation.table("audit_events", {
   id: uuid("id").primaryKey(),
   actorId: uuid("actor_id"),
+  actorRef: uuid("actor_ref"),
   action: varchar("action", { length: 48 }).notNull(),
   reportId: uuid("report_id"),
   subjectUserId: uuid("subject_user_id"),
