@@ -62,9 +62,7 @@ type ReportRecord = {
   createdAt: string;
 };
 type ModerationReport = ReportRecord & {
-  targetId: string;
-  details: string | null;
-  reporterHandle: string | null;
+  targetType: string;
   updatedAt: string;
 };
 type AppealRecord = {
@@ -77,9 +75,8 @@ type AppealRecord = {
 type ModerationAppeal = {
   id: string;
   reportId: string;
-  appellantHandle: string | null;
-  details: string;
   status: string;
+  createdAt: string;
 };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -93,10 +90,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error(problem?.title ?? "Something went wrong. Please try again.");
   }
   return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
-}
-
-function moderationAccountLabel(handle: string | null): string {
-  return handle ? `@${handle}` : "Deleted account";
 }
 
 async function reportContent(
@@ -1035,11 +1028,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                 <strong>
                   {report.category.replaceAll("_", " ")} · {report.targetType}
                 </strong>
-                <span>
-                  Reported by {moderationAccountLabel(report.reporterHandle)} ·{" "}
-                  {new Date(report.createdAt).toLocaleString()}
-                </span>
-                {report.details && <p>{report.details}</p>}
+                <span>{new Date(report.createdAt).toLocaleString()}</span>
                 <span className="status">{report.status}</span>
               </div>
               {report.status !== "resolved" && report.status !== "dismissed" && (
@@ -1086,11 +1075,8 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
           appeals.map((appeal) => (
             <article className="person" key={appeal.id} aria-busy={busy === appeal.id}>
               <div>
-                <strong>
-                  {moderationAccountLabel(appeal.appellantHandle)} · Case{" "}
-                  {appeal.reportId.slice(0, 8)}
-                </strong>
-                <span>{appeal.details}</span>
+                <strong>Case {appeal.reportId.slice(0, 8)}</strong>
+                <span>{new Date(appeal.createdAt).toLocaleString()}</span>
               </div>
               {busy === appeal.id && <p role="status">Saving appeal decision...</p>}
               <div className="inline-actions">
