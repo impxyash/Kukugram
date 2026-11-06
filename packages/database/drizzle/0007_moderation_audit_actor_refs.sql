@@ -3,7 +3,7 @@
 -- so account deletion does not rewrite historical attribution.
 CREATE TABLE moderation.audit_actor_identity_map (
   purpose_scope varchar(96) NOT NULL
-    CHECK (purpose_scope ~ '^moderation\\.audit\\.[a-z0-9_.-]{1,64}$'),
+    CHECK (purpose_scope ~ '^moderation\.audit\.[a-z0-9_.-]{1,64}$'),
   actor_user_id uuid NOT NULL,
   actor_ref uuid NOT NULL DEFAULT gen_random_uuid(),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -33,7 +33,7 @@ BEGIN
   END IF;
 
   IF p_purpose_scope IS NULL
-     OR p_purpose_scope !~ '^moderation\\.audit\\.[a-z0-9_.-]{1,64}$' THEN
+     OR p_purpose_scope !~ '^moderation\.audit\.[a-z0-9_.-]{1,64}$' THEN
     RAISE EXCEPTION 'Invalid audit identity purpose scope';
   END IF;
 
