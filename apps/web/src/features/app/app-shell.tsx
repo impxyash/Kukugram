@@ -62,7 +62,6 @@ type ReportRecord = {
   createdAt: string;
 };
 type ModerationReport = ReportRecord & {
-  targetType: string;
   updatedAt: string;
 };
 type AppealRecord = {
@@ -1070,13 +1069,18 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                 </strong>
                 <span>{new Date(report.createdAt).toLocaleString()}</span>
                 <span className="status">{report.status}</span>
-                <button className="secondary-button" onClick={() => void toggleReportDetails(report.id)}>
+                <button
+                  className="secondary-button"
+                  onClick={() => void toggleReportDetails(report.id)}
+                >
                   {expandedReport === report.id ? "Hide case details" : "View case details"}
                 </button>
                 {expandedReport === report.id && reportDetails[report.id] && (
                   <div className="account-note">
-                    <span>Target reference: {reportDetails[report.id].targetId}</span>
-                    {reportDetails[report.id].details && <p>{reportDetails[report.id].details}</p>}
+                    <span>Target reference: {reportDetails[report.id]?.targetId}</span>
+                    {reportDetails[report.id]?.details && (
+                      <p>{reportDetails[report.id]?.details}</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -1126,7 +1130,10 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
               <div>
                 <strong>Case {appeal.reportId.slice(0, 8)}</strong>
                 <span>{new Date(appeal.createdAt).toLocaleString()}</span>
-                <button className="secondary-button" onClick={() => void toggleAppealDetails(appeal.id)}>
+                <button
+                  className="secondary-button"
+                  onClick={() => void toggleAppealDetails(appeal.id)}
+                >
                   {expandedAppeal === appeal.id ? "Hide appeal details" : "View appeal details"}
                 </button>
                 {expandedAppeal === appeal.id && appealDetails[appeal.id] !== undefined && (
