@@ -520,7 +520,16 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
   app.get("/moderation/reports/:id", async (request) => {
     await requireModerationRole(request, ["moderator", "admin"]);
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
-    const result = await app.pool.query(
+    const result = await app.pool.query<{
+      id: string;
+      targetType: string;
+      targetId: string;
+      category: string;
+      details: string | null;
+      status: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
       `SELECT id, target_type AS "targetType", target_id AS "targetId",
         category, details, status, created_at AS "createdAt",
         updated_at AS "updatedAt"
@@ -658,7 +667,14 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
   app.get("/moderation/appeals/:id", async (request) => {
     await requireModerationRole(request, ["moderator", "admin"]);
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
-    const result = await app.pool.query(
+    const result = await app.pool.query<{
+      id: string;
+      reportId: string;
+      details: string;
+      status: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }>(
       `SELECT id, report_id AS "reportId", details, status,
         created_at AS "createdAt", updated_at AS "updatedAt"
        FROM moderation.appeals WHERE id = $1`,
