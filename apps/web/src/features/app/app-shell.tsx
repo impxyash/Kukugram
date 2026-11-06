@@ -74,6 +74,13 @@ type AppealRecord = {
   status: string;
   createdAt: string;
 };
+type ModerationAppeal = {
+  id: string;
+  reportId: string;
+  appellantHandle: string | null;
+  details: string;
+  status: string;
+};
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${apiUrl}/v1${path}`, {
@@ -925,9 +932,7 @@ function Profile({
 
 function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   const [reports, setReports] = useState<ModerationReport[]>([]);
-  const [appeals, setAppeals] = useState<
-    { id: string; reportId: string; appellantHandle: string | null; details: string; status: string }[]
-  >([]);
+  const [appeals, setAppeals] = useState<ModerationAppeal[]>([]);
   const [filter, setFilter] = useState("open");
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
