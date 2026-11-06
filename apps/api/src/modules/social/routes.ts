@@ -257,7 +257,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
   app.post("/me/follow-requests/:handle/accept", async (request, reply) => {
     const current = await requireViewer(request);
     const handle = z.object({ handle: z.string() }).parse(request.params).handle.toLowerCase();
-    const result = await app.pool.query(
+    const result = await app.pool.query<{ follower_id: string }>(
       `UPDATE social.follows f SET status = 'accepted'
        FROM social.profiles p WHERE f.follower_id = p.user_id AND p.handle = $1
          AND f.followee_id = $2 AND f.status = 'pending' RETURNING f.follower_id`, [handle, current.id]
