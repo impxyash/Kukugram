@@ -50,6 +50,13 @@
       "when": 1794000004000,
       "tag": "0006_moderation_pseudonymization",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794000005000,
+      "tag": "0007_moderation_audit_actor_refs",
+      "breakpoints": true
     }
   ]
 }
