@@ -48,6 +48,27 @@ describe("API", () => {
     await app.close();
   });
 
+  it("requires authentication for privacy-control endpoints", async () => {
+    const app = buildApp(config);
+    const requests = [
+      { method: "GET" as const, url: "/v1/me/blocked" },
+      { method: "GET" as const, url: "/v1/me/muted" },
+      { method: "GET" as const, url: "/v1/me/follow-requests" },
+      { method: "POST" as const, url: "/v1/users/someone/block" },
+      { method: "POST" as const, url: "/v1/users/someone/mute" },
+      { method: "POST" as const, url: "/v1/users/someone/follow" },
+      { method: "POST" as const, url: "/v1/me/follow-requests/someone/accept" },
+      { method: "DELETE" as const, url: "/v1/me/follow-requests/someone" }
+    ];
+
+    for (const request of requests) {
+      const response = await app.inject(request);
+      expect(response.statusCode, request.url).toBe(401);
+    }
+
+    await app.close();
+  });
+
   it("limits repeated authentication attempts from one IP", async () => {
     const app = buildApp(config);
     for (let attempt = 0; attempt < 10; attempt += 1) {
