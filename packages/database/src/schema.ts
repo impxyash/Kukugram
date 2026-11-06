@@ -1,4 +1,13 @@
-import { boolean, jsonb, pgSchema, primaryKey, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  jsonb,
+  pgSchema,
+  primaryKey,
+  text,
+  timestamp,
+  uuid,
+  varchar
+} from "drizzle-orm/pg-core";
 
 export const identity = pgSchema("identity");
 export const social = pgSchema("social");
@@ -33,36 +42,48 @@ export const profiles = social.table("profiles", {
   ...timestamps
 });
 
-export const follows = social.table("follows", {
-  followerId: uuid("follower_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  followeeId: uuid("followee_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  status: varchar("status", { length: 16 }).notNull().default("accepted"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-}, (table) => [primaryKey({ columns: [table.followerId, table.followeeId] })]);
+export const follows = social.table(
+  "follows",
+  {
+    followerId: uuid("follower_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    followeeId: uuid("followee_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).notNull().default("accepted"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [primaryKey({ columns: [table.followerId, table.followeeId] })]
+);
 
-export const blocks = social.table("blocks", {
-  blockerId: uuid("blocker_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  blockedId: uuid("blocked_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-}, (table) => [primaryKey({ columns: [table.blockerId, table.blockedId] })]);
+export const blocks = social.table(
+  "blocks",
+  {
+    blockerId: uuid("blocker_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    blockedId: uuid("blocked_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [primaryKey({ columns: [table.blockerId, table.blockedId] })]
+);
 
-export const mutes = social.table("mutes", {
-  muterId: uuid("muter_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  mutedId: uuid("muted_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-}, (table) => [primaryKey({ columns: [table.muterId, table.mutedId] })]);
+export const mutes = social.table(
+  "mutes",
+  {
+    muterId: uuid("muter_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mutedId: uuid("muted_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [primaryKey({ columns: [table.muterId, table.mutedId] })]
+);
 
 export const posts = content.table("posts", {
   id: uuid("id").primaryKey(),

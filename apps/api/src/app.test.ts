@@ -53,7 +53,15 @@ describe("API", () => {
     const app = buildApp(config);
     const requests = [
       { method: "GET" as const, url: "/v1/me/blocked" },
-      { method: "POST" as const, url: "/v1/reports", payload: { targetType: "profile", targetId: "00000000-0000-0000-0000-000000000001", category: "spam" } },
+      {
+        method: "POST" as const,
+        url: "/v1/reports",
+        payload: {
+          targetType: "profile",
+          targetId: "00000000-0000-0000-0000-000000000001",
+          category: "spam"
+        }
+      },
       { method: "GET" as const, url: "/v1/me/muted" },
       { method: "GET" as const, url: "/v1/me/reports" },
       { method: "GET" as const, url: "/v1/me/follow-requests" },
@@ -93,14 +101,15 @@ describe("API", () => {
   });
 });
 
-
 describe("social privacy authorization", () => {
   const viewerId = "00000000-0000-4000-8000-000000000001";
   const targetId = "00000000-0000-4000-8000-000000000002";
   const token = "test-session-token";
   const cookie = `session=${token}`;
 
-  function makePool(options: { blocked?: boolean; privacy?: "public" | "private"; accepted?: boolean } = {}) {
+  function makePool(
+    options: { blocked?: boolean; privacy?: "public" | "private"; accepted?: boolean } = {}
+  ) {
     const statements: string[] = [];
     const parameters: unknown[][] = [];
     const pool = {
@@ -114,32 +123,38 @@ describe("social privacy authorization", () => {
         }
         if (sql.includes("SELECT (pr.privacy <> 'private'")) {
           return {
-            rows: [{
-              allowed: (options.privacy === "public" || options.accepted === true) && options.blocked !== true
-            }],
+            rows: [
+              {
+                allowed:
+                  (options.privacy === "public" || options.accepted === true) &&
+                  options.blocked !== true
+              }
+            ],
             rowCount: 1
           };
         }
         if (sql.includes("FROM social.profiles p JOIN identity.users u")) {
           return {
-            rows: [{
-              id: targetId,
-              handle: "target_user",
-              displayName: "Target User",
-              bio: "Private bio",
-              avatarUrl: null,
-              followers: "0",
-              following: "0",
-              isFollowing: options.accepted ?? false,
-              isRequested: false,
-              privacy: options.privacy ?? "private",
-              canViewContent: options.privacy === "public" || options.accepted === true,
-              isBlocked: options.blocked ?? false
-            }],
+            rows: [
+              {
+                id: targetId,
+                handle: "target_user",
+                displayName: "Target User",
+                bio: "Private bio",
+                avatarUrl: null,
+                followers: "0",
+                following: "0",
+                isFollowing: options.accepted ?? false,
+                isRequested: false,
+                privacy: options.privacy ?? "private",
+                canViewContent: options.privacy === "public" || options.accepted === true,
+                isBlocked: options.blocked ?? false
+              }
+            ],
             rowCount: 1
           };
         }
-        if (sql.includes("SELECT user_id AS \"userId\" FROM social.profiles")) {
+        if (sql.includes('SELECT user_id AS "userId" FROM social.profiles')) {
           return { rows: [{ userId: targetId }], rowCount: 1 };
         }
         if (sql.includes("INSERT INTO moderation.reports")) {
@@ -162,7 +177,11 @@ describe("social privacy authorization", () => {
   it("returns private profile metadata without granting private content access", async () => {
     const pool = makePool({ privacy: "private" });
     const app = appWithPool(pool);
-    const response = await app.inject({ method: "GET", url: "/v1/users/target_user", headers: { cookie } });
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/users/target_user",
+      headers: { cookie }
+    });
     expect(response.statusCode).toBe(200);
     expect(response.json<{ user: { canViewContent: boolean } }>().user.canViewContent).toBe(false);
     await app.close();
@@ -171,7 +190,11 @@ describe("social privacy authorization", () => {
   it("hides a profile when either account has blocked the viewer", async () => {
     const pool = makePool({ privacy: "public", blocked: true });
     const app = appWithPool(pool);
-    const response = await app.inject({ method: "GET", url: "/v1/users/target_user", headers: { cookie } });
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/users/target_user",
+      headers: { cookie }
+    });
     expect(response.statusCode).toBe(404);
     await app.close();
   });
@@ -179,10 +202,16 @@ describe("social privacy authorization", () => {
   it("creates a pending follow request for a private profile", async () => {
     const pool = makePool({ privacy: "private" });
     const app = appWithPool(pool);
-    const response = await app.inject({ method: "POST", url: "/v1/users/target_user/follow", headers: { cookie } });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/users/target_user/follow",
+      headers: { cookie }
+    });
     expect(response.statusCode).toBe(200);
     expect(pool.parameters.some((values) => values[2] === "pending")).toBe(true);
-    expect(pool.statements.some((sql) => sql.includes("INSERT INTO notifications.notifications"))).toBe(true);
+    expect(
+      pool.statements.some((sql) => sql.includes("INSERT INTO notifications.notifications"))
+    ).toBe(true);
     await app.close();
   });
 
@@ -256,6 +285,4 @@ describe("social privacy authorization", () => {
     expect(pool.statements.some((sql) => sql.includes("social.blocks"))).toBe(true);
     await app.close();
   });
-
-
 });

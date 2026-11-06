@@ -27,7 +27,10 @@ export function buildApp(config: ApiConfig, poolOverride?: Pool) {
   app.addHook("onClose", async () => pool.end());
 
   app.addHook("onRequest", async (request, reply) => {
-    if (request.method !== "POST" || !["/v1/auth/login", "/v1/auth/signup"].includes(request.url.split("?")[0] ?? "")) {
+    if (
+      request.method !== "POST" ||
+      !["/v1/auth/login", "/v1/auth/signup"].includes(request.url.split("?")[0] ?? "")
+    ) {
       return;
     }
 
