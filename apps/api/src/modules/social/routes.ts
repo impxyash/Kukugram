@@ -570,7 +570,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         [input.status, params.id]
       );
       await client.query(
-        "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, $3, $4, $5::jsonb)",
+        "INSERT INTO moderation.audit_events (id, actor_ref, action, report_id, details) VALUES ($1, moderation.resolve_audit_actor_ref($2, 'moderation.audit.actor.v1'), $3, $4, $5::jsonb)",
         [
           randomUUID(),
           actor.id,
@@ -620,7 +620,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         [appealId, params.id, appellant.id, input.details]
       );
       await client.query(
-        "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, 'appeal.submitted', $3, $4::jsonb)",
+        "INSERT INTO moderation.audit_events (id, actor_ref, action, report_id, details) VALUES ($1, moderation.resolve_audit_actor_ref($2, 'moderation.audit.actor.v1'), 'appeal.submitted', $3, $4::jsonb)",
         [randomUUID(), appellant.id, params.id, JSON.stringify({ appealId })]
       );
       await client.query("COMMIT");
@@ -712,7 +712,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         [input.status, reviewer.id, params.id]
       );
       await client.query(
-        "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, 'appeal.reviewed', $3, $4::jsonb)",
+        "INSERT INTO moderation.audit_events (id, actor_ref, action, report_id, details) VALUES ($1, moderation.resolve_audit_actor_ref($2, 'moderation.audit.actor.v1'), 'appeal.reviewed', $3, $4::jsonb)",
         [
           randomUUID(),
           reviewer.id,
@@ -775,7 +775,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         });
       }
       await client.query(
-        "INSERT INTO moderation.audit_events (id, actor_id, action, subject_user_id, details) VALUES ($1, $2, 'moderator.role_granted', $3, $4::jsonb)",
+        "INSERT INTO moderation.audit_events (id, actor_ref, action, subject_user_id, details) VALUES ($1, moderation.resolve_audit_actor_ref($2, 'moderation.audit.actor.v1'), 'moderator.role_granted', $3, $4::jsonb)",
         [randomUUID(), admin.id, input.userId, JSON.stringify({ role: input.role })]
       );
       await client.query("COMMIT");
@@ -827,7 +827,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
         throw Object.assign(new Error("Moderator role not found."), { statusCode: 404 });
       }
       await client.query(
-        "INSERT INTO moderation.audit_events (id, actor_id, action, subject_user_id, details) VALUES ($1, $2, 'moderator.role_revoked', $3, $4::jsonb)",
+        "INSERT INTO moderation.audit_events (id, actor_ref, action, subject_user_id, details) VALUES ($1, moderation.resolve_audit_actor_ref($2, 'moderation.audit.actor.v1'), 'moderator.role_revoked', $3, $4::jsonb)",
         [randomUUID(), admin.id, params.userId, JSON.stringify({ role: params.role })]
       );
       await client.query("COMMIT");
@@ -853,7 +853,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       })
       .parse(request.query);
     const result = await app.pool.query(
-      `SELECT id, action, report_id AS "caseRef",
+      `SELECT id, action, actor_ref AS "actorRef", report_id AS "caseRef",
         CASE action
           WHEN 'report.status_changed' THEN jsonb_build_object(
             'from', details ->> 'from',
