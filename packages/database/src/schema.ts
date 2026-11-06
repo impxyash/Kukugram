@@ -1,4 +1,4 @@
-import { boolean, jsonb, pgSchema, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, jsonb, pgSchema, primaryKey, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 export const identity = pgSchema("identity");
 export const social = pgSchema("social");
@@ -41,7 +41,7 @@ export const follows = social.table("follows", {
     .references(() => users.id, { onDelete: "cascade" }),
   status: varchar("status", { length: 16 }).notNull().default("accepted"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => [primaryKey({ columns: [table.followerId, table.followeeId] })]);
 
 export const blocks = social.table("blocks", {
   blockerId: uuid("blocker_id")
@@ -51,7 +51,7 @@ export const blocks = social.table("blocks", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => [primaryKey({ columns: [table.blockerId, table.blockedId] })]);
 
 export const mutes = social.table("mutes", {
   muterId: uuid("muter_id")
@@ -61,7 +61,7 @@ export const mutes = social.table("mutes", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => [primaryKey({ columns: [table.muterId, table.mutedId] })]);
 
 export const posts = content.table("posts", {
   id: uuid("id").primaryKey(),
