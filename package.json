@@ -12,6 +12,7 @@
     "dev:web": "corepack pnpm --filter @kukugram/web dev",
     "dev:api": "corepack pnpm --filter @kukugram/api dev",
     "build": "corepack pnpm -r --if-present build",
+    "start": "corepack pnpm --filter @kukugram/web start",
     "typecheck": "corepack pnpm -r --if-present typecheck",
     "lint": "corepack pnpm -r --if-present lint",
     "test": "corepack pnpm -r --if-present test",
