@@ -11,6 +11,7 @@ type Notice = { id: string; type: "follow" | "follow_request" | "like" | "commen
 type Comment = { id: string; body: string; handle: string; displayName: string; createdAt: string };
 type FollowRequest = { id: string; handle: string; displayName: string; avatarUrl: string | null; requestedAt: string };
 type AccountControl = { id: string; handle: string; displayName: string; avatarUrl: string | null; createdAt: string };
+type ReportRecord = { id: string; targetType: string; category: string; status: string; createdAt: string };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${apiUrl}/v1${path}`, {
@@ -486,6 +487,7 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
   const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
   const [blockedUsers, setBlockedUsers] = useState<AccountControl[]>([]);
   const [mutedUsers, setMutedUsers] = useState<AccountControl[]>([]);
+  const [reportHistory, setReportHistory] = useState<ReportRecord[]>([]);
   useEffect(() => {
     void request<{ requests: FollowRequest[] }>("/me/follow-requests")
       .then((result) => setFollowRequests(result.requests))
@@ -499,6 +501,11 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
       setBlockedUsers(blocked.users);
       setMutedUsers(muted.users);
     }).catch((reason) => onError((reason as Error).message));
+  }, []);
+  useEffect(() => {
+    void request<{ reports: ReportRecord[] }>("/me/reports")
+      .then((result) => setReportHistory(result.reports))
+      .catch((reason) => onError((reason as Error).message));
   }, []);
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -578,6 +585,18 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
             }}>Unmute</button>
           </article>
         )) : <p>No muted accounts.</p>}
+      </section>
+      <section className="account-note">
+        <p className="eyebrow">Your reports</p>
+        {reportHistory.length ? reportHistory.map((report) => (
+          <article className="person" key={report.id}>
+            <div>
+              <strong>{report.category.replaceAll("_", " ")}</strong>
+              <span>{report.targetType} · {new Date(report.createdAt).toLocaleDateString()}</span>
+            </div>
+            <span className="status">{report.status}</span>
+          </article>
+        )) : <p>You have not submitted any reports.</p>}
       </section>
       <section className="account-note">
         <p className="eyebrow">Account</p>
