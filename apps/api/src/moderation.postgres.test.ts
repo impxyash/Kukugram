@@ -259,78 +259,74 @@ integration("PostgreSQL moderation guarantees", () => {
     }
   });
 
-  it(
-    "applies account-deletion retention rules to sessions, notifications, reports, appeals and audit",
-    async () => {
-      const deletedUser = await seedAdmin();
-      const survivingUser = await seedAdmin();
-      const reportId = randomUUID();
-      const appealId = randomUUID();
-      const auditId = randomUUID();
+  it("applies account-deletion retention rules to sessions, notifications, reports, appeals and audit", async () => {
+    const deletedUser = await seedAdmin();
+    const survivingUser = await seedAdmin();
+    const reportId = randomUUID();
+    const appealId = randomUUID();
+    const auditId = randomUUID();
 
-      await database().query(
-        "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, status) VALUES ($1, $2, 'profile', $3, 'spam', 'resolved')",
-        [reportId, deletedUser.userId, randomUUID()]
-      );
-      await database().query(
-        "INSERT INTO moderation.appeals (id, report_id, appellant_id, details) VALUES ($1, $2, $3, $4)",
-        [appealId, reportId, deletedUser.userId, "I request a review of this moderation decision."]
-      );
-      await database().query(
-        "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, subject_user_id) VALUES ($1, $2, 'integration.retention_test', $3, $2)",
-        [auditId, deletedUser.userId, reportId]
-      );
-      await database().query(
-        "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type) VALUES ($1, $2, $3, 'follow'), ($4, $3, $2, 'follow')",
-        [randomUUID(), survivingUser.userId, deletedUser.userId, randomUUID()]
-      );
+    await database().query(
+      "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, status) VALUES ($1, $2, 'profile', $3, 'spam', 'resolved')",
+      [reportId, deletedUser.userId, randomUUID()]
+    );
+    await database().query(
+      "INSERT INTO moderation.appeals (id, report_id, appellant_id, details) VALUES ($1, $2, $3, $4)",
+      [appealId, reportId, deletedUser.userId, "I request a review of this moderation decision."]
+    );
+    await database().query(
+      "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, subject_user_id) VALUES ($1, $2, 'integration.retention_test', $3, $2)",
+      [auditId, deletedUser.userId, reportId]
+    );
+    await database().query(
+      "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type) VALUES ($1, $2, $3, 'follow'), ($4, $3, $2, 'follow')",
+      [randomUUID(), survivingUser.userId, deletedUser.userId, randomUUID()]
+    );
 
-      await database().query("DELETE FROM identity.users WHERE id = $1", [deletedUser.userId]);
+    await database().query("DELETE FROM identity.users WHERE id = $1", [deletedUser.userId]);
 
-      const sessions = await database().query(
-        "SELECT id FROM identity.sessions WHERE user_id = $1",
-        [deletedUser.userId]
-      );
-      expect(sessions.rowCount).toBe(0);
+    const sessions = await database().query("SELECT id FROM identity.sessions WHERE user_id = $1", [
+      deletedUser.userId
+    ]);
+    expect(sessions.rowCount).toBe(0);
 
-      const roles = await database().query(
-        "SELECT user_id FROM moderation.moderator_roles WHERE user_id = $1",
-        [deletedUser.userId]
-      );
-      expect(roles.rowCount).toBe(0);
+    const roles = await database().query(
+      "SELECT user_id FROM moderation.moderator_roles WHERE user_id = $1",
+      [deletedUser.userId]
+    );
+    expect(roles.rowCount).toBe(0);
 
-      const deletedRecipientNotifications = await database().query(
-        "SELECT id FROM notifications.notifications WHERE recipient_id = $1",
-        [deletedUser.userId]
-      );
-      expect(deletedRecipientNotifications.rowCount).toBe(0);
+    const deletedRecipientNotifications = await database().query(
+      "SELECT id FROM notifications.notifications WHERE recipient_id = $1",
+      [deletedUser.userId]
+    );
+    expect(deletedRecipientNotifications.rowCount).toBe(0);
 
-      const survivingRecipientNotification = await database().query(
-        "SELECT actor_id AS \"actorId\" FROM notifications.notifications WHERE recipient_id = $1",
-        [survivingUser.userId]
-      );
-      expect(survivingRecipientNotification.rows).toEqual([{ actorId: null }]);
+    const survivingRecipientNotification = await database().query(
+      'SELECT actor_id AS "actorId" FROM notifications.notifications WHERE recipient_id = $1',
+      [survivingUser.userId]
+    );
+    expect(survivingRecipientNotification.rows).toEqual([{ actorId: null }]);
 
-      const deletedReport = await database().query(
-        "SELECT id FROM moderation.reports WHERE id = $1",
-        [reportId]
-      );
-      const deletedAppeal = await database().query(
-        "SELECT id FROM moderation.appeals WHERE id = $1",
-        [appealId]
-      );
-      expect(deletedReport.rowCount).toBe(0);
-      expect(deletedAppeal.rowCount).toBe(0);
+    const deletedReport = await database().query(
+      "SELECT id FROM moderation.reports WHERE id = $1",
+      [reportId]
+    );
+    const deletedAppeal = await database().query(
+      "SELECT id FROM moderation.appeals WHERE id = $1",
+      [appealId]
+    );
+    expect(deletedReport.rowCount).toBe(0);
+    expect(deletedAppeal.rowCount).toBe(0);
 
-      const retainedAudit = await database().query(
-        'SELECT actor_id AS "actorId", report_id AS "reportId", subject_user_id AS "subjectUserId" FROM moderation.audit_events WHERE id = $1',
-        [auditId]
-      );
-      expect(retainedAudit.rows).toEqual([
-        { actorId: deletedUser.userId, reportId, subjectUserId: deletedUser.userId }
-      ]);
-    },
-  );
+    const retainedAudit = await database().query(
+      'SELECT actor_id AS "actorId", report_id AS "reportId", subject_user_id AS "subjectUserId" FROM moderation.audit_events WHERE id = $1',
+      [auditId]
+    );
+    expect(retainedAudit.rows).toEqual([
+      { actorId: deletedUser.userId, reportId, subjectUserId: deletedUser.userId }
+    ]);
+  });
 
   it("serializes concurrent appeal submissions and records only one appeal", async () => {
     const appellant = await seedAdmin();
