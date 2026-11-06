@@ -412,9 +412,9 @@ describe("social privacy authorization", () => {
       headers: { cookie }
     });
     expect(response.statusCode).toBe(409);
-    expect(pool.statements.some((sql) => sql.includes("DELETE FROM moderation.moderator_roles"))).toBe(
-      false
-    );
+    expect(
+      pool.statements.some((sql) => sql.includes("DELETE FROM moderation.moderator_roles"))
+    ).toBe(false);
     await app.close();
   });
 
