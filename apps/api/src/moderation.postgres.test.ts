@@ -741,4 +741,78 @@ integration("PostgreSQL moderation guarantees", () => {
       await app.close();
     }
   });
+
+  it("keeps reporter and appellant identity and free text out of broad moderation queues", async () => {
+    const admin = await seedAdmin();
+    const reporterId = randomUUID();
+    const targetId = randomUUID();
+    const reportId = randomUUID();
+    const appealId = randomUUID();
+    const reporterHandle = `private_reporter_${reporterId.replaceAll("-", "").slice(0, 12)}`;
+    const reportDetails = "Reporter supplied private context that must not appear in the broad queue.";
+    const appealDetails = "Appellant supplied private context that must not appear in the broad queue.";
+
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+      reporterId,
+      `${reporterId}@queue-privacy.test`
+    ]);
+    await database().query(
+      "INSERT INTO social.profiles (user_id, handle, display_name) VALUES ($1, $2, 'Private reporter')",
+      [reporterId, reporterHandle]
+    );
+    await database().query(
+      "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, details, status) VALUES ($1, $2, 'profile', $3, 'harassment', $4, 'resolved')",
+      [reportId, reporterId, targetId, reportDetails]
+    );
+    await database().query(
+      "INSERT INTO moderation.appeals (id, report_id, appellant_id, details) VALUES ($1, $2, $3, $4)",
+      [appealId, reportId, reporterId, appealDetails]
+    );
+
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+    try {
+      const [anonymousReports, anonymousAppeals, reportQueue, appealQueue] = await Promise.all([
+        app.inject({ method: "GET", url: "/v1/moderation/reports" }),
+        app.inject({ method: "GET", url: "/v1/moderation/appeals" }),
+        app.inject({
+          method: "GET",
+          url: "/v1/moderation/reports?status=resolved",
+          headers: { cookie: admin.cookie }
+        }),
+        app.inject({
+          method: "GET",
+          url: "/v1/moderation/appeals",
+          headers: { cookie: admin.cookie }
+        })
+      ]);
+
+      expect(anonymousReports.statusCode).toBe(401);
+      expect(anonymousAppeals.statusCode).toBe(401);
+      expect(reportQueue.statusCode).toBe(200);
+      expect(appealQueue.statusCode).toBe(200);
+
+      const report = reportQueue.json<{ reports: Record<string, unknown>[] }>().reports.find(
+        (entry) => entry.id === reportId
+      );
+      const appeal = appealQueue.json<{ appeals: Record<string, unknown>[] }>().appeals.find(
+        (entry) => entry.id === appealId
+      );
+      expect(report).toBeDefined();
+      expect(appeal).toBeDefined();
+      expect(Object.keys(report ?? {}).sort()).toEqual(
+        ["category", "createdAt", "id", "status", "targetType", "updatedAt"].sort()
+      );
+      expect(Object.keys(appeal ?? {}).sort()).toEqual(
+        ["createdAt", "id", "reportId", "status"].sort()
+      );
+      expect(JSON.stringify(reportQueue.json())).not.toContain(reporterHandle);
+      expect(JSON.stringify(reportQueue.json())).not.toContain(reportDetails);
+      expect(JSON.stringify(reportQueue.json())).not.toContain(targetId);
+      expect(JSON.stringify(appealQueue.json())).not.toContain(reporterHandle);
+      expect(JSON.stringify(appealQueue.json())).not.toContain(appealDetails);
+    } finally {
+      await app.close();
+    }
+  });
 });
