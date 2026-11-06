@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
+import { loadConfig } from "./config.js";
 
 const config = {
   NODE_ENV: "test" as const,
@@ -15,6 +16,19 @@ const config = {
   APPLE_OAUTH_CLIENT_ID: undefined,
   APPLE_OAUTH_CLIENT_SECRET: undefined
 };
+
+describe("API configuration", () => {
+  it("uses Railway's injected PORT when API_PORT is not set", () => {
+    const { API_PORT: _apiPort, ...baseEnvironment } = config;
+    const railwayConfig = loadConfig({ ...baseEnvironment, PORT: "8080" });
+    expect(railwayConfig.API_PORT).toBe(8080);
+  });
+
+  it("prefers an explicit API_PORT over Railway's PORT", () => {
+    const railwayConfig = loadConfig({ ...config, PORT: "8080" });
+    expect(railwayConfig.API_PORT).toBe(3001);
+  });
+});
 
 describe("API", () => {
   it("returns a request-correlated health response", async () => {
