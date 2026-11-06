@@ -88,6 +88,17 @@ async function requireViewer(request: FastifyRequest): Promise<Viewer> {
   return current;
 }
 
+async function requireModerationRole(request: FastifyRequest, roles: readonly ("moderator" | "admin")[]) {
+  const current = await requireViewer(request);
+  const result = await request.server.pool.query<{ role: "moderator" | "admin" }>(
+    "SELECT role FROM moderation.moderator_roles WHERE user_id = $1 AND role = ANY($2::varchar[])",
+    [current.id, roles]
+  );
+  if (!result.rows.length)
+    throw Object.assign(new Error("Moderator permission is required."), { statusCode: 403 });
+  return current;
+}
+
 async function profileFor(
   request: FastifyRequest,
   handle: string,
@@ -480,6 +491,261 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       [current.id]
     );
     return { reports: result.rows };
+  });
+
+  app.get("/moderation/reports", async (request) => {
+    await requireModerationRole(request, ["moderator", "admin"]);
+    const query = z.object({
+      status: z.enum(["open", "reviewing", "resolved", "dismissed"]).optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50)
+    }).parse(request.query);
+    const result = await app.pool.query(
+      `SELECT r.id, r.target_type AS "targetType", r.target_id AS "targetId",
+        r.category, r.details, r.status, r.created_at AS "createdAt",
+        r.updated_at AS "updatedAt", r.reporter_id AS "reporterId",
+        p.handle AS "reporterHandle"
+       FROM moderation.reports r
+       JOIN social.profiles p ON p.user_id = r.reporter_id
+       WHERE ($1::varchar IS NULL OR r.status = $1)
+       ORDER BY CASE r.status WHEN 'open' THEN 0 WHEN 'reviewing' THEN 1 ELSE 2 END,
+         r.created_at ASC
+       LIMIT $2`,
+      [query.status ?? null, query.limit]
+    );
+    return { reports: result.rows };
+  });
+
+  app.patch("/moderation/reports/:id", async (request, reply) => {
+    const actor = await requireModerationRole(request, ["moderator", "admin"]);
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const input = z.object({
+      status: z.enum(["reviewing", "resolved", "dismissed"]),
+      note: z.string().trim().max(1000).optional()
+    }).parse(request.body);
+    const client = await app.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const current = await client.query<{ status: string }>(
+        "SELECT status FROM moderation.reports WHERE id = $1 FOR UPDATE",
+        [params.id]
+      );
+      const previous = current.rows[0]?.status;
+      if (!previous) {
+        await client.query("ROLLBACK");
+        throw Object.assign(new Error("Report not found."), { statusCode: 404 });
+      }
+      if (previous === "resolved" || previous === "dismissed") {
+        await client.query("ROLLBACK");
+        throw Object.assign(new Error("Closed reports cannot be changed."), { statusCode: 409 });
+      }
+      await client.query(
+        "UPDATE moderation.reports SET status = $1, updated_at = now() WHERE id = $2",
+        [input.status, params.id]
+      );
+      await client.query(
+        "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, $3, $4, $5::jsonb)",
+        [randomUUID(), actor.id, "report.status_changed", params.id, JSON.stringify({ from: previous, to: input.status, note: input.note ?? null })]
+      );
+      await client.query("COMMIT");
+      return reply.code(200).send({ reportId: params.id, status: input.status });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.post("/reports/:id/appeals", async (request, reply) => {
+    const appellant = await requireViewer(request);
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const input = z.object({ details: z.string().trim().min(20).max(2000) }).parse(request.body);
+    const report = await app.pool.query<{ status: string }>(
+      "SELECT status FROM moderation.reports WHERE id = $1 AND reporter_id = $2",
+      [params.id, appellant.id]
+    );
+    if (!report.rows[0])
+      throw Object.assign(new Error("Report not found."), { statusCode: 404 });
+    if (!["resolved", "dismissed"].includes(report.rows[0].status))
+      throw Object.assign(new Error("Only closed reports can be appealed."), { statusCode: 409 });
+    const appealId = randomUUID();
+    try {
+      await app.pool.query(
+        "INSERT INTO moderation.appeals (id, report_id, appellant_id, details) VALUES ($1, $2, $3, $4)",
+        [appealId, params.id, appellant.id, input.details]
+      );
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505")
+        throw Object.assign(new Error("An appeal has already been submitted for this report."), { statusCode: 409 });
+      throw error;
+    }
+    await app.pool.query(
+      "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, 'appeal.submitted', $3, $4::jsonb)",
+      [randomUUID(), appellant.id, params.id, JSON.stringify({ appealId })]
+    );
+    return reply.code(202).send({ appealId, status: "open" });
+  });
+
+  app.get("/me/appeals", async (request) => {
+    const appellant = await requireViewer(request);
+    const result = await app.pool.query(
+      `SELECT id, report_id AS "reportId", details, status,
+        created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM moderation.appeals WHERE appellant_id = $1
+       ORDER BY created_at DESC LIMIT 100`,
+      [appellant.id]
+    );
+    return { appeals: result.rows };
+  });
+
+  app.get("/moderation/appeals", async (request) => {
+    await requireModerationRole(request, ["moderator", "admin"]);
+    const result = await app.pool.query(
+      `SELECT a.id, a.report_id AS "reportId", a.appellant_id AS "appellantId",
+        p.handle AS "appellantHandle", a.details, a.status,
+        a.created_at AS "createdAt"
+       FROM moderation.appeals a
+       JOIN social.profiles p ON p.user_id = a.appellant_id
+       WHERE a.status = 'open' ORDER BY a.created_at ASC LIMIT 100`
+    );
+    return { appeals: result.rows };
+  });
+
+  app.patch("/moderation/appeals/:id", async (request, reply) => {
+    const reviewer = await requireModerationRole(request, ["moderator", "admin"]);
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const input = z.object({ status: z.enum(["accepted", "rejected"]) }).parse(request.body);
+    const client = await app.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const appeal = await client.query<{ reportId: string; status: string }>(
+        "SELECT report_id AS \"reportId\", status FROM moderation.appeals WHERE id = $1 FOR UPDATE",
+        [params.id]
+      );
+      const row = appeal.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        throw Object.assign(new Error("Appeal not found."), { statusCode: 404 });
+      }
+      if (row.status !== "open") {
+        await client.query("ROLLBACK");
+        throw Object.assign(new Error("This appeal has already been reviewed."), { statusCode: 409 });
+      }
+      await client.query(
+        "UPDATE moderation.appeals SET status = $1, reviewer_id = $2, reviewed_at = now(), updated_at = now() WHERE id = $3",
+        [input.status, reviewer.id, params.id]
+      );
+      await client.query(
+        "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, 'appeal.reviewed', $3, $4::jsonb)",
+        [randomUUID(), reviewer.id, row.reportId, JSON.stringify({ appealId: params.id, status: input.status })]
+      );
+      if (input.status === "accepted") {
+        await client.query(
+          "UPDATE moderation.reports SET status = 'reviewing', updated_at = now() WHERE id = $1",
+          [row.reportId]
+        );
+      }
+      await client.query("COMMIT");
+      return reply.code(200).send({ appealId: params.id, status: input.status });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.get("/moderation/roles", async (request) => {
+    await requireModerationRole(request, ["admin"]);
+    const result = await app.pool.query(
+      `SELECT r.user_id AS "userId", p.handle, r.role,
+        r.granted_by AS "grantedBy", r.granted_at AS "grantedAt"
+       FROM moderation.moderator_roles r
+       JOIN social.profiles p ON p.user_id = r.user_id
+       ORDER BY r.role, p.handle`
+    );
+    return { roles: result.rows };
+  });
+
+  app.post("/moderation/roles", async (request, reply) => {
+    const admin = await requireModerationRole(request, ["admin"]);
+    const input = z.object({
+      userId: z.string().uuid(),
+      role: z.enum(["moderator", "admin"])
+    }).parse(request.body);
+    const client = await app.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const inserted = await client.query(
+        "INSERT INTO moderation.moderator_roles (user_id, role, granted_by) SELECT id, $2, $3 FROM identity.users WHERE id = $1 AND is_active ON CONFLICT DO NOTHING RETURNING user_id",
+        [input.userId, input.role, admin.id]
+      );
+      if (!inserted.rowCount) {
+        await client.query("ROLLBACK");
+        throw Object.assign(new Error("Active user not found or role already assigned."), { statusCode: 409 });
+      }
+      await client.query(
+        "INSERT INTO moderation.audit_events (id, actor_id, action, subject_user_id, details) VALUES ($1, $2, 'moderator.role_granted', $3, $4::jsonb)",
+        [randomUUID(), admin.id, input.userId, JSON.stringify({ role: input.role })]
+      );
+      await client.query("COMMIT");
+      return reply.code(201).send({ userId: input.userId, role: input.role });
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.delete("/moderation/roles/:userId/:role", async (request, reply) => {
+    const admin = await requireModerationRole(request, ["admin"]);
+    const params = z.object({
+      userId: z.string().uuid(),
+      role: z.enum(["moderator", "admin"])
+    }).parse(request.params);
+    if (params.userId === admin.id && params.role === "admin")
+      throw Object.assign(new Error("You cannot revoke your own admin role."), { statusCode: 409 });
+    const client = await app.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const removed = await client.query(
+        "DELETE FROM moderation.moderator_roles WHERE user_id = $1 AND role = $2 RETURNING user_id",
+        [params.userId, params.role]
+      );
+      if (!removed.rowCount) {
+        await client.query("ROLLBACK");
+        throw Object.assign(new Error("Moderator role not found."), { statusCode: 404 });
+      }
+      await client.query(
+        "INSERT INTO moderation.audit_events (id, actor_id, action, subject_user_id, details) VALUES ($1, $2, 'moderator.role_revoked', $3, $4::jsonb)",
+        [randomUUID(), admin.id, params.userId, JSON.stringify({ role: params.role })]
+      );
+      await client.query("COMMIT");
+      return reply.code(204).send();
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.get("/moderation/audit", async (request) => {
+    await requireModerationRole(request, ["admin"]);
+    const query = z.object({
+      reportId: z.string().uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50)
+    }).parse(request.query);
+    const result = await app.pool.query(
+      `SELECT id, actor_id AS "actorId", action, report_id AS "reportId",
+        subject_user_id AS "subjectUserId", details, created_at AS "createdAt"
+       FROM moderation.audit_events
+       WHERE ($1::uuid IS NULL OR report_id = $1)
+       ORDER BY created_at DESC LIMIT $2`,
+      [query.reportId ?? null, query.limit]
+    );
+    return { events: result.rows };
   });
 
   app.post("/reports", async (request, reply) => {
