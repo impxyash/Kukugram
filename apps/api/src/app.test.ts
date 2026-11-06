@@ -158,10 +158,16 @@ describe("social privacy authorization", () => {
           return { rows: [{ userId: options.targetOwnerId ?? targetId }], rowCount: 1 };
         }
         if (sql.includes("UPDATE social.follows f SET status = 'accepted'")) {
-          return { rows: options.followRequest ? [{ follower_id: targetId }] : [], rowCount: options.followRequest ? 1 : 0 };
+          return {
+            rows: options.followRequest ? [{ follower_id: targetId }] : [],
+            rowCount: options.followRequest ? 1 : 0
+          };
         }
         if (sql.includes("DELETE FROM social.follows f USING social.profiles p")) {
-          return { rows: options.followRequest ? [{ follower_id: targetId }] : [], rowCount: options.followRequest ? 1 : 0 };
+          return {
+            rows: options.followRequest ? [{ follower_id: targetId }] : [],
+            rowCount: options.followRequest ? 1 : 0
+          };
         }
         if (sql.includes("INSERT INTO moderation.reports")) {
           return { rows: [{ id: "00000000-0000-4000-8000-000000000004" }], rowCount: 1 };
@@ -263,7 +269,9 @@ describe("social privacy authorization", () => {
       headers: { cookie }
     });
     expect(response.statusCode).toBe(204);
-    const update = pool.statements.findIndex((sql) => sql.includes("UPDATE social.follows f SET status = 'accepted'"));
+    const update = pool.statements.findIndex((sql) =>
+      sql.includes("UPDATE social.follows f SET status = 'accepted'")
+    );
     expect(update).toBeGreaterThanOrEqual(0);
     expect(pool.parameters[update]).toEqual(["target_user", viewerId]);
     expect(pool.statements.some((sql) => sql.includes("type = 'follow_request'"))).toBe(true);
@@ -280,7 +288,9 @@ describe("social privacy authorization", () => {
       headers: { cookie }
     });
     expect(response.statusCode).toBe(204);
-    const deletion = pool.statements.findIndex((sql) => sql.includes("DELETE FROM social.follows f USING social.profiles p"));
+    const deletion = pool.statements.findIndex((sql) =>
+      sql.includes("DELETE FROM social.follows f USING social.profiles p")
+    );
     expect(deletion).toBeGreaterThanOrEqual(0);
     expect(pool.parameters[deletion]).toEqual(["target_user", viewerId]);
     expect(pool.statements.some((sql) => sql.includes("type = 'follow_request'"))).toBe(true);
@@ -301,7 +311,9 @@ describe("social privacy authorization", () => {
       }
     });
     expect(response.statusCode).toBe(400);
-    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.reports"))).toBe(false);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.reports"))).toBe(
+      false
+    );
     await app.close();
   });
 
