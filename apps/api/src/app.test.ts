@@ -69,7 +69,12 @@ describe("API", () => {
       { method: "POST" as const, url: "/v1/users/someone/mute" },
       { method: "POST" as const, url: "/v1/users/someone/follow" },
       { method: "POST" as const, url: "/v1/me/follow-requests/someone/accept" },
-      { method: "DELETE" as const, url: "/v1/me/follow-requests/someone" }
+      { method: "DELETE" as const, url: "/v1/me/follow-requests/someone" },
+      { method: "GET" as const, url: "/v1/moderation/reports" },
+      { method: "GET" as const, url: "/v1/moderation/appeals" },
+      { method: "GET" as const, url: "/v1/moderation/roles" },
+      { method: "GET" as const, url: "/v1/moderation/audit" },
+      { method: "POST" as const, url: "/v1/reports/00000000-0000-4000-8000-000000000004/appeals", payload: { details: "I believe this decision was incorrect." } }
     ];
 
     for (const request of requests) {
@@ -114,6 +119,7 @@ describe("social privacy authorization", () => {
       accepted?: boolean;
       targetOwnerId?: string;
       followRequest?: boolean;
+      moderatorRole?: "moderator" | "admin";
     } = {}
   ) {
     const statements: string[] = [];
@@ -124,6 +130,12 @@ describe("social privacy authorization", () => {
       query: vi.fn((sql: string, values?: unknown[]) => {
         statements.push(sql);
         parameters.push(values ?? []);
+        if (sql.includes("FROM moderation.moderator_roles")) {
+          return {
+            rows: options.moderatorRole ? [{ role: options.moderatorRole }] : [],
+            rowCount: options.moderatorRole ? 1 : 0
+          };
+        }
         if (sql.includes("FROM identity.sessions")) {
           return { rows: [{ id: viewerId, email: "viewer@example.test" }], rowCount: 1 };
         }
@@ -318,6 +330,60 @@ describe("social privacy authorization", () => {
     });
     expect(response.statusCode).toBe(400);
     expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.reports"))).toBe(
+      false
+    );
+    await app.close();
+  });
+
+  it("denies ordinary users access to the moderation queue", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/moderation/reports",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(403);
+    expect(pool.statements.some((sql) => sql.includes("FROM moderation.reports r"))).toBe(false);
+    await app.close();
+  });
+
+  it("allows a moderator to read the moderation queue", async () => {
+    const pool = makePool({ moderatorRole: "moderator" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/moderation/reports?status=open&limit=20",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(pool.statements.some((sql) => sql.includes("FROM moderation.reports r"))).toBe(true);
+    await app.close();
+  });
+
+  it("denies non-admin users access to moderator role management", async () => {
+    const pool = makePool({ moderatorRole: "moderator" });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/moderation/roles",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(403);
+    await app.close();
+  });
+
+  it("does not allow a user to appeal another reporter's case", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/reports/00000000-0000-4000-8000-000000000004/appeals",
+      headers: { cookie },
+      payload: { details: "I believe this decision was incorrect." }
+    });
+    expect(response.statusCode).toBe(404);
+    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.appeals"))).toBe(
       false
     );
     await app.close();
