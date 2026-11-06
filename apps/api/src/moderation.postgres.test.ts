@@ -95,7 +95,13 @@ integration("PostgreSQL moderation guarantees", () => {
   it("upgrades populated moderation cases without losing records or identity-link control", async () => {
     if (!migrationUpgradeFixture) throw new Error("Migration upgrade fixture was not created.");
     const { userId, reportId, appealId } = migrationUpgradeFixture;
-    const beforeDeletion = await database().query(
+    const beforeDeletion = await database().query<{
+      reporterId: string | null;
+      reporterPseudonymId: string;
+      appellantId: string | null;
+      appellantPseudonymId: string;
+      details: string;
+    }>(
       `SELECT r.reporter_id AS "reporterId",
         r.reporter_pseudonym_id AS "reporterPseudonymId",
         a.appellant_id AS "appellantId",
@@ -122,7 +128,13 @@ integration("PostgreSQL moderation guarantees", () => {
 
     await database().query("DELETE FROM identity.users WHERE id = $1", [userId]);
 
-    const afterDeletion = await database().query(
+    const afterDeletion = await database().query<{
+      reporterId: string | null;
+      reporterPseudonymId: string;
+      appellantId: string | null;
+      appellantPseudonymId: string;
+      details: string;
+    }>(
       `SELECT r.reporter_id AS "reporterId",
         r.reporter_pseudonym_id AS "reporterPseudonymId",
         a.appellant_id AS "appellantId",
@@ -136,9 +148,9 @@ integration("PostgreSQL moderation guarantees", () => {
     expect(afterDeletion.rows).toEqual([
       {
         reporterId: null,
-        reporterPseudonymId: beforeDeletion.rows[0]!.reporterPseudonymId,
+        reporterPseudonymId: beforeDeletion.rows[0].reporterPseudonymId,
         appellantId: null,
-        appellantPseudonymId: beforeDeletion.rows[0]!.appellantPseudonymId,
+        appellantPseudonymId: beforeDeletion.rows[0].appellantPseudonymId,
         details: "Legacy appeal submitted before pseudonymization migration."
       }
     ]);
@@ -291,7 +303,10 @@ integration("PostgreSQL moderation guarantees", () => {
       [eventId]
     );
     expect(event.rows).toEqual([{ actorId, reportId, subjectUserId: actorId }]);
-    const retainedReport = await database().query(
+    const retainedReport = await database().query<{
+      reporterId: string | null;
+      reporterPseudonymId: string;
+    }>(
       'SELECT reporter_id AS "reporterId", reporter_pseudonym_id AS "reporterPseudonymId" FROM moderation.reports WHERE id = $1',
       [reportId]
     );
@@ -431,11 +446,17 @@ integration("PostgreSQL moderation guarantees", () => {
     );
     expect(survivingRecipientNotification.rows).toEqual([{ actorId: null }]);
 
-    const retainedReport = await database().query(
+    const retainedReport = await database().query<{
+      reporterId: string | null;
+      reporterPseudonymId: string;
+    }>(
       'SELECT reporter_id AS "reporterId", reporter_pseudonym_id AS "reporterPseudonymId" FROM moderation.reports WHERE id = $1',
       [reportId]
     );
-    const retainedAppeal = await database().query(
+    const retainedAppeal = await database().query<{
+      appellantId: string | null;
+      appellantPseudonymId: string;
+    }>(
       'SELECT appellant_id AS "appellantId", appellant_pseudonym_id AS "appellantPseudonymId" FROM moderation.appeals WHERE id = $1',
       [appealId]
     );
@@ -466,11 +487,11 @@ integration("PostgreSQL moderation guarantees", () => {
       expect(reportQueue.payload).toContain(reportId);
       expect(appealQueue.payload).toContain(appealId);
       expect(
-        (reportQueue.json() as { reports: { reporterHandle: string | null }[] }).reports[0]
+        reportQueue.json<{ reports: { reporterHandle: string | null }[] }>().reports[0]
           ?.reporterHandle
       ).toBeNull();
       expect(
-        (appealQueue.json() as { appeals: { appellantHandle: string | null }[] }).appeals[0]
+        appealQueue.json<{ appeals: { appellantHandle: string | null }[] }>().appeals[0]
           ?.appellantHandle
       ).toBeNull();
     } finally {
