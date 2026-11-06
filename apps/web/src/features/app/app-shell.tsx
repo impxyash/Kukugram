@@ -9,6 +9,7 @@ type User = { id: string; handle: string; displayName: string; bio: string | nul
 type Post = { id: string; body: string; createdAt: string; handle: string; displayName: string; avatarUrl: string | null; likeCount: string; commentCount: string; likedByViewer: boolean; authorId: string };
 type Notice = { id: string; type: "follow" | "follow_request" | "like" | "comment"; postId: string | null; createdAt: string; readAt: string | null; handle: string | null; displayName: string | null };
 type Comment = { id: string; body: string; handle: string; displayName: string; createdAt: string };
+type FollowRequest = { id: string; handle: string; displayName: string; avatarUrl: string | null; requestedAt: string };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${apiUrl}/v1${path}`, {
@@ -441,6 +442,12 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
   const [privacy, setPrivacy] = useState(user.privacy);
   const [saved, setSaved] = useState(false);
+  const [followRequests, setFollowRequests] = useState<FollowRequest[]>([]);
+  useEffect(() => {
+    void request<{ requests: FollowRequest[] }>("/me/follow-requests")
+      .then((result) => setFollowRequests(result.requests))
+      .catch((reason) => onError((reason as Error).message));
+  }, []);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -473,6 +480,25 @@ function Settings({ user, setUser, onError }: { user: User; setUser: (user: User
         <button className="primary-button">Save profile</button>
         {saved && <p className="success">Profile saved.</p>}
       </form>
+      <section className="account-note">
+        <p className="eyebrow">Follow requests</p>
+        {followRequests.length ? followRequests.map((item) => (
+          <article className="person" key={item.id}>
+            <Avatar user={{ displayName: item.displayName, avatarUrl: item.avatarUrl }} />
+            <div><strong>{item.displayName}</strong><span>@{item.handle}</span></div>
+            <button className="primary-button" onClick={() => {
+              void request(`/me/follow-requests/${item.handle}/accept`, { method: "POST" })
+                .then(() => setFollowRequests((items) => items.filter((entry) => entry.id !== item.id)))
+                .catch((reason) => onError((reason as Error).message));
+            }}>Accept</button>
+            <button className="secondary-button" onClick={() => {
+              void request(`/me/follow-requests/${item.handle}`, { method: "DELETE" })
+                .then(() => setFollowRequests((items) => items.filter((entry) => entry.id !== item.id)))
+                .catch((reason) => onError((reason as Error).message));
+            }}>Decline</button>
+          </article>
+        )) : <p>No pending follow requests.</p>}
+      </section>
       <section className="account-note">
         <p className="eyebrow">Account</p>
         <p>Sessions use opaque, secure cookies. Password changes and image uploads are not available in this phase.</p>
