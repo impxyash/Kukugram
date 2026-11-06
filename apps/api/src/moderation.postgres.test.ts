@@ -11,6 +11,14 @@ import { hashSessionToken } from "./platform/auth/session.js";
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 
+type ModerationCaseRow = {
+  reporterId: string | null;
+  reporterPseudonymId: string;
+  appellantId: string | null;
+  appellantPseudonymId: string;
+  details: string;
+};
+
 integration("PostgreSQL moderation guarantees", () => {
   const pepper = "postgres-integration-test-pepper-long-enough";
   const config = loadConfig({
@@ -95,13 +103,7 @@ integration("PostgreSQL moderation guarantees", () => {
   it("upgrades populated moderation cases without losing records or identity-link control", async () => {
     if (!migrationUpgradeFixture) throw new Error("Migration upgrade fixture was not created.");
     const { userId, reportId, appealId } = migrationUpgradeFixture;
-    const beforeDeletion = await database().query<{
-      reporterId: string | null;
-      reporterPseudonymId: string;
-      appellantId: string | null;
-      appellantPseudonymId: string;
-      details: string;
-    }>(
+    const beforeDeletion = await database().query<ModerationCaseRow>(
       `SELECT r.reporter_id AS "reporterId",
         r.reporter_pseudonym_id AS "reporterPseudonymId",
         a.appellant_id AS "appellantId",
@@ -122,19 +124,11 @@ integration("PostgreSQL moderation guarantees", () => {
     expect(beforeRow.reporterPseudonymId).not.toBe(userId);
     expect(beforeRow.appellantPseudonymId).not.toBe(userId);
     expect(beforeRow.reporterPseudonymId).not.toBe(beforeRow.appellantPseudonymId);
-    expect(beforeRow.details).toBe(
-      "Legacy appeal submitted before pseudonymization migration."
-    );
+    expect(beforeRow.details).toBe("Legacy appeal submitted before pseudonymization migration.");
 
     await database().query("DELETE FROM identity.users WHERE id = $1", [userId]);
 
-    const afterDeletion = await database().query<{
-      reporterId: string | null;
-      reporterPseudonymId: string;
-      appellantId: string | null;
-      appellantPseudonymId: string;
-      details: string;
-    }>(
+    const afterDeletion = await database().query<ModerationCaseRow>(
       `SELECT r.reporter_id AS "reporterId",
         r.reporter_pseudonym_id AS "reporterPseudonymId",
         a.appellant_id AS "appellantId",
@@ -148,9 +142,9 @@ integration("PostgreSQL moderation guarantees", () => {
     expect(afterDeletion.rows).toEqual([
       {
         reporterId: null,
-        reporterPseudonymId: beforeDeletion.rows[0].reporterPseudonymId,
+        reporterPseudonymId: beforeRow.reporterPseudonymId,
         appellantId: null,
-        appellantPseudonymId: beforeDeletion.rows[0].appellantPseudonymId,
+        appellantPseudonymId: beforeRow.appellantPseudonymId,
         details: "Legacy appeal submitted before pseudonymization migration."
       }
     ]);
