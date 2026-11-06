@@ -875,13 +875,27 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.post("/moderation/audit/resolve-actor", async (request, reply) => {
     const current = await requireViewer(request);
-    const input = z.object({
+    const raw = request.body && typeof request.body === "object" ? request.body as Record<string, unknown> : {};
+    const parsed = z.object({
       actorRef: z.string().uuid(),
       reason: z.string().trim().min(20).max(500),
       password: z.string().min(1).max(128)
-    }).strict().parse(request.body);
-
+    }).strict().safeParse(raw);
     const requestId = request.id;
+    if (!parsed.success) {
+      const safeActorRef = typeof raw.actorRef === "string" && /^[0-9a-f-]{36}$/i.test(raw.actorRef)
+        ? raw.actorRef
+        : "00000000-0000-0000-0000-000000000000";
+      const safeReason = typeof raw.reason === "string" && raw.reason.trim().length >= 20
+        ? raw.reason.trim().slice(0, 500)
+        : "[invalid or missing resolution reason]";
+      await app.pool.query(
+        "INSERT INTO moderation.audit_identity_resolution_log (requester_user_id, actor_ref, purpose_scope, reason, outcome, request_id) VALUES ($1, $2, 'moderation.audit.actor.v1', $3, 'invalid_request', $4)",
+        [current.id, safeActorRef, safeReason, requestId]
+      );
+      throw Object.assign(new Error("A valid audit identity resolution request is required."), { statusCode: 400 });
+    }
+    const input = parsed.data;
     const role = await app.pool.query<{ role: string }>(
       "SELECT role FROM moderation.moderator_roles WHERE user_id = $1 AND role = 'admin'",
       [current.id]
