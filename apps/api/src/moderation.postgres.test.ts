@@ -763,12 +763,33 @@ integration("PostgreSQL moderation guarantees", () => {
       [appealId, reportId, reporterId, appealDetails]
     );
 
+    const ordinaryUserId = randomUUID();
+    const ordinaryToken = randomUUID();
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+      ordinaryUserId,
+      `${ordinaryUserId}@ordinary-queue.test`
+    ]);
+    await database().query(
+      "INSERT INTO identity.sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '10 minutes')",
+      [randomUUID(), ordinaryUserId, hashSessionToken(ordinaryToken, pepper)]
+    );
+
     const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
     const app = buildApp(config, appPool);
     try {
-      const [anonymousReports, anonymousAppeals, reportQueue, appealQueue] = await Promise.all([
+      const [anonymousReports, anonymousAppeals, ordinaryReports, ordinaryAppeals, reportQueue, appealQueue] = await Promise.all([
         app.inject({ method: "GET", url: "/v1/moderation/reports" }),
         app.inject({ method: "GET", url: "/v1/moderation/appeals" }),
+        app.inject({
+          method: "GET",
+          url: "/v1/moderation/reports",
+          headers: { cookie: `session=${ordinaryToken}` }
+        }),
+        app.inject({
+          method: "GET",
+          url: "/v1/moderation/appeals",
+          headers: { cookie: `session=${ordinaryToken}` }
+        }),
         app.inject({
           method: "GET",
           url: "/v1/moderation/reports?status=resolved",
@@ -783,6 +804,8 @@ integration("PostgreSQL moderation guarantees", () => {
 
       expect(anonymousReports.statusCode).toBe(401);
       expect(anonymousAppeals.statusCode).toBe(401);
+      expect(ordinaryReports.statusCode).toBe(403);
+      expect(ordinaryAppeals.statusCode).toBe(403);
       expect(reportQueue.statusCode).toBe(200);
       expect(appealQueue.statusCode).toBe(200);
 
