@@ -180,6 +180,7 @@ integration("PostgreSQL moderation guarantees", () => {
   });
 
   it("never removes both administrators during concurrent role revocations", async () => {
+    await database().query("DELETE FROM moderation.moderator_roles WHERE role = 'admin'");
     const first = await seedAdmin();
     const second = await seedAdmin();
     const appPool = new Pool({ connectionString: databaseUrl, max: 8 });
