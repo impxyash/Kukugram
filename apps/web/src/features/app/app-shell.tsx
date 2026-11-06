@@ -1046,6 +1046,7 @@ function Settings({
   const [blockedUsers, setBlockedUsers] = useState<AccountControl[]>([]);
   const [mutedUsers, setMutedUsers] = useState<AccountControl[]>([]);
   const [reportHistory, setReportHistory] = useState<ReportRecord[]>([]);
+  const [appealHistory, setAppealHistory] = useState<AppealRecord[]>([]);
   useEffect(() => {
     void request<{ requests: FollowRequest[] }>("/me/follow-requests")
       .then((result) => setFollowRequests(result.requests))
@@ -1067,6 +1068,26 @@ function Settings({
       .then((result) => setReportHistory(result.reports))
       .catch((reason) => onError((reason as Error).message));
   }, []);
+  useEffect(() => {
+    void request<{ appeals: AppealRecord[] }>("/me/appeals")
+      .then((result) => setAppealHistory(result.appeals))
+      .catch((reason) => onError((reason as Error).message));
+  }, []);
+
+  async function submitAppeal(reportId: string) {
+    const details = window.prompt("Explain why this report decision should be reconsidered (20–2000 characters):");
+    if (!details) return;
+    try {
+      await request(`/reports/${reportId}/appeals`, {
+        method: "POST",
+        body: JSON.stringify({ details })
+      });
+      const result = await request<{ appeals: AppealRecord[] }>("/me/appeals");
+      setAppealHistory(result.appeals);
+    } catch (reason) {
+      onError((reason as Error).message);
+    }
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1238,11 +1259,29 @@ function Settings({
                 </span>
               </div>
               <span className="status">{report.status}</span>
+              {(report.status === "resolved" || report.status === "dismissed") &&
+                !appealHistory.some((appeal) => appeal.reportId === report.id) && (
+                  <button className="secondary-button" onClick={() => void submitAppeal(report.id)}>
+                    Appeal decision
+                  </button>
+                )}
             </article>
           ))
         ) : (
           <p>You have not submitted any reports.</p>
         )}
+      </section>
+      <section className="account-note">
+        <p className="eyebrow">Your appeals</p>
+        {appealHistory.length ? appealHistory.map((appeal) => (
+          <article className="person" key={appeal.id}>
+            <div>
+              <strong>Case {appeal.reportId.slice(0, 8)}</strong>
+              <span>{new Date(appeal.createdAt).toLocaleDateString()}</span>
+            </div>
+            <span className="status">{appeal.status}</span>
+          </article>
+        )) : <p>You have not submitted any appeals.</p>}
       </section>
       <section className="account-note">
         <p className="eyebrow">Account</p>
