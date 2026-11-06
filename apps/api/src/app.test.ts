@@ -159,7 +159,10 @@ describe("social privacy authorization", () => {
         if (sql.includes("SELECT id, status FROM moderation.reports")) {
           return {
             rows: [
-              { id: "00000000-0000-4000-8000-000000000004", status: options.reportStatus ?? "reviewing" }
+              {
+                id: "00000000-0000-4000-8000-000000000004",
+                status: options.reportStatus ?? "reviewing"
+              }
             ],
             rowCount: 1
           };
@@ -306,7 +309,9 @@ describe("social privacy authorization", () => {
     await app.close();
   });
 
-  it("returns the existing open case when the same reporter submits a duplicate report", async () => {
+  it(
+    "returns the existing open case when the same reporter submits a duplicate report",
+    async () => {
     const pool = makePool({ duplicateReport: true, reportStatus: "reviewing" });
     const app = appWithPool(pool);
     const response = await app.inject({
@@ -585,7 +590,9 @@ describe("social privacy authorization", () => {
       payload: { details: "I believe this decision was incorrect." }
     });
     expect(response.statusCode).toBe(202);
-    expect(pool.statements.some((sql) => sql.includes("INSERT INTO moderation.appeals"))).toBe(true);
+    expect(
+      pool.statements.some((sql) => sql.includes("INSERT INTO moderation.appeals"))
+    ).toBe(true);
     expect(
       pool.statements.some((sql) => sql.includes("INSERT INTO moderation.audit_events"))
     ).toBe(true);
