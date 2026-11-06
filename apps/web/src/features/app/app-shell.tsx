@@ -318,7 +318,19 @@ function PostCard({ post, user, onChange, onDelete, onError }: { post: Post; use
       </div>
       {comments && (
         <div className="comments">
-          {comments.map((item) => <p key={item.id}><b>{item.displayName}</b> <span>@{item.handle}</span> {item.body}</p>)}
+          {comments.map((item) => (
+            <p key={item.id}>
+              <b>{item.displayName}</b> <span>@{item.handle}</span> {item.body}
+              {item.handle !== user.handle && (
+                <button
+                  className="secondary-button"
+                  onClick={() => { void reportContent("comment", item.id, onError); }}
+                >
+                  Report
+                </button>
+              )}
+            </p>
+          ))}
           <form onSubmit={(event) => { void addComment(event); }}>
             <input value={comment} onChange={(event) => setComment(event.target.value)} maxLength={1000} placeholder="Add to the conversation" />
             <button>Send</button>
