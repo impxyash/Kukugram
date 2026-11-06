@@ -5,6 +5,7 @@ export const social = pgSchema("social");
 export const platform = pgSchema("platform");
 export const content = pgSchema("content");
 export const notifications = pgSchema("notifications");
+export const moderation = pgSchema("moderation");
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -127,4 +128,18 @@ export const outboxEvents = platform.table("outbox_events", {
   payload: jsonb("payload").notNull(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   publishedAt: timestamp("published_at", { withTimezone: true })
+});
+
+export const reports = moderation.table("reports", {
+  id: uuid("id").primaryKey(),
+  reporterId: uuid("reporter_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  targetType: varchar("target_type", { length: 16 }).notNull(),
+  targetId: uuid("target_id").notNull(),
+  category: varchar("category", { length: 24 }).notNull(),
+  details: varchar("details", { length: 1000 }),
+  status: varchar("status", { length: 16 }).notNull().default("open"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
