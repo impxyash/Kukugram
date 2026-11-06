@@ -247,10 +247,16 @@ integration("PostgreSQL moderation guarantees", () => {
   it("restricts audit identity resolution to admins with step-up and records every attempt", async () => {
     const admin = await seedAdmin();
     const moderator = await seedAdmin();
-    await database().query("UPDATE moderation.moderator_roles SET role = 'moderator' WHERE user_id = $1", [moderator.userId]);
+    await database().query(
+      "UPDATE moderation.moderator_roles SET role = 'moderator' WHERE user_id = $1",
+      [moderator.userId]
+    );
     const actorId = randomUUID();
     const actorRef = randomUUID();
-    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [actorId, `${actorId}@identity-resolution.test`]);
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+      actorId,
+      `${actorId}@identity-resolution.test`
+    ]);
     await database().query(
       "INSERT INTO moderation.audit_actor_identity_map (purpose_scope, actor_user_id, actor_ref) VALUES ('moderation.audit.actor.v1', $1, $2)",
       [actorId, actorRef]
@@ -259,15 +265,21 @@ integration("PostgreSQL moderation guarantees", () => {
     const app = buildApp(config, appPool);
     try {
       const moderatorAttempt = await app.inject({
-        method: "POST", url: "/v1/moderation/audit/resolve-actor",
+        method: "POST",
+        url: "/v1/moderation/audit/resolve-actor",
         headers: { cookie: moderator.cookie },
-        payload: { actorRef, reason: "Investigating a serious account safety incident", password: moderator.password }
+        payload: {
+          actorRef,
+          reason: "Investigating a serious account safety incident",
+          password: moderator.password
+        }
       });
       expect(moderatorAttempt.statusCode).toBe(403);
       expect(moderatorAttempt.payload).not.toContain(actorId);
 
       const missingReason = await app.inject({
-        method: "POST", url: "/v1/moderation/audit/resolve-actor",
+        method: "POST",
+        url: "/v1/moderation/audit/resolve-actor",
         headers: { cookie: admin.cookie },
         payload: { actorRef, password: admin.password }
       });
@@ -275,17 +287,27 @@ integration("PostgreSQL moderation guarantees", () => {
       expect(missingReason.payload).not.toContain(actorId);
 
       const badStepUp = await app.inject({
-        method: "POST", url: "/v1/moderation/audit/resolve-actor",
+        method: "POST",
+        url: "/v1/moderation/audit/resolve-actor",
         headers: { cookie: admin.cookie },
-        payload: { actorRef, reason: "Investigating a serious account safety incident", password: "incorrect-password" }
+        payload: {
+          actorRef,
+          reason: "Investigating a serious account safety incident",
+          password: "incorrect-password"
+        }
       });
       expect(badStepUp.statusCode).toBe(403);
       expect(badStepUp.payload).not.toContain(actorId);
 
       const resolved = await app.inject({
-        method: "POST", url: "/v1/moderation/audit/resolve-actor",
+        method: "POST",
+        url: "/v1/moderation/audit/resolve-actor",
         headers: { cookie: admin.cookie },
-        payload: { actorRef, reason: "Investigating a serious account safety incident", password: admin.password }
+        payload: {
+          actorRef,
+          reason: "Investigating a serious account safety incident",
+          password: admin.password
+        }
       });
       expect(resolved.statusCode).toBe(200);
       expect(resolved.json()).toEqual({ userId: actorId });
@@ -294,20 +316,30 @@ integration("PostgreSQL moderation guarantees", () => {
         "SELECT outcome, reason FROM moderation.audit_identity_resolution_log WHERE actor_ref = $1 ORDER BY created_at ASC",
         [actorRef]
       );
-      expect(attempts.rows.map(row => row.outcome)).toEqual(["denied_role", "invalid_request", "denied_step_up", "resolved"]);
-      expect(attempts.rows.every(row => row.reason.length >= 20)).toBe(true);
+      expect(attempts.rows.map((row) => row.outcome)).toEqual([
+        "denied_role",
+        "invalid_request",
+        "denied_step_up",
+        "resolved"
+      ]);
+      expect(attempts.rows.every((row) => row.reason.length >= 20)).toBe(true);
 
-      await expect(database().query(
-        "UPDATE moderation.audit_identity_resolution_log SET outcome = 'tampered' WHERE actor_ref = $1",
-        [actorRef]
-      )).rejects.toThrow("Audit identity resolution access log is append-only");
-      await expect(database().query(
-        "DELETE FROM moderation.audit_identity_resolution_log WHERE actor_ref = $1",
-        [actorRef]
-      )).rejects.toThrow("Audit identity resolution access log is append-only");
+      await expect(
+        database().query(
+          "UPDATE moderation.audit_identity_resolution_log SET outcome = 'tampered' WHERE actor_ref = $1",
+          [actorRef]
+        )
+      ).rejects.toThrow("Audit identity resolution access log is append-only");
+      await expect(
+        database().query(
+          "DELETE FROM moderation.audit_identity_resolution_log WHERE actor_ref = $1",
+          [actorRef]
+        )
+      ).rejects.toThrow("Audit identity resolution access log is append-only");
 
       const ordinaryAudit = await app.inject({
-        method: "GET", url: "/v1/moderation/audit",
+        method: "GET",
+        url: "/v1/moderation/audit",
         headers: { cookie: admin.cookie }
       });
       expect(ordinaryAudit.statusCode).toBe(200);
