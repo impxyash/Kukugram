@@ -25,6 +25,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
 }
 
+async function reportContent(targetType: "profile" | "post", targetId: string, onError: (message: string) => void) {
+  const category = window.prompt("Report reason: harassment, spam, impersonation, self_harm, violence, nudity, copyright, other", "spam");
+  if (!category) return;
+  const details = window.prompt("Additional context (optional, up to 1000 characters):") ?? "";
+  try {
+    await request("/reports", {
+      method: "POST",
+      body: JSON.stringify({ targetType, targetId, category, details: details.trim() || undefined })
+    });
+    window.alert("Thanks. Your report has been sent privately to the safety team.");
+  } catch (reason) {
+    onError((reason as Error).message);
+  }
+}
+
 function Avatar({ user, small = false }: { user: Pick<User | Post, "displayName" | "avatarUrl">; small?: boolean }) {
   return user.avatarUrl
     ? <img className={`avatar ${small ? "small" : ""}`} src={user.avatarUrl} alt="" />
@@ -298,6 +313,7 @@ function PostCard({ post, user, onChange, onDelete, onError }: { post: Post; use
       <div className="post-actions">
         <button className={post.likedByViewer ? "liked" : ""} onClick={() => { void toggleLike(); }}>♥ {post.likeCount}</button>
         <button onClick={() => { void showComments(); }}>Reply {post.commentCount}</button>
+        {post.authorId !== user.id && <button onClick={() => { void reportContent("post", post.id, onError); }}>Report</button>}
       </div>
       {comments && (
         <div className="comments">
@@ -381,6 +397,7 @@ function Discover({ onError }: { onError: (message: string) => void }) {
               </button>
               <button className="secondary-button" onClick={() => { void mutePerson(person); }}>Mute</button>
               <button className="secondary-button" onClick={() => { void blockPerson(person); }}>Block</button>
+              <button className="secondary-button" onClick={() => { void reportContent("profile", person.id, onError); }}>Report</button>
             </div>
           </article>
         ))}
