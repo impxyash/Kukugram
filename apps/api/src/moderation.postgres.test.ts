@@ -23,6 +23,7 @@ integration("PostgreSQL moderation guarantees", () => {
     SESSION_TOKEN_PEPPER: pepper
   });
   let adminPool: Pool | undefined;
+  let migrationUpgradeFixture: { userId: string; reportId: string; appealId: string } | undefined;
 
   function database() {
     if (!adminPool) throw new Error("PostgreSQL integration pool was not initialized.");
@@ -41,6 +42,28 @@ integration("PostgreSQL moderation guarantees", () => {
     try {
       for (const filename of migrations) {
         await client.query(await readFile(join(migrationsFolder, filename), "utf8"));
+        if (filename === "0005_immutable_audit_references.sql") {
+          const userId = randomUUID();
+          const reportId = randomUUID();
+          const appealId = randomUUID();
+          await client.query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+            userId,
+            `${userId}@migration-upgrade.test`
+          ]);
+          await client.query(
+            "INSERT INTO social.profiles (user_id, handle, display_name) VALUES ($1, $2, 'Legacy reporter')",
+            [userId, `legacy_${userId.replaceAll("-", "").slice(0, 12)}`]
+          );
+          await client.query(
+            "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, status) VALUES ($1, $2, 'profile', $3, 'spam', 'resolved')",
+            [reportId, userId, randomUUID()]
+          );
+          await client.query(
+            "INSERT INTO moderation.appeals (id, report_id, appellant_id, details) VALUES ($1, $2, $3, 'Legacy appeal submitted before pseudonymization migration.')",
+            [appealId, reportId, userId]
+          );
+          migrationUpgradeFixture = { userId, reportId, appealId };
+        }
       }
     } finally {
       client.release();
@@ -68,6 +91,58 @@ integration("PostgreSQL moderation guarantees", () => {
     );
     return { userId, token, cookie: `session=${token}` };
   }
+
+  it("upgrades populated moderation cases without losing records or identity-link control", async () => {
+    if (!migrationUpgradeFixture) throw new Error("Migration upgrade fixture was not created.");
+    const { userId, reportId, appealId } = migrationUpgradeFixture;
+    const beforeDeletion = await database().query(
+      `SELECT r.reporter_id AS "reporterId",
+        r.reporter_pseudonym_id AS "reporterPseudonymId",
+        a.appellant_id AS "appellantId",
+        a.appellant_pseudonym_id AS "appellantPseudonymId",
+        a.details
+       FROM moderation.reports r
+       JOIN moderation.appeals a ON a.report_id = r.id
+       WHERE r.id = $1 AND a.id = $2`,
+      [reportId, appealId]
+    );
+    expect(beforeDeletion.rows).toHaveLength(1);
+    expect(beforeDeletion.rows[0]?.reporterId).toBe(userId);
+    expect(beforeDeletion.rows[0]?.appellantId).toBe(userId);
+    expect(beforeDeletion.rows[0]?.reporterPseudonymId).toEqual(expect.any(String));
+    expect(beforeDeletion.rows[0]?.appellantPseudonymId).toEqual(expect.any(String));
+    expect(beforeDeletion.rows[0]?.reporterPseudonymId).not.toBe(userId);
+    expect(beforeDeletion.rows[0]?.appellantPseudonymId).not.toBe(userId);
+    expect(beforeDeletion.rows[0]?.reporterPseudonymId).not.toBe(
+      beforeDeletion.rows[0]?.appellantPseudonymId
+    );
+    expect(beforeDeletion.rows[0]?.details).toBe(
+      "Legacy appeal submitted before pseudonymization migration."
+    );
+
+    await database().query("DELETE FROM identity.users WHERE id = $1", [userId]);
+
+    const afterDeletion = await database().query(
+      `SELECT r.reporter_id AS "reporterId",
+        r.reporter_pseudonym_id AS "reporterPseudonymId",
+        a.appellant_id AS "appellantId",
+        a.appellant_pseudonym_id AS "appellantPseudonymId",
+        a.details
+       FROM moderation.reports r
+       JOIN moderation.appeals a ON a.report_id = r.id
+       WHERE r.id = $1 AND a.id = $2`,
+      [reportId, appealId]
+    );
+    expect(afterDeletion.rows).toEqual([
+      {
+        reporterId: null,
+        reporterPseudonymId: beforeDeletion.rows[0]!.reporterPseudonymId,
+        appellantId: null,
+        appellantPseudonymId: beforeDeletion.rows[0]!.appellantPseudonymId,
+        details: "Legacy appeal submitted before pseudonymization migration."
+      }
+    ]);
+  });
 
   it("issues production session cookies securely and stores only token hashes", async () => {
     const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
@@ -310,6 +385,10 @@ integration("PostgreSQL moderation guarantees", () => {
     const appealId = randomUUID();
     const auditId = randomUUID();
 
+    await database().query(
+      "INSERT INTO social.profiles (user_id, handle, display_name) VALUES ($1, $2, 'Deleted reporter')",
+      [deletedUser.userId, `deleted_${deletedUser.userId.replaceAll("-", "").slice(0, 12)}`]
+    );
     await database().query(
       "INSERT INTO moderation.reports (id, reporter_id, target_type, target_id, category, status) VALUES ($1, $2, 'profile', $3, 'spam', 'resolved')",
       [reportId, deletedUser.userId, randomUUID()]
