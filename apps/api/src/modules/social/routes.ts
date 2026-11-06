@@ -522,8 +522,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const input = z
       .object({
-        status: z.enum(["reviewing", "resolved", "dismissed"]),
-        note: z.string().trim().max(1000).optional()
+        status: z.enum(["reviewing", "resolved", "dismissed"])
       })
       .parse(request.body);
     const client = await app.pool.connect();
@@ -553,7 +552,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
           actor.id,
           "report.status_changed",
           params.id,
-          JSON.stringify({ from: previous, to: input.status, note: input.note ?? null })
+          JSON.stringify({ from: previous, to: input.status })
         ]
       );
       await client.query("COMMIT");
