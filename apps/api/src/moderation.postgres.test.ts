@@ -259,7 +259,9 @@ integration("PostgreSQL moderation guarantees", () => {
     }
   });
 
-  it("applies account-deletion retention rules to sessions, notifications, reports, appeals and audit", async () => {
+  it(
+    "applies account-deletion retention rules to sessions, notifications, reports, appeals and audit",
+    async () => {
     const deletedUser = await seedAdmin();
     const survivingUser = await seedAdmin();
     const reportId = randomUUID();
@@ -327,7 +329,8 @@ integration("PostgreSQL moderation guarantees", () => {
     expect(retainedAudit.rows).toEqual([
       { actorId: deletedUser.userId, reportId, subjectUserId: deletedUser.userId }
     ]);
-  });
+    }
+  );
 
   it("serializes concurrent appeal submissions and records only one appeal", async () => {
     const appellant = await seedAdmin();
