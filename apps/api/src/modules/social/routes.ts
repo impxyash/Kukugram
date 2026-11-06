@@ -88,7 +88,10 @@ async function requireViewer(request: FastifyRequest): Promise<Viewer> {
   return current;
 }
 
-async function requireModerationRole(request: FastifyRequest, roles: readonly ("moderator" | "admin")[]) {
+async function requireModerationRole(
+  request: FastifyRequest,
+  roles: readonly ("moderator" | "admin")[]
+) {
   const current = await requireViewer(request);
   const result = await request.server.pool.query<{ role: "moderator" | "admin" }>(
     "SELECT role FROM moderation.moderator_roles WHERE user_id = $1 AND role = ANY($2::varchar[])",
@@ -495,10 +498,12 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.get("/moderation/reports", async (request) => {
     await requireModerationRole(request, ["moderator", "admin"]);
-    const query = z.object({
-      status: z.enum(["open", "reviewing", "resolved", "dismissed"]).optional(),
-      limit: z.coerce.number().int().min(1).max(100).default(50)
-    }).parse(request.query);
+    const query = z
+      .object({
+        status: z.enum(["open", "reviewing", "resolved", "dismissed"]).optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(50)
+      })
+      .parse(request.query);
     const result = await app.pool.query(
       `SELECT r.id, r.target_type AS "targetType", r.target_id AS "targetId",
         r.category, r.details, r.status, r.created_at AS "createdAt",
@@ -518,10 +523,12 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
   app.patch("/moderation/reports/:id", async (request, reply) => {
     const actor = await requireModerationRole(request, ["moderator", "admin"]);
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
-    const input = z.object({
-      status: z.enum(["reviewing", "resolved", "dismissed"]),
-      note: z.string().trim().max(1000).optional()
-    }).parse(request.body);
+    const input = z
+      .object({
+        status: z.enum(["reviewing", "resolved", "dismissed"]),
+        note: z.string().trim().max(1000).optional()
+      })
+      .parse(request.body);
     const client = await app.pool.connect();
     try {
       await client.query("BEGIN");
@@ -544,12 +551,20 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       );
       await client.query(
         "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, $3, $4, $5::jsonb)",
-        [randomUUID(), actor.id, "report.status_changed", params.id, JSON.stringify({ from: previous, to: input.status, note: input.note ?? null })]
+        [
+          randomUUID(),
+          actor.id,
+          "report.status_changed",
+          params.id,
+          JSON.stringify({ from: previous, to: input.status, note: input.note ?? null })
+        ]
       );
       await client.query("COMMIT");
       return reply.code(200).send({ reportId: params.id, status: input.status });
     } catch (error) {
-      try { await client.query("ROLLBACK"); } catch {}
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
       throw error;
     } finally {
       client.release();
@@ -564,8 +579,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       "SELECT status FROM moderation.reports WHERE id = $1 AND reporter_id = $2",
       [params.id, appellant.id]
     );
-    if (!report.rows[0])
-      throw Object.assign(new Error("Report not found."), { statusCode: 404 });
+    if (!report.rows[0]) throw Object.assign(new Error("Report not found."), { statusCode: 404 });
     if (!["resolved", "dismissed"].includes(report.rows[0].status))
       throw Object.assign(new Error("Only closed reports can be appealed."), { statusCode: 409 });
     const appealId = randomUUID();
@@ -576,7 +590,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       );
     } catch (error) {
       if ((error as { code?: string }).code === "23505")
-        throw Object.assign(new Error("An appeal has already been submitted for this report."), { statusCode: 409 });
+        throw Object.assign(new Error("An appeal has already been submitted for this report."), {
+          statusCode: 409
+        });
       throw error;
     }
     await app.pool.query(
@@ -619,7 +635,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     try {
       await client.query("BEGIN");
       const appeal = await client.query<{ reportId: string; status: string }>(
-        "SELECT report_id AS \"reportId\", status FROM moderation.appeals WHERE id = $1 FOR UPDATE",
+        'SELECT report_id AS "reportId", status FROM moderation.appeals WHERE id = $1 FOR UPDATE',
         [params.id]
       );
       const row = appeal.rows[0];
@@ -629,7 +645,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       }
       if (row.status !== "open") {
         await client.query("ROLLBACK");
-        throw Object.assign(new Error("This appeal has already been reviewed."), { statusCode: 409 });
+        throw Object.assign(new Error("This appeal has already been reviewed."), {
+          statusCode: 409
+        });
       }
       await client.query(
         "UPDATE moderation.appeals SET status = $1, reviewer_id = $2, reviewed_at = now(), updated_at = now() WHERE id = $3",
@@ -637,7 +655,12 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       );
       await client.query(
         "INSERT INTO moderation.audit_events (id, actor_id, action, report_id, details) VALUES ($1, $2, 'appeal.reviewed', $3, $4::jsonb)",
-        [randomUUID(), reviewer.id, row.reportId, JSON.stringify({ appealId: params.id, status: input.status })]
+        [
+          randomUUID(),
+          reviewer.id,
+          row.reportId,
+          JSON.stringify({ appealId: params.id, status: input.status })
+        ]
       );
       if (input.status === "accepted") {
         await client.query(
@@ -648,7 +671,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       await client.query("COMMIT");
       return reply.code(200).send({ appealId: params.id, status: input.status });
     } catch (error) {
-      try { await client.query("ROLLBACK"); } catch {}
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
       throw error;
     } finally {
       client.release();
@@ -669,10 +694,12 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.post("/moderation/roles", async (request, reply) => {
     const admin = await requireModerationRole(request, ["admin"]);
-    const input = z.object({
-      userId: z.string().uuid(),
-      role: z.enum(["moderator", "admin"])
-    }).parse(request.body);
+    const input = z
+      .object({
+        userId: z.string().uuid(),
+        role: z.enum(["moderator", "admin"])
+      })
+      .parse(request.body);
     const client = await app.pool.connect();
     try {
       await client.query("BEGIN");
@@ -682,7 +709,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       );
       if (!inserted.rowCount) {
         await client.query("ROLLBACK");
-        throw Object.assign(new Error("Active user not found or role already assigned."), { statusCode: 409 });
+        throw Object.assign(new Error("Active user not found or role already assigned."), {
+          statusCode: 409
+        });
       }
       await client.query(
         "INSERT INTO moderation.audit_events (id, actor_id, action, subject_user_id, details) VALUES ($1, $2, 'moderator.role_granted', $3, $4::jsonb)",
@@ -691,7 +720,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       await client.query("COMMIT");
       return reply.code(201).send({ userId: input.userId, role: input.role });
     } catch (error) {
-      try { await client.query("ROLLBACK"); } catch {}
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
       throw error;
     } finally {
       client.release();
@@ -700,10 +731,12 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.delete("/moderation/roles/:userId/:role", async (request, reply) => {
     const admin = await requireModerationRole(request, ["admin"]);
-    const params = z.object({
-      userId: z.string().uuid(),
-      role: z.enum(["moderator", "admin"])
-    }).parse(request.params);
+    const params = z
+      .object({
+        userId: z.string().uuid(),
+        role: z.enum(["moderator", "admin"])
+      })
+      .parse(request.params);
     if (params.userId === admin.id && params.role === "admin")
       throw Object.assign(new Error("You cannot revoke your own admin role."), { statusCode: 409 });
     const client = await app.pool.connect();
@@ -724,7 +757,9 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       await client.query("COMMIT");
       return reply.code(204).send();
     } catch (error) {
-      try { await client.query("ROLLBACK"); } catch {}
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
       throw error;
     } finally {
       client.release();
@@ -733,10 +768,12 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.get("/moderation/audit", async (request) => {
     await requireModerationRole(request, ["admin"]);
-    const query = z.object({
-      reportId: z.string().uuid().optional(),
-      limit: z.coerce.number().int().min(1).max(100).default(50)
-    }).parse(request.query);
+    const query = z
+      .object({
+        reportId: z.string().uuid().optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(50)
+      })
+      .parse(request.query);
     const result = await app.pool.query(
       `SELECT id, actor_id AS "actorId", action, report_id AS "reportId",
         subject_user_id AS "subjectUserId", details, created_at AS "createdAt"

@@ -190,8 +190,13 @@ export const moderationAuditEvents = moderation.table("audit_events", {
 
 export const moderationAppeals = moderation.table("appeals", {
   id: uuid("id").primaryKey(),
-  reportId: uuid("report_id").notNull().unique().references(() => reports.id, { onDelete: "cascade" }),
-  appellantId: uuid("appellant_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  reportId: uuid("report_id")
+    .notNull()
+    .unique()
+    .references(() => reports.id, { onDelete: "cascade" }),
+  appellantId: uuid("appellant_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   details: varchar("details", { length: 2000 }).notNull(),
   status: varchar("status", { length: 16 }).notNull().default("open"),
   reviewerId: uuid("reviewer_id").references(() => users.id, { onDelete: "set null" }),
