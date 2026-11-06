@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { buildApp } from "./app.js";
@@ -31,11 +31,20 @@ integration("PostgreSQL moderation guarantees", () => {
 
   beforeAll(async () => {
     adminPool = new Pool({ connectionString: databaseUrl, max: 8 });
-    await migrate(drizzle(database()), {
-      migrationsFolder: fileURLToPath(
-        new URL("../../../packages/database/drizzle", import.meta.url)
-      )
-    });
+    const migrationsFolder = fileURLToPath(
+      new URL("../../../packages/database/drizzle", import.meta.url)
+    );
+    const migrations = (await readdir(migrationsFolder))
+      .filter((filename) => filename.endsWith(".sql"))
+      .sort();
+    const client = await database().connect();
+    try {
+      for (const filename of migrations) {
+        await client.query(await readFile(join(migrationsFolder, filename), "utf8"));
+      }
+    } finally {
+      client.release();
+    }
   });
 
   afterAll(async () => {
