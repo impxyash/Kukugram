@@ -108,14 +108,16 @@ export const auditActorResolutionRequestSchema = z
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 
-export const problemDetailsSchema = z.object({
-  type: z.string().url(),
-  title: z.string(),
-  status: z.number().int().min(400).max(599),
-  detail: z.string().optional(),
-  instance: z.string(),
-  requestId: z.string()
-});
+export const problemDetailsSchema = z
+  .object({
+    type: z.string().url(),
+    title: z.string(),
+    status: z.number().int().min(400).max(599),
+    detail: z.string().optional(),
+    instance: z.string(),
+    requestId: z.string()
+  })
+  .strict();
 
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
