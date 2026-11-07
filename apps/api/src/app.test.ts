@@ -125,7 +125,7 @@ describe("API", () => {
       consume: () => Promise.resolve({ count: 1, ttlMs: 900_000 }),
       close: () => Promise.resolve()
     };
-    const app = buildApp(productionConfig, undefined, store);
+    const app = buildApp(productionConfig, undefined, store, true);
     const response = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
