@@ -322,7 +322,6 @@ describe("API request contracts", () => {
     ).toBe(true);
   });
 
-
   it("validates profile, authentication provider and user lookup response contracts", () => {
     const id = "00000000-0000-4000-8000-000000000001";
     const profile = {
@@ -343,12 +342,10 @@ describe("API request contracts", () => {
     expect(profileResponseSchema.safeParse(profile).success).toBe(true);
     expect(authUserResponseSchema.safeParse({ user: profile }).success).toBe(true);
     expect(userSearchResponseSchema.safeParse({ users: [profile] }).success).toBe(true);
-    expect(authProvidersResponseSchema.safeParse({ password: true, oauth: [] }).success).toBe(
+    expect(authProvidersResponseSchema.safeParse({ password: true, oauth: [] }).success).toBe(true);
+    expect(healthResponseSchema.safeParse({ status: "ok", requestId: "request-123" }).success).toBe(
       true
     );
-    expect(
-      healthResponseSchema.safeParse({ status: "ok", requestId: "request-123" }).success
-    ).toBe(true);
     expect(
       problemDetailsSchema.safeParse({
         type: "https://kukugram.com/problems/validation",
