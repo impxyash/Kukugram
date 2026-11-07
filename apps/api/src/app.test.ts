@@ -42,27 +42,96 @@ describe("API configuration", () => {
 });
 
 describe("API", () => {
-  it("publishes health and identity success and Problem Details response schemas in OpenAPI", async () => {
+  it("publishes complete health and identity response schemas in OpenAPI", async () => {
     const app = buildApp(config);
     await app.ready();
     const document = app.swagger() as {
-      paths?: Record<string, { get?: { responses?: Record<string, unknown> } }>;
+      servers?: Array<{ url: string }>;
+      paths?: Record<
+        string,
+        {
+          get?: {
+            responses?: Record<
+              string,
+              { content?: Record<string, { schema?: Record<string, unknown> }> }
+            >;
+          };
+        }
+      >;
     };
 
+    expect(document.servers).toEqual([{ url: "/" }]);
     expect(document.paths).toHaveProperty("/health");
     expect(document.paths).toHaveProperty("/v1/auth/providers");
-    expect(document.paths?.["/health"]?.get?.responses).toHaveProperty("200");
-    expect(document.paths?.["/health"]?.get?.responses).toHaveProperty("500");
-    expect(document.paths?.["/v1/auth/providers"]?.get?.responses).toHaveProperty("200");
-    expect(document.paths?.["/v1/auth/providers"]?.get?.responses).toHaveProperty("500");
+
+    for (const path of ["/health", "/v1/auth/providers"]) {
+      const responses = document.paths?.[path]?.get?.responses;
+      expect(responses?.["200"]?.content).toHaveProperty("application/json");
+      expect(responses?.["500"]?.content).toHaveProperty("application/problem+json");
+      expect(responses?.["500"]?.content?.["application/problem+json"]?.schema).toMatchObject({
+        type: "object",
+        required: ["type", "title", "status", "instance", "requestId"],
+        properties: {
+          type: { type: "string", format: "uri" },
+          title: { type: "string" },
+          status: { type: "integer", minimum: 400, maximum: 599 },
+          detail: { type: "string" },
+          instance: { type: "string" },
+          requestId: { type: "string" }
+        },
+        additionalProperties: false
+      });
+    }
+
+    expect(document.paths?.["/health"]?.get?.responses?.["200"]?.content?.["application/json"]?.schema)
+      .toMatchObject({
+        type: "object",
+        required: ["status", "requestId"],
+        properties: {
+          status: { type: "string", const: "ok" },
+          requestId: { type: "string" }
+        },
+        additionalProperties: false
+      });
+    expect(
+      document.paths?.["/v1/auth/providers"]?.get?.responses?.["200"]?.content?.["application/json"]
+        ?.schema
+    ).toMatchObject({
+      type: "object",
+      required: ["password", "oauth"],
+      properties: {
+        password: { type: "boolean" },
+        oauth: { type: "array", items: { type: "string" } }
+      },
+      additionalProperties: false
+    });
     await app.close();
   });
 
-  it("returns a request-correlated health response", async () => {
+  it("returns request-correlated health, identity and Problem Details responses", async () => {
     const app = buildApp(config);
-    const response = await app.inject({ method: "GET", url: "/health" });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: "ok" });
+    const health = await app.inject({ method: "GET", url: "/health" });
+    expect(health.statusCode).toBe(200);
+    expect(health.json()).toMatchObject({ status: "ok", requestId: health.headers["x-request-id"] });
+
+    const providers = await app.inject({ method: "GET", url: "/v1/auth/providers" });
+    expect(providers.statusCode).toBe(200);
+    expect(providers.json()).toEqual({ password: true, oauth: [] });
+
+    const invalidLogin = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {}
+    });
+    expect(invalidLogin.statusCode).toBe(400);
+    expect(invalidLogin.headers["content-type"]).toContain("application/problem+json");
+    expect(invalidLogin.json()).toMatchObject({
+      type: "https://kukugram.com/problems/validation",
+      title: "Invalid request",
+      status: 400,
+      instance: "/v1/auth/login"
+    });
+    expect(invalidLogin.json().requestId).toBe(invalidLogin.headers["x-request-id"]);
     await app.close();
   });
 
