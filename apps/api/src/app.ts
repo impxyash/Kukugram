@@ -76,18 +76,14 @@ export function buildApp(
       result = await rateLimitStore.consume(key, AUTH_WINDOW_MS);
     } catch {
       request.log.error("Authentication rate limiter unavailable.");
-      return reply
-        .header("retry-after", "5")
-        .code(503)
-        .type("application/problem+json")
-        .send({
-          type: "https://kukugram.com/problems/rate-limiter-unavailable",
-          title: "Authentication temporarily unavailable",
-          status: 503,
-          detail: "Please try again shortly.",
-          instance: request.url,
-          requestId: request.id
-        });
+      return reply.header("retry-after", "5").code(503).type("application/problem+json").send({
+        type: "https://kukugram.com/problems/rate-limiter-unavailable",
+        title: "Authentication temporarily unavailable",
+        status: 503,
+        detail: "Please try again shortly.",
+        instance: request.url,
+        requestId: request.id
+      });
     }
 
     if (result.count > AUTH_MAX_ATTEMPTS) {
