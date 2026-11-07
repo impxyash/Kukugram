@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { request } from "./api-client";
-import { createSessionRequestSequence, loadSession } from "./session-bootstrap";
+import { createMountedRequestScope, createSessionRequestSequence, loadSession } from "./session-bootstrap";
 import type {
   AccountControlResponse,
   AppealSummaryResponse,
@@ -994,10 +994,14 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   >({});
   const [appealDetails, setAppealDetails] = useState<Record<string, string>>({});
   const queueRequestSequence = useRef(createSessionRequestSequence());
+  const mountedRequestScope = useRef(createMountedRequestScope());
 
   useEffect(() => {
     return () => {
+      mountedRequestScope.current.invalidate();
       queueRequestSequence.current.invalidate();
+      setExpandedReport(null);
+      setExpandedAppeal(null);
     };
   }, []);
 
@@ -1012,9 +1016,11 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
       const result = await request<{
         report: { targetId: string; details: string | null };
       }>(`/moderation/reports/${id}`);
-      setReportDetails((current) => ({ ...current, [id]: result.report }));
+      if (mountedRequestScope.current.isActive()) {
+        setReportDetails((current) => ({ ...current, [id]: result.report }));
+      }
     } catch (reason) {
-      onError((reason as Error).message);
+      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -1027,9 +1033,11 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
     if (appealDetails[id] !== undefined) return;
     try {
       const result = await request<{ appeal: { details: string } }>(`/moderation/appeals/${id}`);
-      setAppealDetails((current) => ({ ...current, [id]: result.appeal.details }));
+      if (mountedRequestScope.current.isActive()) {
+        setAppealDetails((current) => ({ ...current, [id]: result.appeal.details }));
+      }
     } catch (reason) {
-      onError((reason as Error).message);
+      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -1042,15 +1050,24 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         request<{ reports: ModerationReport[] }>(`/moderation/reports?status=${filter}&limit=50`),
         request<{ appeals: typeof appeals }>("/moderation/appeals")
       ]);
-      if (!queueRequestSequence.current.isCurrent(requestId)) return;
+      if (
+        !mountedRequestScope.current.isActive() ||
+        !queueRequestSequence.current.isCurrent(requestId)
+      ) return;
       setReports(reportResult.reports);
       setAppeals(appealResult.appeals);
     } catch (reason) {
-      if (queueRequestSequence.current.isCurrent(requestId)) {
+      if (
+        mountedRequestScope.current.isActive() &&
+        queueRequestSequence.current.isCurrent(requestId)
+      ) {
         setLoadError((reason as Error).message);
       }
     } finally {
-      if (queueRequestSequence.current.isCurrent(requestId)) setLoading(false);
+      if (
+        mountedRequestScope.current.isActive() &&
+        queueRequestSequence.current.isCurrent(requestId)
+      ) setLoading(false);
     }
   }
 
@@ -1067,13 +1084,16 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         method: "PATCH",
         body: JSON.stringify({ status })
       });
+      if (!mountedRequestScope.current.isActive()) return;
       setActionNotice(`Report marked as ${status.replaceAll("_", " ")}.`);
       await refresh();
     } catch (reason) {
-      setActionNotice(null);
-      onError((reason as Error).message);
+      if (mountedRequestScope.current.isActive()) {
+        setActionNotice(null);
+        onError((reason as Error).message);
+      }
     } finally {
-      setBusy(null);
+      if (mountedRequestScope.current.isActive()) setBusy(null);
     }
   }
 
@@ -1085,13 +1105,16 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         method: "PATCH",
         body: JSON.stringify({ status })
       });
+      if (!mountedRequestScope.current.isActive()) return;
       setActionNotice(`Appeal ${status}.`);
       await refresh();
     } catch (reason) {
-      setActionNotice(null);
-      onError((reason as Error).message);
+      if (mountedRequestScope.current.isActive()) {
+        setActionNotice(null);
+        onError((reason as Error).message);
+      }
     } finally {
-      setBusy(null);
+      if (mountedRequestScope.current.isActive()) setBusy(null);
     }
   }
 
@@ -1252,31 +1275,57 @@ function Settings({
   const [mutedUsers, setMutedUsers] = useState<AccountControl[]>([]);
   const [reportHistory, setReportHistory] = useState<ReportRecord[]>([]);
   const [appealHistory, setAppealHistory] = useState<AppealRecord[]>([]);
+  const mountedRequestScope = useRef(createMountedRequestScope());
+
   useEffect(() => {
+    const scope = mountedRequestScope.current;
+    return () => scope.invalidate();
+  }, []);
+
+  useEffect(() => {
+    const scope = mountedRequestScope.current;
     void request<{ requests: FollowRequest[] }>("/me/follow-requests")
-      .then((result) => setFollowRequests(result.requests))
-      .catch((reason) => onError((reason as Error).message));
+      .then((result) => {
+        if (scope.isActive()) setFollowRequests(result.requests);
+      })
+      .catch((reason) => {
+        if (scope.isActive()) onError((reason as Error).message);
+      });
   }, []);
   useEffect(() => {
+    const scope = mountedRequestScope.current;
     void Promise.all([
       request<{ users: AccountControl[] }>("/me/blocked"),
       request<{ users: AccountControl[] }>("/me/muted")
     ])
       .then(([blocked, muted]) => {
+        if (!scope.isActive()) return;
         setBlockedUsers(blocked.users);
         setMutedUsers(muted.users);
       })
-      .catch((reason) => onError((reason as Error).message));
+      .catch((reason) => {
+        if (scope.isActive()) onError((reason as Error).message);
+      });
   }, []);
   useEffect(() => {
+    const scope = mountedRequestScope.current;
     void request<{ reports: ReportRecord[] }>("/me/reports")
-      .then((result) => setReportHistory(result.reports))
-      .catch((reason) => onError((reason as Error).message));
+      .then((result) => {
+        if (scope.isActive()) setReportHistory(result.reports);
+      })
+      .catch((reason) => {
+        if (scope.isActive()) onError((reason as Error).message);
+      });
   }, []);
   useEffect(() => {
+    const scope = mountedRequestScope.current;
     void request<{ appeals: AppealRecord[] }>("/me/appeals")
-      .then((result) => setAppealHistory(result.appeals))
-      .catch((reason) => onError((reason as Error).message));
+      .then((result) => {
+        if (scope.isActive()) setAppealHistory(result.appeals);
+      })
+      .catch((reason) => {
+        if (scope.isActive()) onError((reason as Error).message);
+      });
   }, []);
 
   async function submitAppeal(reportId: string) {
@@ -1289,10 +1338,11 @@ function Settings({
         method: "POST",
         body: JSON.stringify({ details })
       });
+      if (!mountedRequestScope.current.isActive()) return;
       const result = await request<{ appeals: AppealRecord[] }>("/me/appeals");
-      setAppealHistory(result.appeals);
+      if (mountedRequestScope.current.isActive()) setAppealHistory(result.appeals);
     } catch (reason) {
-      onError((reason as Error).message);
+      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -1308,10 +1358,11 @@ function Settings({
           privacy
         })
       });
+      if (!mountedRequestScope.current.isActive()) return;
       setUser(result.user);
       setSaved(true);
     } catch (reason) {
-      onError((reason as Error).message);
+      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -1372,10 +1423,14 @@ function Settings({
                 className="primary-button"
                 onClick={() => {
                   void request(`/me/follow-requests/${item.handle}/accept`, { method: "POST" })
-                    .then(() =>
-                      setFollowRequests((items) => items.filter((entry) => entry.id !== item.id))
-                    )
-                    .catch((reason) => onError((reason as Error).message));
+                    .then(() => {
+                      if (mountedRequestScope.current.isActive()) {
+                        setFollowRequests((items) => items.filter((entry) => entry.id !== item.id));
+                      }
+                    })
+                    .catch((reason) => {
+                      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+                    });
                 }}
               >
                 Accept
@@ -1412,10 +1467,14 @@ function Settings({
                 className="secondary-button"
                 onClick={() => {
                   void request(`/users/${item.handle}/block`, { method: "DELETE" })
-                    .then(() =>
-                      setBlockedUsers((items) => items.filter((entry) => entry.id !== item.id))
-                    )
-                    .catch((reason) => onError((reason as Error).message));
+                    .then(() => {
+                      if (mountedRequestScope.current.isActive()) {
+                        setBlockedUsers((items) => items.filter((entry) => entry.id !== item.id));
+                      }
+                    })
+                    .catch((reason) => {
+                      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+                    });
                 }}
               >
                 Unblock
@@ -1440,10 +1499,14 @@ function Settings({
                 className="secondary-button"
                 onClick={() => {
                   void request(`/users/${item.handle}/mute`, { method: "DELETE" })
-                    .then(() =>
-                      setMutedUsers((items) => items.filter((entry) => entry.id !== item.id))
-                    )
-                    .catch((reason) => onError((reason as Error).message));
+                    .then(() => {
+                      if (mountedRequestScope.current.isActive()) {
+                        setMutedUsers((items) => items.filter((entry) => entry.id !== item.id));
+                      }
+                    })
+                    .catch((reason) => {
+                      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+                    });
                 }}
               >
                 Unmute
