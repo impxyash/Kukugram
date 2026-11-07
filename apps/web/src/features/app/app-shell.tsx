@@ -129,7 +129,8 @@ export function AppShell() {
   if (loading)
     return (
       <main className="app-loading">
-        <span className="pulse-dot" /> Loading your corner...
+        <span className="pulse-dot" aria-hidden="true" />
+        <p role="status" aria-live="polite">Loading your corner...</p>
       </main>
     );
   if (!user)
@@ -190,7 +191,11 @@ export function AppShell() {
         </button>
       </aside>
       <section className="main-pane">
-        {error && <p className="banner error">{error}</p>}
+        {error && (
+          <p className="banner error" role="alert" aria-live="assertive">
+            {error}
+          </p>
+        )}
         {tab === "home" && (
           <Home user={user} posts={posts} setPosts={setPosts} onError={setError} />
         )}
