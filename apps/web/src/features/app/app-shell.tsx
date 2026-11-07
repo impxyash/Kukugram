@@ -130,7 +130,9 @@ export function AppShell() {
     return (
       <main className="app-loading">
         <span className="pulse-dot" aria-hidden="true" />
-        <p role="status" aria-live="polite">Loading your corner...</p>
+        <p role="status" aria-live="polite">
+          Loading your corner...
+        </p>
       </main>
     );
   if (!user)
