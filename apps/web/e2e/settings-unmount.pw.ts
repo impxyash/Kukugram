@@ -12,33 +12,33 @@ const accountA = {
   isRequested: false,
   privacy: "public" as const,
   canViewContent: true,
-  isBlocked: false
+  isBlocked: false,
 };
 
 const accountB = {
   ...accountA,
   id: "00000000-0000-4000-8000-000000000062",
   handle: "settings-b",
-  displayName: "Settings Account B"
+  displayName: "Settings Account B",
 };
 
 async function reply(route: Route, status: number, body: unknown) {
   await route.fulfill({
     status,
     contentType: "application/json",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 }
 
 test("pending Settings history requests cannot update state or errors after account unmount", async ({
-  page
+  page,
 }) => {
   const pendingPaths = new Set([
     "/v1/me/follow-requests",
     "/v1/me/blocked",
     "/v1/me/muted",
     "/v1/me/reports",
-    "/v1/me/appeals"
+    "/v1/me/appeals",
   ]);
   const pendingRoutes = new Map<string, Route>();
   let markAllPending!: () => void;
@@ -64,7 +64,7 @@ test("pending Settings history requests cannot update state or errors after acco
       await reply(
         route,
         feedCalls === 1 ? 503 : 200,
-        feedCalls === 1 ? { title: "Service unavailable" } : { posts: [] }
+        feedCalls === 1 ? { title: "Service unavailable" } : { posts: [] },
       );
       return;
     }
@@ -89,7 +89,7 @@ test("pending Settings history requests cannot update state or errors after acco
         "/v1/me/blocked": { users: [] },
         "/v1/me/muted": { users: [] },
         "/v1/me/reports": { reports: [] },
-        "/v1/me/appeals": { appeals: [] }
+        "/v1/me/appeals": { appeals: [] },
       };
       await reply(route, 200, emptyResponses[pathname]);
       return;
@@ -107,12 +107,18 @@ test("pending Settings history requests cannot update state or errors after acco
   switchingToB = true;
   await page.getByRole("button", { name: "Retry" }).click();
 
-  await expect(page.getByLabel("Display name")).toHaveValue("Settings Account B");
+  await expect(page.getByLabel("Display name")).toHaveValue(
+    "Settings Account B",
+  );
   await expect(page.getByText("No pending follow requests.")).toBeVisible();
   await expect(page.getByText("No blocked accounts.")).toBeVisible();
   await expect(page.getByText("No muted accounts.")).toBeVisible();
-  await expect(page.getByText("You have not submitted any reports.")).toBeVisible();
-  await expect(page.getByText("You have not submitted any appeals.")).toBeVisible();
+  await expect(
+    page.getByText("You have not submitted any reports."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("You have not submitted any appeals."),
+  ).toBeVisible();
   await expect.poll(() => meCalls).toBe(2);
 
   // Resolve the previous identity's requests only after B's Settings view is mounted.
@@ -126,9 +132,9 @@ test("pending Settings history requests cannot update state or errors after acco
             id: "private-account-a",
             handle: "private-a",
             displayName: "Account A private control",
-            avatarUrl: null
-          }
-        ]
+            avatarUrl: null,
+          },
+        ],
       });
     } else if (path === "/v1/me/reports") {
       await reply(route, 200, {
@@ -138,9 +144,9 @@ test("pending Settings history requests cannot update state or errors after acco
             category: "spam",
             targetType: "post",
             createdAt: "2026-11-01T00:00:00.000Z",
-            status: "resolved"
-          }
-        ]
+            status: "resolved",
+          },
+        ],
       });
     } else {
       await reply(route, 200, {
@@ -149,16 +155,19 @@ test("pending Settings history requests cannot update state or errors after acco
             id: "00000000-0000-4000-8000-000000000064",
             reportId: "00000000-0000-4000-8000-000000000063",
             createdAt: "2026-11-01T00:00:00.000Z",
-            status: "pending"
-          }
-        ]
+            status: "pending",
+          },
+        ],
       });
     }
   }
 
-  await expect(page.getByLabel("Display name")).toHaveValue("Settings Account B");
+  await expect(page.getByLabel("Display name")).toHaveValue(
+    "Settings Account B",
+  );
   await expect(page.getByText("Account A private control")).toHaveCount(0);
   await expect(page.getByText("spam", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
+
