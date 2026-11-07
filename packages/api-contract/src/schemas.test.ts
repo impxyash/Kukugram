@@ -98,7 +98,6 @@ describe("API request contracts", () => {
     ).toBe(true);
   });
 
-
   it("validates comments, notifications, and moderation mutation responses", () => {
     const id = "00000000-0000-4000-8000-000000000001";
     expect(commentCreateResponseSchema.safeParse({ id, body: "Hello" }).success).toBe(true);
