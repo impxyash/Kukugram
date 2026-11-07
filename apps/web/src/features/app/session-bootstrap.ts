@@ -1,6 +1,6 @@
 import { ApiError, request } from "./api-client.js";
 
-type Requester = <T>(path: string) => Promise<T>;
+type Requester = (path: string) => Promise<unknown>;
 
 type SessionUser = { user: unknown };
 type Feed = { posts: unknown[] };
@@ -21,7 +21,7 @@ export async function loadSession<TUser, TPost, TNotification>(
 ): Promise<SessionBootstrapResult<TUser, TPost, TNotification>> {
   let session: SessionUser;
   try {
-    session = await requester<SessionUser>("/me");
+    session = (await requester("/me")) as SessionUser;
   } catch (reason) {
     const isUnauthenticated = reason instanceof ApiError && [401, 403].includes(reason.status);
     return {
@@ -31,8 +31,8 @@ export async function loadSession<TUser, TPost, TNotification>(
   }
 
   const [feedResult, activityResult] = await Promise.allSettled([
-    requester<Feed>("/feed"),
-    requester<Activity>("/notifications")
+    requester("/feed") as Promise<Feed>,
+    requester("/notifications") as Promise<Activity>
   ]);
 
   return {
