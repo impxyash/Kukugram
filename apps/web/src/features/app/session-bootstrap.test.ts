@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api-client.js";
-import { createMountedRequestScope, createSessionRequestSequence, loadSession } from "./session-bootstrap.js";
+import {
+  createMountedRequestScope,
+  createSessionRequestSequence,
+  loadSession
+} from "./session-bootstrap.js";
 import { reconcileSessionActivity } from "./app-shell.js";
 
 type TestUser = { id: string };
