@@ -90,7 +90,8 @@ export function AppShell() {
   const [tab, setTab] = useState<
     "home" | "discover" | "activity" | "profile" | "settings" | "moderation"
   >("home");
-  const [canModerate, setCanModerate] = useState(false);
+  const [moderatorUserId, setModeratorUserId] = useState<string | null>(null);
+  const canModerate = moderatorUserId === user?.id;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
@@ -124,6 +125,9 @@ export function AppShell() {
         result.posts,
         result.notifications
       );
+      if (activeUserId.current !== result.user.id) {
+        setModeratorUserId(null);
+      }
       activeUserId.current = result.user.id;
       setUser(result.user);
       setPosts(activity.posts);
@@ -151,10 +155,10 @@ export function AppShell() {
     let cancelled = false;
     void request<{ reports: ModerationReport[] }>("/moderation/reports?limit=1")
       .then(() => {
-        if (!cancelled) setCanModerate(true);
+        if (!cancelled) setModeratorUserId(user.id);
       })
       .catch(() => {
-        if (!cancelled) setCanModerate(false);
+        if (!cancelled) setModeratorUserId(null);
       });
 
     return () => {
@@ -987,6 +991,9 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
     Record<string, { targetId: string; details: string | null }>
   >({});
   const [appealDetails, setAppealDetails] = useState<Record<string, string>>({});
+  const queueRequestSequence = useRef(createSessionRequestSequence());
+
+  useEffect(() => () => queueRequestSequence.current.invalidate(), []);
 
   async function toggleReportDetails(id: string) {
     if (expandedReport === id) {
@@ -1021,6 +1028,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   }
 
   async function refresh() {
+    const requestId = queueRequestSequence.current.begin();
     setLoading(true);
     setLoadError(null);
     try {
@@ -1028,12 +1036,15 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         request<{ reports: ModerationReport[] }>(`/moderation/reports?status=${filter}&limit=50`),
         request<{ appeals: typeof appeals }>("/moderation/appeals")
       ]);
+      if (!queueRequestSequence.current.isCurrent(requestId)) return;
       setReports(reportResult.reports);
       setAppeals(appealResult.appeals);
     } catch (reason) {
-      setLoadError((reason as Error).message);
+      if (queueRequestSequence.current.isCurrent(requestId)) {
+        setLoadError((reason as Error).message);
+      }
     } finally {
-      setLoading(false);
+      if (queueRequestSequence.current.isCurrent(requestId)) setLoading(false);
     }
   }
 
