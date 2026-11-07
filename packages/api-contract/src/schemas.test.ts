@@ -424,12 +424,12 @@ describe("API request contracts", () => {
     );
     expect(moderationAppealReviewRequestSchema.safeParse({ status: "open" }).success).toBe(false);
 
-    expect(moderatorRoleCreateRequestSchema.safeParse({ userId: id, role: "moderator" }).success).toBe(
-      true
-    );
-    expect(moderatorRoleCreateRequestSchema.safeParse({ userId: "invalid", role: "moderator" }).success).toBe(
-      false
-    );
+    expect(
+      moderatorRoleCreateRequestSchema.safeParse({ userId: id, role: "moderator" }).success
+    ).toBe(true);
+    expect(
+      moderatorRoleCreateRequestSchema.safeParse({ userId: "invalid", role: "moderator" }).success
+    ).toBe(false);
     expect(moderatorRoleParamsSchema.safeParse({ userId: id, role: "admin" }).success).toBe(true);
     expect(moderatorRoleParamsSchema.safeParse({ userId: id, role: "owner" }).success).toBe(false);
   });
@@ -460,7 +460,8 @@ describe("API request contracts", () => {
       moderatorRoleCreateResponseSchema.safeParse({ userId: "invalid", role: "admin" }).success
     ).toBe(false);
     expect(auditActorResolutionResponseSchema.safeParse({ userId: id }).success).toBe(true);
-    expect(auditActorResolutionResponseSchema.safeParse({ userId: "invalid" }).success).toBe(false);
+    expect(
+      auditActorResolutionResponseSchema.safeParse({ userId: "invalid" }).success
+    ).toBe(false);
   });
-
 });
