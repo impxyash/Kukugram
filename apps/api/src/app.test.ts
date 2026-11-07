@@ -64,10 +64,7 @@ describe("API", () => {
         | undefined;
 
       expect(successSchema?.content).toHaveProperty("application/json");
-      expect(successSchema?.content?.["application/json"]?.schema).toHaveProperty(
-        "type",
-        "object"
-      );
+      expect(successSchema?.content?.["application/json"]?.schema).toHaveProperty("type", "object");
       expect(problemSchema?.content).toHaveProperty("application/problem+json");
       expect(problemSchema?.content?.["application/problem+json"]?.schema).toHaveProperty(
         "type",
@@ -102,9 +99,7 @@ describe("API", () => {
       status: 400,
       instance: "/v1/auth/login"
     });
-    expect(invalidLogin.json<{ requestId: string }>().requestId).toEqual(
-      expect.any(String)
-    );
+    expect(invalidLogin.json<{ requestId: string }>().requestId).toEqual(expect.any(String));
     await app.close();
   });
 
