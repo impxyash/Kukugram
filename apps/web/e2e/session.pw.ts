@@ -224,89 +224,116 @@ test("a stale successful session response cannot restore a logged-out user", asy
 });
 
 
-test("a late Settings response from account A cannot overwrite account B after an identity switch", async ({ page }) => {
-  const accountA = { ...user, id: "00000000-0000-4000-8000-000000000011", handle: "account-a", displayName: "Account A" };
-  const accountB = { ...user, id: "00000000-0000-4000-8000-000000000022", handle: "account-b", displayName: "Account B" };
-  let meCalls = 0;
-  let feedCalls = 0;
-  let blockedCalls = 0;
-  let releaseAccountABlocked!: () => void;
-  let markAccountABlockedPending!: () => void;
-  const accountABlockedPending = new Promise<void>((resolve) => {
-    releaseAccountABlocked = resolve;
-  });
-  const accountABlockedSeen = new Promise<void>((resolve) => {
-    markAccountABlockedPending = resolve;
-  });
+test(
+  "a late Settings response from account A cannot overwrite account B after an identity switch",
+  async ({ page }) => {
+    const accountA = {
+      ...user,
+      id: "00000000-0000-4000-8000-000000000011",
+      handle: "account-a",
+      displayName: "Account A"
+    };
+    const accountB = {
+      ...user,
+      id: "00000000-0000-4000-8000-000000000022",
+      handle: "account-b",
+      displayName: "Account B"
+    };
+    let meCalls = 0;
+    let feedCalls = 0;
+    let blockedCalls = 0;
+    let releaseAccountABlocked!: () => void;
+    let markAccountABlockedPending!: () => void;
+    const accountABlockedPending = new Promise<void>((resolve) => {
+      releaseAccountABlocked = resolve;
+    });
+    const accountABlockedSeen = new Promise<void>((resolve) => {
+      markAccountABlockedPending = resolve;
+    });
 
-  await page.route("**/v1/**", async (route) => {
-    const pathname = new URL(route.request().url()).pathname;
-    if (pathname === "/v1/me") {
-      meCalls += 1;
-      await reply(route, 200, { user: meCalls === 1 ? accountA : accountB });
-      return;
-    }
-    if (pathname === "/v1/feed") {
-      feedCalls += 1;
-      await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
-      return;
-    }
-    if (pathname === "/v1/notifications") {
-      await reply(route, 200, { notifications: [] });
-      return;
-    }
-    if (pathname === "/v1/moderation/reports") {
-      await reply(route, 403, { title: "Forbidden" });
-      return;
-    }
-    if (pathname === "/v1/me/follow-requests") {
-      await reply(route, 200, { requests: [] });
-      return;
-    }
-    if (pathname === "/v1/me/blocked") {
-      blockedCalls += 1;
-      if (blockedCalls === 1) {
-        markAccountABlockedPending();
-        await accountABlockedPending;
-        await reply(route, 200, {
-          users: [{ id: "blocked-a", handle: "private-a", displayName: "Account A private record", avatarUrl: null }]
-        });
-      } else {
-        await reply(route, 200, {
-          users: [{ id: "blocked-b", handle: "private-b", displayName: "Account B private record", avatarUrl: null }]
-        });
+    await page.route("**/v1/**", async (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname === "/v1/me") {
+        meCalls += 1;
+        await reply(route, 200, { user: meCalls === 1 ? accountA : accountB });
+        return;
       }
-      return;
-    }
-    if (pathname === "/v1/me/muted") {
-      await reply(route, 200, { users: [] });
-      return;
-    }
-    if (pathname === "/v1/me/reports") {
-      await reply(route, 200, { reports: [] });
-      return;
-    }
-    if (pathname === "/v1/me/appeals") {
-      await reply(route, 200, { appeals: [] });
-      return;
-    }
-    await reply(route, 200, {});
-  });
+      if (pathname === "/v1/feed") {
+        feedCalls += 1;
+        await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
+        return;
+      }
+      if (pathname === "/v1/notifications") {
+        await reply(route, 200, { notifications: [] });
+        return;
+      }
+      if (pathname === "/v1/moderation/reports") {
+        await reply(route, 403, { title: "Forbidden" });
+        return;
+      }
+      if (pathname === "/v1/me/follow-requests") {
+        await reply(route, 200, { requests: [] });
+        return;
+      }
+      if (pathname === "/v1/me/blocked") {
+        blockedCalls += 1;
+        if (blockedCalls === 1) {
+          markAccountABlockedPending();
+          await accountABlockedPending;
+          await reply(route, 200, {
+            users: [
+              {
+                id: "blocked-a",
+                handle: "private-a",
+                displayName: "Account A private record",
+                avatarUrl: null
+              }
+            ]
+          });
+        } else {
+          await reply(route, 200, {
+            users: [
+              {
+                id: "blocked-b",
+                handle: "private-b",
+                displayName: "Account B private record",
+                avatarUrl: null
+              }
+            ]
+          });
+        }
+        return;
+      }
+      if (pathname === "/v1/me/muted") {
+        await reply(route, 200, { users: [] });
+        return;
+      }
+      if (pathname === "/v1/me/reports") {
+        await reply(route, 200, { reports: [] });
+        return;
+      }
+      if (pathname === "/v1/me/appeals") {
+        await reply(route, 200, { appeals: [] });
+        return;
+      }
+      await reply(route, 200, {});
+    });
 
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Your people, in motion." })).toBeVisible();
-  await page.getByRole("button", { name: "Settings" }).click();
-  await accountABlockedSeen;
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Your people, in motion." })).toBeVisible();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await accountABlockedSeen;
 
-  // A second session refresh returns a distinct authenticated identity.
-  await page.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByLabel("Display name")).toHaveValue("Account B");
-  await expect(page.getByText("Account B private record")).toBeVisible();
-  expect(meCalls).toBe(2);
-  expect(blockedCalls).toBe(2);
+    // A second session refresh returns a distinct authenticated identity.
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(page.getByLabel("Display name")).toHaveValue("Account B");
+    await expect(page.getByText("Account B private record")).toBeVisible();
+    expect(meCalls).toBe(2);
+    expect(blockedCalls).toBe(2);
 
-  // Resolve the old account's private response only after B is mounted.
-  releaseAccountABlocked();
-  await expect(page.getByText("Account A private record")).toHaveCount(0);
-  await expect(page.getByText("Account B private record")).toBeVisible();
-});
+    // Resolve the old account's private response only after B is mounted.
+    releaseAccountABlocked();
+    await expect(page.getByText("Account A private record")).toHaveCount(0);
+    await expect(page.getByText("Account B private record")).toBeVisible();
+  }
+);
