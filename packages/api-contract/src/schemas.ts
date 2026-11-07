@@ -315,7 +315,6 @@ export const moderationAppealDetailResponseSchema = z.object({
   updatedAt: isoDateTimeSchema
 });
 
-
 export const moderationReportDetailResponseWrapperSchema = z.object({
   report: moderationReportDetailResponseSchema
 });
