@@ -1447,10 +1447,16 @@ function Settings({
                 className="secondary-button"
                 onClick={() => {
                   void request(`/me/follow-requests/${item.handle}`, { method: "DELETE" })
-                    .then(() =>
-                      setFollowRequests((items) => items.filter((entry) => entry.id !== item.id))
-                    )
-                    .catch((reason) => onError((reason as Error).message));
+                    .then(() => {
+                      if (mountedRequestScope.current.isActive()) {
+                        setFollowRequests((items) => items.filter((entry) => entry.id !== item.id));
+                      }
+                    })
+                    .catch((reason) => {
+                      if (mountedRequestScope.current.isActive()) {
+                        onError((reason as Error).message);
+                      }
+                    });
                 }}
               >
                 Decline
