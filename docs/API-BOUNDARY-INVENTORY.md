@@ -105,8 +105,10 @@
 
 1. Most request schemas are parsed inline with Zod and are not attached to
    Fastify route schemas. The generated Swagger document is incomplete.
-2. Several response types are inferred from SQL row shapes. Explicit public
-   response schemas and contract tests are still needed.
+2. Shared Zod response schemas and contract tests now cover the principal profile,
+   feed, comment, notification, report, appeal, role and audit row shapes. The
+   package is still an additive contract; remaining route wrappers and runtime
+   response validation are not yet complete.
 3. Lists use fixed SQL limits or a bounded limit parameter. Cursor and offset
    pagination are not implemented in the inspected handlers.
 4. The avatar field accepts a URL. No secure upload, object storage,
@@ -118,11 +120,16 @@
 7. Fastify does not explicitly configure `trustProxy`. The effective
    `request.ip` behind Railway ingress is unverified; do not trust arbitrary
    forwarded headers.
-8. The audit identity resolver uses the ordinary API pool. Dedicated
-   resolver-role isolation has not been demonstrated.
+8. A disposable PostgreSQL 16 integration test now proves a least-privilege
+   resolver-role split. The API still uses one ordinary pool; dedicated role
+   provisioning and a separate resolver connection are not implemented.
 9. Anonymous audit-resolution requests are rejected before access logging.
    Invalid authenticated requests can use an all-zero UUID placeholder;
    it is not a genuine actor reference.
+10. Migration 0007 does not explicitly revoke PUBLIC EXECUTE on its SECURITY
+    DEFINER resolver function. The disposable PostgreSQL 16 test confirms that
+    the default PUBLIC EXECUTE grant is present on a fresh CI database. The
+    actual production ACL has not been inspected.
 
 ## Next contract work
 
