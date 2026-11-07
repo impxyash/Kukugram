@@ -346,16 +346,21 @@ describe("API request contracts", () => {
     expect(healthResponseSchema.safeParse({ status: "ok", requestId: "request-123" }).success).toBe(
       true
     );
+    const problemDetails = {
+      type: "https://kukugram.com/problems/validation",
+      title: "Validation failed",
+      status: 400,
+      detail: "The request body is invalid.",
+      instance: "/v1/me/profile",
+      requestId: "request-123"
+    };
+    expect(problemDetailsSchema.safeParse(problemDetails).success).toBe(true);
+    expect(problemDetailsSchema.safeParse({ ...problemDetails, instance: undefined }).success).toBe(
+      false
+    );
     expect(
-      problemDetailsSchema.safeParse({
-        type: "https://kukugram.com/problems/validation",
-        title: "Validation failed",
-        status: 400,
-        detail: "The request body is invalid.",
-        instance: "/v1/me/profile",
-        requestId: "request-123"
-      }).success
-    ).toBe(true);
+      problemDetailsSchema.safeParse({ ...problemDetails, requestId: undefined }).success
+    ).toBe(false);
   });
 
   it("validates blocked and muted account response projections", () => {

@@ -113,8 +113,8 @@ export const problemDetailsSchema = z.object({
   title: z.string(),
   status: z.number().int().min(400).max(599),
   detail: z.string().optional(),
-  instance: z.string().optional(),
-  requestId: z.string().optional()
+  instance: z.string(),
+  requestId: z.string()
 });
 
 export const healthResponseSchema = z.object({
