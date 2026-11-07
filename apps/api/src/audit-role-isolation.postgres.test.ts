@@ -13,8 +13,11 @@ const appRole = `kg_acl_app_${suffix}`;
 const resolverRole = `kg_acl_resolver_${suffix}`;
 const appPassword = randomUUID() + randomUUID();
 const resolverPassword = randomUUID() + randomUUID();
-const resolverFunction = "moderation.resolve_audit_actor_ref(uuid,character varying)";
+const actorRefFunction = "moderation.resolve_audit_actor_ref(uuid,character varying)";
+const actorIdentityFunction = "moderation.resolve_audit_actor_identity(uuid,character varying)";
+const logTriggerFunction = "moderation.reject_audit_identity_resolution_log_mutation()";
 const actorMapTable = "moderation.audit_actor_identity_map";
+const resolutionLogTable = "moderation.audit_identity_resolution_log";
 
 integration("PostgreSQL audit resolver role isolation", () => {
   let admin: Client | undefined;
@@ -68,14 +71,16 @@ integration("PostgreSQL audit resolver role isolation", () => {
   );
 
   it(
-    "confirms migration 0007 defaults and enforces separate non-superuser principals",
+    "verifies audit ACL defaults, append-only logging and distinct non-superuser roles",
     async () => {
-      const baseline = await database().query<{
+      const functionAcl = await database().query<{
+        functionName: string;
         securityDefiner: boolean;
         functionConfig: string[] | null;
         publicExecute: boolean;
       }>(
         `SELECT
+           p.oid::regprocedure::text AS "functionName",
            p.prosecdef AS "securityDefiner",
            p.proconfig AS "functionConfig",
            EXISTS (
@@ -84,16 +89,61 @@ integration("PostgreSQL audit resolver role isolation", () => {
              WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE'
            ) AS "publicExecute"
          FROM pg_proc p
-         WHERE p.oid = $1::regprocedure`,
-        [resolverFunction]
+         WHERE p.oid IN ($1::regprocedure, $2::regprocedure, $3::regprocedure)`,
+        [actorRefFunction, actorIdentityFunction, logTriggerFunction]
+      );
+      const actorRefAcl = functionAcl.rows.find((row) =>
+        row.functionName.includes("resolve_audit_actor_ref")
+      );
+      const actorIdentityAcl = functionAcl.rows.find((row) =>
+        row.functionName.includes("resolve_audit_actor_identity")
+      );
+      const triggerFunctionAcl = functionAcl.rows.find((row) =>
+        row.functionName.includes("reject_audit_identity_resolution_log_mutation")
       );
 
-      expect(baseline.rows).toHaveLength(1);
-      expect(baseline.rows[0]?.securityDefiner).toBe(true);
-      expect(baseline.rows[0]?.functionConfig).toContain("search_path=pg_catalog, moderation");
-      // Migration 0007 creates a SECURITY DEFINER function but does not revoke
-      // PostgreSQL's default PUBLIC EXECUTE privilege.
-      expect(baseline.rows[0]?.publicExecute).toBe(true);
+      expect(actorRefAcl?.securityDefiner).toBe(true);
+      expect(actorRefAcl?.functionConfig).toContain("search_path=pg_catalog, moderation");
+      // Migration 0007 does not revoke PostgreSQL's default PUBLIC EXECUTE.
+      expect(actorRefAcl?.publicExecute).toBe(true);
+      expect(actorIdentityAcl?.securityDefiner).toBe(true);
+      expect(actorIdentityAcl?.functionConfig).toContain("search_path=pg_catalog, moderation");
+      expect(actorIdentityAcl?.publicExecute).toBe(false);
+      expect(triggerFunctionAcl?.publicExecute).toBe(false);
+
+      const logTableAcl = await database().query<{ publicPrivileges: string[] }>(
+        `SELECT COALESCE(
+           array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type)
+             FILTER (WHERE acl.grantee = 0),
+           ARRAY[]::text[]
+         ) AS "publicPrivileges"
+         FROM pg_class c
+         CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) AS acl
+         WHERE c.oid = $1::regclass`,
+        [resolutionLogTable]
+      );
+      expect(logTableAcl.rows[0]?.publicPrivileges).toEqual([]);
+
+      const actorId = randomUUID();
+      const opaqueActorRef = randomUUID();
+      await database().query(
+        `INSERT INTO ${resolutionLogTable}
+           (requester_user_id, actor_ref, purpose_scope, reason, outcome, request_id)
+         VALUES ($1, $2, 'moderation.audit.acl_test', $3, 'resolved', $4)`,
+        [randomUUID(), opaqueActorRef, "Documented test of immutable audit log behavior.", randomUUID()]
+      );
+      await expect(
+        database().query(
+          `UPDATE ${resolutionLogTable} SET reason = 'tampered audit log entry' WHERE actor_ref = $1`,
+          [opaqueActorRef]
+        )
+      ).rejects.toThrow("append-only");
+      await expect(
+        database().query(
+          `DELETE FROM ${resolutionLogTable} WHERE actor_ref = $1`,
+          [opaqueActorRef]
+        )
+      ).rejects.toThrow("append-only");
 
       await database().query(`CREATE ROLE "${appRole}" LOGIN PASSWORD '${appPassword}'`);
       await database().query(`CREATE ROLE "${resolverRole}" LOGIN PASSWORD '${resolverPassword}'`);
@@ -101,13 +151,13 @@ integration("PostgreSQL audit resolver role isolation", () => {
         `GRANT USAGE ON SCHEMA moderation TO "${appRole}", "${resolverRole}"`
       );
       await database().query(
-        `REVOKE ALL PRIVILEGES ON TABLE ${actorMapTable} FROM PUBLIC, "${appRole}", "${resolverRole}"`
+        `REVOKE ALL PRIVILEGES ON TABLE ${actorMapTable}, ${resolutionLogTable} FROM PUBLIC, "${appRole}", "${resolverRole}"`
       );
       await database().query(
-        `REVOKE EXECUTE ON FUNCTION ${resolverFunction} FROM PUBLIC`
+        `REVOKE EXECUTE ON FUNCTION ${actorRefFunction}, ${actorIdentityFunction} FROM PUBLIC`
       );
       await database().query(
-        `GRANT EXECUTE ON FUNCTION ${resolverFunction} TO "${resolverRole}"`
+        `GRANT EXECUTE ON FUNCTION ${actorRefFunction}, ${actorIdentityFunction} TO "${resolverRole}"`
       );
 
       const appUrl = new URL(databaseUrl!);
@@ -127,55 +177,61 @@ integration("PostgreSQL audit resolver role isolation", () => {
       const appPrivileges = await appClient.query<{
         currentRole: string;
         isSuperuser: boolean;
-        canExecute: boolean;
-        canReadMap: boolean;
-        canInsertMap: boolean;
+        canResolveActorRef: boolean;
+        canResolveActorIdentity: boolean;
+        canReadActorMap: boolean;
+        canReadResolutionLog: boolean;
       }>(
         `SELECT
            current_user AS "currentRole",
            rolsuper AS "isSuperuser",
-           has_function_privilege(current_user, $1::regprocedure, 'EXECUTE') AS "canExecute",
-           has_table_privilege(current_user, $2, 'SELECT') AS "canReadMap",
-           has_table_privilege(current_user, $2, 'INSERT') AS "canInsertMap"
+           has_function_privilege(current_user, $1::regprocedure, 'EXECUTE') AS "canResolveActorRef",
+           has_function_privilege(current_user, $2::regprocedure, 'EXECUTE') AS "canResolveActorIdentity",
+           has_table_privilege(current_user, $3, 'SELECT') AS "canReadActorMap",
+           has_table_privilege(current_user, $4, 'SELECT') AS "canReadResolutionLog"
          FROM pg_roles WHERE rolname = current_user`,
-        [resolverFunction, actorMapTable]
+        [actorRefFunction, actorIdentityFunction, actorMapTable, resolutionLogTable]
       );
       const resolverPrivileges = await resolverClient.query<{
         currentRole: string;
         isSuperuser: boolean;
-        canExecute: boolean;
-        canReadMap: boolean;
-        canInsertMap: boolean;
+        canResolveActorRef: boolean;
+        canResolveActorIdentity: boolean;
+        canReadActorMap: boolean;
+        canReadResolutionLog: boolean;
       }>(
         `SELECT
            current_user AS "currentRole",
            rolsuper AS "isSuperuser",
-           has_function_privilege(current_user, $1::regprocedure, 'EXECUTE') AS "canExecute",
-           has_table_privilege(current_user, $2, 'SELECT') AS "canReadMap",
-           has_table_privilege(current_user, $2, 'INSERT') AS "canInsertMap"
+           has_function_privilege(current_user, $1::regprocedure, 'EXECUTE') AS "canResolveActorRef",
+           has_function_privilege(current_user, $2::regprocedure, 'EXECUTE') AS "canResolveActorIdentity",
+           has_table_privilege(current_user, $3, 'SELECT') AS "canReadActorMap",
+           has_table_privilege(current_user, $4, 'SELECT') AS "canReadResolutionLog"
          FROM pg_roles WHERE rolname = current_user`,
-        [resolverFunction, actorMapTable]
+        [actorRefFunction, actorIdentityFunction, actorMapTable, resolutionLogTable]
       );
 
       expect(appPrivileges.rows[0]).toEqual({
         currentRole: appRole,
         isSuperuser: false,
-        canExecute: false,
-        canReadMap: false,
-        canInsertMap: false
+        canResolveActorRef: false,
+        canResolveActorIdentity: false,
+        canReadActorMap: false,
+        canReadResolutionLog: false
       });
       expect(resolverPrivileges.rows[0]).toEqual({
         currentRole: resolverRole,
         isSuperuser: false,
-        canExecute: true,
-        canReadMap: false,
-        canInsertMap: false
+        canResolveActorRef: true,
+        canResolveActorIdentity: true,
+        canReadActorMap: false,
+        canReadResolutionLog: false
       });
 
       await expect(
         appClient.query(
           `SELECT moderation.resolve_audit_actor_ref($1, 'moderation.audit.role_test')`,
-          [randomUUID()]
+          [actorId]
         )
       ).rejects.toMatchObject({ code: "42501" });
       await expect(
@@ -184,22 +240,22 @@ integration("PostgreSQL audit resolver role isolation", () => {
       await expect(
         resolverClient.query(`SELECT * FROM ${actorMapTable} LIMIT 1`)
       ).rejects.toMatchObject({ code: "42501" });
+      await expect(
+        resolverClient.query(`SELECT * FROM ${resolutionLogTable} LIMIT 1`)
+      ).rejects.toMatchObject({ code: "42501" });
 
-      const actorId = randomUUID();
-      const result = await resolverClient.query<{ actorRef: string }>(
+      const actorReference = await resolverClient.query<{ actorRef: string }>(
         `SELECT moderation.resolve_audit_actor_ref($1, 'moderation.audit.role_test') AS "actorRef"`,
         [actorId]
       );
-      const resolvedReference = result.rows[0]?.actorRef;
+      const resolvedReference = actorReference.rows[0]?.actorRef;
       expect(resolvedReference).toEqual(expect.any(String));
 
-      const mapping = await database().query<{ actorRef: string }>(
-        `SELECT actor_ref AS "actorRef"
-         FROM ${actorMapTable}
-         WHERE purpose_scope = 'moderation.audit.role_test' AND actor_user_id = $1`,
-        [actorId]
+      const resolvedIdentity = await resolverClient.query<{ userId: string }>(
+        `SELECT moderation.resolve_audit_actor_identity($1, 'moderation.audit.role_test') AS "userId"`,
+        [resolvedReference]
       );
-      expect(mapping.rows).toEqual([{ actorRef: resolvedReference }]);
+      expect(resolvedIdentity.rows[0]?.userId).toBe(actorId);
     },
     30_000
   );
