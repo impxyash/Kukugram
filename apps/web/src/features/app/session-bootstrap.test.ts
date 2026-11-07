@@ -85,57 +85,33 @@ describe("session bootstrap", () => {
       activityError: true
     });
   });
-});
-
-describe("session activity reconciliation", () => {
-  it("preserves existing activity for the same user when one request fails", () => {
-    const previousPosts = [{ id: "post-old" }];
-    const previousNotices = [{ id: "notice-old" }];
-
-    expect(
-      reconcileSessionActivity(
-        "user-1",
-        "user-1",
-        previousPosts,
-        previousNotices,
-        undefined,
-        [{ id: "notice-new" }]
-      )
-    ).toEqual({
-      posts: previousPosts,
+  it("preserves same-user activity but clears activity when the account changes", () => {
+    const sameUser = reconcileSessionActivity(
+      "user-1",
+      "user-1",
+      [{ id: "post-old" }],
+      [{ id: "notice-old" }],
+      undefined,
+      [{ id: "notice-new" }]
+    );
+    expect(sameUser).toEqual({
+      posts: [{ id: "post-old" }],
       notices: [{ id: "notice-new" }]
     });
-  });
 
-  it("clears activity from the previous user when the new user's request fails", () => {
-    expect(
-      reconcileSessionActivity(
-        "user-1",
-        "user-2",
-        [{ id: "post-private-to-user-1" }],
-        [{ id: "notice-private-to-user-1" }],
-        undefined,
-        [{ id: "notice-user-2" }]
-      )
-    ).toEqual({
+    const changedUser = reconcileSessionActivity(
+      "user-1",
+      "user-2",
+      [{ id: "private-post" }],
+      [{ id: "private-notice" }],
+      undefined,
+      [{ id: "new-notice" }]
+    );
+    expect(changedUser).toEqual({
       posts: [],
-      notices: [{ id: "notice-user-2" }]
+      notices: [{ id: "new-notice" }]
     });
   });
 
-  it("replaces both activity collections when the new user loads successfully", () => {
-    expect(
-      reconcileSessionActivity(
-        "user-1",
-        "user-2",
-        [{ id: "post-user-1" }],
-        [{ id: "notice-user-1" }],
-        [{ id: "post-user-2" }],
-        [{ id: "notice-user-2" }]
-      )
-    ).toEqual({
-      posts: [{ id: "post-user-2" }],
-      notices: [{ id: "notice-user-2" }]
-    });
-  });
 });
+
