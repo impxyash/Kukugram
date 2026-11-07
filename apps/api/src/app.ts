@@ -129,7 +129,7 @@ export function buildApp(
       buildLocalReference: (schema, _baseUri, _fragment, index) =>
         (schema as { title?: string }).title ?? `def-${index}`
     },
-    transformObject: ({ swaggerObject }) => {
+    transformObject: (documentObject) => {
       const normalizeProblemDetailsRefs = (value: unknown): void => {
         if (Array.isArray(value)) {
           value.forEach(normalizeProblemDetailsRefs);
@@ -142,8 +142,8 @@ export function buildApp(
         }
         Object.values(object).forEach(normalizeProblemDetailsRefs);
       };
-      normalizeProblemDetailsRefs(swaggerObject);
-      return swaggerObject;
+      normalizeProblemDetailsRefs(documentObject);
+      return documentObject;
     },
     openapi: {
       info: { title: "Kukugram API", version: "1.0.0" },
