@@ -45,65 +45,92 @@ describe("API", () => {
   it("publishes complete health and identity response schemas in OpenAPI", async () => {
     const app = buildApp(config);
     await app.ready();
-    type OpenApiResponse = {
-      content?: Record<string, { schema?: Record<string, unknown> }>;
-    };
-    type OpenApiOperation = {
-      responses?: Record<string, OpenApiResponse>;
-    };
-    type OpenApiDocument = {
-      servers?: Array<{ url: string }>;
-      paths?: Record<string, { get?: OpenApiOperation }>;
-    };
-    const document = app.swagger() as OpenApiDocument;
+    const document = app.swagger();
 
-    expect(document.servers).toEqual([{ url: "/" }]);
-    expect(document.paths).toHaveProperty("/health");
-    expect(document.paths).toHaveProperty("/v1/auth/providers");
-
-    for (const path of ["/health", "/v1/auth/providers"]) {
-      const responses = document.paths?.[path]?.get?.responses;
-      expect(responses?.["200"]?.content).toHaveProperty("application/json");
-      expect(responses?.["500"]?.content).toHaveProperty("application/problem+json");
-      const problemResponseSchema =
-        responses?.["500"]?.content?.["application/problem+json"]?.schema;
-      expect(problemResponseSchema).toMatchObject({
-        type: "object",
-        required: ["type", "title", "status", "instance", "requestId"],
-        properties: {
-          type: { type: "string", format: "uri" },
-          title: { type: "string" },
-          status: { type: "integer", minimum: 400, maximum: 599 },
-          detail: { type: "string" },
-          instance: { type: "string" },
-          requestId: { type: "string" }
+    expect(document).toMatchObject({
+      servers: [{ url: "/" }],
+      paths: {
+        "/health": {
+          get: {
+            responses: {
+              "200": {
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      required: ["status", "requestId"],
+                      properties: {
+                        status: { type: "string", const: "ok" },
+                        requestId: { type: "string" }
+                      },
+                      additionalProperties: false
+                    }
+                  }
+                }
+              },
+              "500": {
+                content: {
+                  "application/problem+json": {
+                    schema: {
+                      type: "object",
+                      required: ["type", "title", "status", "instance", "requestId"],
+                      properties: {
+                        type: { type: "string", format: "uri" },
+                        title: { type: "string" },
+                        status: { type: "integer", minimum: 400, maximum: 599 },
+                        detail: { type: "string" },
+                        instance: { type: "string" },
+                        requestId: { type: "string" }
+                      },
+                      additionalProperties: false
+                    }
+                  }
+                }
+              }
+            }
+          }
         },
-        additionalProperties: false
-      });
-    }
-
-    const healthResponseSchema =
-      document.paths?.["/health"]?.get?.responses?.["200"]?.content?.["application/json"]?.schema;
-    expect(healthResponseSchema).toMatchObject({
-      type: "object",
-      required: ["status", "requestId"],
-      properties: {
-        status: { type: "string", const: "ok" },
-        requestId: { type: "string" }
-      },
-      additionalProperties: false
-    });
-    const identitySuccessContent =
-      document.paths?.["/v1/auth/providers"]?.get?.responses?.["200"]?.content;
-    const identityResponseSchema = identitySuccessContent?.["application/json"]?.schema;
-    expect(identityResponseSchema).toMatchObject({
-      type: "object",
-      required: ["password", "oauth"],
-      properties: {
-        password: { type: "boolean" },
-        oauth: { type: "array", items: { type: "string" } }
-      },
-      additionalProperties: false
+        "/v1/auth/providers": {
+          get: {
+            responses: {
+              "200": {
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      required: ["password", "oauth"],
+                      properties: {
+                        password: { type: "boolean" },
+                        oauth: { type: "array", items: { type: "string" } }
+                      },
+                      additionalProperties: false
+                    }
+                  }
+                }
+              },
+              "500": {
+                content: {
+                  "application/problem+json": {
+                    schema: {
+                      type: "object",
+                      required: ["type", "title", "status", "instance", "requestId"],
+                      properties: {
+                        type: { type: "string", format: "uri" },
+                        title: { type: "string" },
+                        status: { type: "integer", minimum: 400, maximum: 599 },
+                        detail: { type: "string" },
+                        instance: { type: "string" },
+                        requestId: { type: "string" }
+                      },
+                      additionalProperties: false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     });
     await app.close();
   });
