@@ -3,6 +3,11 @@ import {
   appealCreateRequestSchema,
   auditActorResolutionRequestSchema,
   feedResponseSchema,
+  commentCreateResponseSchema,
+  commentListResponseSchema,
+  notificationListResponseSchema,
+  reportCreateResponseSchema,
+  appealCreateResponseSchema,
   loginRequestSchema,
   moderationAuditQuerySchema,
   moderationReportListQuerySchema,
@@ -91,6 +96,47 @@ describe("API request contracts", () => {
         ]
       }).success
     ).toBe(true);
+  });
+
+
+  it("validates comments, notifications, and moderation mutation responses", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    expect(commentCreateResponseSchema.safeParse({ id, body: "Hello" }).success).toBe(true);
+    expect(
+      commentListResponseSchema.safeParse({
+        comments: [
+          {
+            id,
+            body: "Hello",
+            createdAt: "2026-11-07T00:00:00.000Z",
+            handle: "creator",
+            displayName: "Creator",
+            avatarUrl: null
+          }
+        ]
+      }).success
+    ).toBe(true);
+    expect(
+      notificationListResponseSchema.safeParse({
+        notifications: [
+          {
+            id,
+            type: "follow",
+            postId: null,
+            createdAt: "2026-11-07T00:00:00.000Z",
+            readAt: null,
+            handle: "creator",
+            displayName: "Creator"
+          }
+        ]
+      }).success
+    ).toBe(true);
+    expect(reportCreateResponseSchema.safeParse({ reportId: id, status: "open" }).success).toBe(
+      true
+    );
+    expect(appealCreateResponseSchema.safeParse({ appealId: id, status: "open" }).success).toBe(
+      true
+    );
   });
 
   it("rejects invalid login payloads", () => {
