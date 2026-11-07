@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Pool } from "pg";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import type { RateLimitStore } from "./platform/rate-limit.js";
 
 const config = {
   NODE_ENV: "test" as const,
@@ -86,6 +87,79 @@ describe("API", () => {
       expect(response.statusCode, request.url).toBe(401);
     }
 
+    await app.close();
+  });
+
+
+  it("uses Railway X-Real-IP and ignores caller-controlled X-Forwarded-For", async () => {
+    const app = buildApp(config);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/v1/auth/login",
+        headers: {
+          "x-real-ip": "203.0.113.44",
+          "x-forwarded-for": `198.51.100.${attempt + 1}`
+        },
+        payload: {}
+      });
+      expect(response.statusCode).toBe(400);
+    }
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      headers: {
+        "x-real-ip": "203.0.113.44",
+        "x-forwarded-for": "192.0.2.77"
+      },
+      payload: {}
+    });
+    expect(limited.statusCode).toBe(429);
+    await app.close();
+  });
+
+  it("fails closed when production public-ingress client IP is missing", async () => {
+    const productionConfig = { ...config, NODE_ENV: "production" as const };
+    const store: RateLimitStore = {
+      connect: async () => undefined,
+      consume: async () => ({ count: 1, ttlMs: 900_000 }),
+      close: async () => undefined
+    };
+    const app = buildApp(productionConfig, undefined, store);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: {}
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.headers["retry-after"]).toBe("5");
+    await app.close();
+  });
+
+  it("fails closed during Redis errors and resumes after the store recovers", async () => {
+    let available = false;
+    const store: RateLimitStore = {
+      connect: async () => undefined,
+      consume: async () => {
+        if (!available) throw new Error("simulated Redis outage");
+        return { count: 1, ttlMs: 900_000 };
+      },
+      close: async () => undefined
+    };
+    const app = buildApp(config, undefined, store);
+    const request = {
+      method: "POST" as const,
+      url: "/v1/auth/login",
+      headers: { "x-real-ip": "203.0.113.45" },
+      payload: {}
+    };
+
+    const unavailable = await app.inject(request);
+    expect(unavailable.statusCode).toBe(503);
+    available = true;
+    const recovered = await app.inject(request);
+    expect(recovered.statusCode).toBe(400);
     await app.close();
   });
 
