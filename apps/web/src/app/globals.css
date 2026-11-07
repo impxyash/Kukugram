@@ -404,6 +404,10 @@ textarea:focus {
   position: sticky;
   top: 28px;
 }
+.primary-nav {
+  display: grid;
+  gap: 5px;
+}
 .side-nav .brand {
   margin-bottom: 48px;
 }
@@ -755,6 +759,11 @@ textarea:focus {
   .nav-kicker,
   .nav-item.logout {
     display: none;
+  }
+  .primary-nav {
+    display: flex;
+    flex: 1;
+    min-width: 0;
   }
   .nav-item {
     flex: 1;
