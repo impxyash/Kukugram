@@ -141,9 +141,19 @@ export function AppShell() {
       setCanModerate(false);
       return;
     }
+
+    let cancelled = false;
     void request<{ reports: ModerationReport[] }>("/moderation/reports?limit=1")
-      .then(() => setCanModerate(true))
-      .catch(() => setCanModerate(false));
+      .then(() => {
+        if (!cancelled) setCanModerate(true);
+      })
+      .catch(() => {
+        if (!cancelled) setCanModerate(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   if (loading)
@@ -246,8 +256,8 @@ export function AppShell() {
             onError={setError}
           />
         )}
-        {tab === "settings" && <Settings user={user} setUser={setUser} onError={setError} />}
-        {tab === "moderation" && canModerate && <ModerationPanel onError={setError} />}
+        {tab === "settings" && <Settings key={user.id} user={user} setUser={setUser} onError={setError} />}
+        {tab === "moderation" && canModerate && <ModerationPanel key={user.id} onError={setError} />}
       </section>
     </main>
   );
