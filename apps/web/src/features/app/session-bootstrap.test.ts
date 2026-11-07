@@ -87,7 +87,6 @@ describe("session bootstrap", () => {
   });
 });
 
-
 describe("session activity reconciliation", () => {
   it("preserves existing activity for the same user when one request fails", () => {
     const previousPosts = [{ id: "post-old" }];
