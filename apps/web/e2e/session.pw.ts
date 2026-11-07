@@ -463,219 +463,245 @@ test("moderation case work is discarded when switching to a non-moderator accoun
   await expect(page.getByText("Report marked as resolved.")).toHaveCount(0);
 });
 
+test(
+  "pending Settings mutations cannot commit after switching to another identity",
+  async ({ page }) => {
+    const accountA = {
+      ...user,
+      id: "00000000-0000-4000-8000-000000000041",
+      handle: "settings-a",
+      displayName: "Settings Account A"
+    };
+    const accountB = {
+      ...user,
+      id: "00000000-0000-4000-8000-000000000042",
+      handle: "settings-b",
+      displayName: "Settings Account B"
+    };
+    const reportId = "00000000-0000-4000-8000-000000000043";
+    let switchToAccountB = false;
+    let meCalls = 0;
+    let feedCalls = 0;
+    let pendingCount = 0;
+    let markPending!: () => void;
+    let releasePending!: () => void;
+    const pendingSeen = new Promise<void>((resolve) => {
+      markPending = resolve;
+    });
+    const pendingGate = new Promise<void>((resolve) => {
+      releasePending = resolve;
+    });
+    const holdMutation = async (route: Route) => {
+      pendingCount += 1;
+      if (pendingCount === 6) markPending();
+      await pendingGate;
+      await reply(route, 200, {});
+    };
 
-test("pending Settings mutations cannot commit after switching to another identity", async ({ page }) => {
-  const accountA = {
-    ...user,
-    id: "00000000-0000-4000-8000-000000000041",
-    handle: "settings-a",
-    displayName: "Settings Account A"
-  };
-  const accountB = {
-    ...user,
-    id: "00000000-0000-4000-8000-000000000042",
-    handle: "settings-b",
-    displayName: "Settings Account B"
-  };
-  const reportId = "00000000-0000-4000-8000-000000000043";
-  let switchToAccountB = false;
-  let meCalls = 0;
-  let feedCalls = 0;
-  let pendingCount = 0;
-  let markPending!: () => void;
-  let releasePending!: () => void;
-  const pendingSeen = new Promise<void>((resolve) => {
-    markPending = resolve;
-  });
-  const pendingGate = new Promise<void>((resolve) => {
-    releasePending = resolve;
-  });
-  const holdMutation = async (route: Route) => {
-    pendingCount += 1;
-    if (pendingCount === 6) markPending();
-    await pendingGate;
-    await reply(route, 200, {});
-  };
-
-  await page.route("**/v1/**", async (route) => {
-    const url = new URL(route.request().url());
-    const pathname = url.pathname;
-    const method = route.request().method();
-    if (pathname === "/v1/me") {
-      meCalls += 1;
-      await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
-      return;
-    }
-    if (pathname === "/v1/feed") {
-      feedCalls += 1;
-      await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
-      return;
-    }
-    if (pathname === "/v1/notifications") {
-      await reply(route, 200, { notifications: [] });
-      return;
-    }
-    if (pathname === "/v1/moderation/reports") {
-      await reply(route, 403, { title: "Forbidden" });
-      return;
-    }
-    if (pathname === "/v1/me/follow-requests" && method === "GET") {
-      await reply(route, 200, {
-        requests: [
-          { id: "follow-a", handle: "follow-a", displayName: "Follow A", avatarUrl: null },
-          { id: "follow-b", handle: "follow-b", displayName: "Follow B", avatarUrl: null }
-        ]
-      });
-      return;
-    }
-    if (pathname === "/v1/me/blocked" && method === "GET") {
-      await reply(route, 200, {
-        users: [{ id: "blocked-a", handle: "blocked-a", displayName: "Blocked A", avatarUrl: null }]
-      });
-      return;
-    }
-    if (pathname === "/v1/me/muted" && method === "GET") {
-      await reply(route, 200, {
-        users: [{ id: "muted-a", handle: "muted-a", displayName: "Muted A", avatarUrl: null }]
-      });
-      return;
-    }
-    if (pathname === "/v1/me/reports" && method === "GET") {
-      await reply(route, 200, {
-        reports: [{
-          id: reportId,
-          category: "spam",
-          targetType: "post",
-          createdAt: "2026-11-01T00:00:00.000Z",
-          status: "resolved"
-        }]
-      });
-      return;
-    }
-    if (pathname === "/v1/me/appeals" && method === "GET") {
-      await reply(route, 200, { appeals: [] });
-      return;
-    }
-    if (
-      (pathname === "/v1/me/profile" && method === "PATCH") ||
-      (pathname === "/v1/me/follow-requests/follow-a/accept" && method === "POST") ||
-      (pathname === "/v1/me/follow-requests/follow-b" && method === "DELETE") ||
-      (pathname === "/v1/users/blocked-a/block" && method === "DELETE") ||
-      (pathname === "/v1/users/muted-a/mute" && method === "DELETE") ||
-      (pathname === `/v1/reports/${reportId}/appeals` && method === "POST")
-    ) {
-      await holdMutation(route);
-      return;
-    }
-    await reply(route, 200, {});
-  });
-
-  page.on("dialog", async (dialog) => {
-    await dialog.accept("This decision should be reconsidered.");
-  });
-
-  await page.goto("/");
-  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
-  await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.getByText("Follow A")).toBeVisible();
-  await expect(page.getByText("Follow B")).toBeVisible();
-  await expect(page.getByText("Blocked A")).toBeVisible();
-  await expect(page.getByText("Muted A")).toBeVisible();
-
-  await page.getByRole("button", { name: "Save profile" }).click();
-  await page.getByRole("button", { name: "Accept" }).click();
-  await page.getByRole("button", { name: "Decline" }).click();
-  await page.getByRole("button", { name: "Unblock" }).click();
-  await page.getByRole("button", { name: "Unmute" }).click();
-  await page.getByRole("button", { name: "Appeal decision" }).click();
-  await pendingSeen;
-
-  switchToAccountB = true;
-  await page.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByLabel("Display name")).toHaveValue("Settings Account B");
-  await expect(page.getByText("No pending follow requests.")).toBeVisible();
-  await expect(page.getByText("No blocked accounts.")).toBeVisible();
-  await expect(page.getByText("No muted accounts.")).toBeVisible();
-  await expect(page.getByText("You have not submitted any reports.")).toBeVisible();
-
-  releasePending();
-  await expect(page.getByLabel("Display name")).toHaveValue("Settings Account B");
-  await expect(page.getByText("Follow A")).toHaveCount(0);
-  await expect(page.getByText("Blocked A")).toHaveCount(0);
-  await expect(page.getByText("Muted A")).toHaveCount(0);
-  await expect(page.locator(".banner.error")).toHaveCount(0);
-});
-
-test("a collapsed moderation detail response is invalidated instead of cached", async ({ page }) => {
-  const reportId = "00000000-0000-4000-8000-000000000051";
-  let detailCalls = 0;
-  let releaseFirstDetail!: () => void;
-  let markFirstDetailPending!: () => void;
-  const firstDetailGate = new Promise<void>((resolve) => {
-    releaseFirstDetail = resolve;
-  });
-  const firstDetailSeen = new Promise<void>((resolve) => {
-    markFirstDetailPending = resolve;
-  });
-
-  await page.route("**/v1/**", async (route) => {
-    const url = new URL(route.request().url());
-    const pathname = url.pathname;
-    if (pathname === "/v1/me") {
-      await authenticated(route);
-      return;
-    }
-    if (pathname === "/v1/feed") {
-      await reply(route, 200, { posts: [] });
-      return;
-    }
-    if (pathname === "/v1/notifications") {
-      await reply(route, 200, { notifications: [] });
-      return;
-    }
-    if (pathname === "/v1/moderation/reports") {
-      if (url.searchParams.has("status")) {
+    await page.route("**/v1/**", async (route) => {
+      const url = new URL(route.request().url());
+      const pathname = url.pathname;
+      const method = route.request().method();
+      if (pathname === "/v1/me") {
+        meCalls += 1;
+        await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
+        return;
+      }
+      if (pathname === "/v1/feed") {
+        feedCalls += 1;
+        await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
+        return;
+      }
+      if (pathname === "/v1/notifications") {
+        await reply(route, 200, { notifications: [] });
+        return;
+      }
+      if (pathname === "/v1/moderation/reports") {
+        await reply(route, 403, { title: "Forbidden" });
+        return;
+      }
+      if (pathname === "/v1/me/follow-requests" && method === "GET") {
         await reply(route, 200, {
-          reports: [{
-            id: reportId,
-            category: "spam",
-            targetType: "post",
-            createdAt: "2026-11-01T00:00:00.000Z",
-            status: "open"
-          }]
+          requests: [
+            { id: "follow-a", handle: "follow-a", displayName: "Follow A", avatarUrl: null },
+            { id: "follow-b", handle: "follow-b", displayName: "Follow B", avatarUrl: null }
+          ]
         });
-      } else {
-        await reply(route, 200, { reports: [] });
+        return;
       }
-      return;
-    }
-    if (pathname === `/v1/moderation/reports/${reportId}` && route.request().method() === "GET") {
-      detailCalls += 1;
-      if (detailCalls === 1) {
-        markFirstDetailPending();
-        await firstDetailGate;
+      if (pathname === "/v1/me/blocked" && method === "GET") {
+        await reply(route, 200, {
+          users: [
+            {
+              id: "blocked-a",
+              handle: "blocked-a",
+              displayName: "Blocked A",
+              avatarUrl: null
+            }
+          ]
+        });
+        return;
       }
-      await reply(route, 200, {
-        report: { targetId: "private-target", details: "Confidential report evidence" }
-      });
-      return;
-    }
-    if (pathname === "/v1/moderation/appeals") {
-      await reply(route, 200, { appeals: [] });
-      return;
-    }
-    await reply(route, 200, {});
-  });
+      if (pathname === "/v1/me/muted" && method === "GET") {
+        await reply(route, 200, {
+          users: [
+            {
+              id: "muted-a",
+              handle: "muted-a",
+              displayName: "Muted A",
+              avatarUrl: null
+            }
+          ]
+        });
+        return;
+      }
+      if (pathname === "/v1/me/reports" && method === "GET") {
+        await reply(route, 200, {
+          reports: [
+            {
+              id: reportId,
+              category: "spam",
+              targetType: "post",
+              createdAt: "2026-11-01T00:00:00.000Z",
+              status: "resolved"
+            }
+          ]
+        });
+        return;
+      }
+      if (pathname === "/v1/me/appeals" && method === "GET") {
+        await reply(route, 200, { appeals: [] });
+        return;
+      }
+      if (
+        (pathname === "/v1/me/profile" && method === "PATCH") ||
+        (pathname === "/v1/me/follow-requests/follow-a/accept" && method === "POST") ||
+        (pathname === "/v1/me/follow-requests/follow-b" && method === "DELETE") ||
+        (pathname === "/v1/users/blocked-a/block" && method === "DELETE") ||
+        (pathname === "/v1/users/muted-a/mute" && method === "DELETE") ||
+        (pathname === `/v1/reports/${reportId}/appeals` && method === "POST")
+      ) {
+        await holdMutation(route);
+        return;
+      }
+      await reply(route, 200, {});
+    });
 
-  await page.goto("/");
-  await expect(page.getByRole("button", { name: "Moderation" })).toBeVisible();
-  await page.getByRole("button", { name: "Moderation" }).click();
-  await page.getByRole("button", { name: "View case details" }).click();
-  await firstDetailSeen;
-  await page.getByRole("button", { name: "Hide case details" }).click();
-  releaseFirstDetail();
+    page.on("dialog", async (dialog) => {
+      await dialog.accept("This decision should be reconsidered.");
+    });
 
-  await page.getByRole("button", { name: "View case details" }).click();
-  await expect(page.getByText("Confidential report evidence")).toBeVisible();
-  expect(detailCalls).toBe(2);
-});
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page.getByText("Follow A")).toBeVisible();
+    await expect(page.getByText("Follow B")).toBeVisible();
+    await expect(page.getByText("Blocked A").first()).toBeVisible();
+    await expect(page.getByText("Muted A").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Save profile" }).click();
+    await page.getByRole("button", { name: "Accept" }).click();
+    await page.getByRole("button", { name: "Decline" }).click();
+    await page.getByRole("button", { name: "Unblock" }).click();
+    await page.getByRole("button", { name: "Unmute" }).click();
+    await page.getByRole("button", { name: "Appeal decision" }).click();
+    await pendingSeen;
+
+    switchToAccountB = true;
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(page.getByLabel("Display name")).toHaveValue("Settings Account B");
+    await expect(page.getByText("No pending follow requests.")).toBeVisible();
+    await expect(page.getByText("No blocked accounts.")).toBeVisible();
+    await expect(page.getByText("No muted accounts.")).toBeVisible();
+    await expect(page.getByText("You have not submitted any reports.")).toBeVisible();
+
+    releasePending();
+    await expect(page.getByLabel("Display name")).toHaveValue("Settings Account B");
+    await expect(page.getByText("Follow A")).toHaveCount(0);
+    await expect(page.getByText("Blocked A")).toHaveCount(0);
+    await expect(page.getByText("Muted A")).toHaveCount(0);
+    await expect(page.locator(".banner.error")).toHaveCount(0);
+  }
+);
+
+test(
+  "a collapsed moderation detail response is invalidated instead of cached",
+  async ({ page }) => {
+    const reportId = "00000000-0000-4000-8000-000000000051";
+    let detailCalls = 0;
+    let releaseFirstDetail!: () => void;
+    let markFirstDetailPending!: () => void;
+    const firstDetailGate = new Promise<void>((resolve) => {
+      releaseFirstDetail = resolve;
+    });
+    const firstDetailSeen = new Promise<void>((resolve) => {
+      markFirstDetailPending = resolve;
+    });
+
+    await page.route("**/v1/**", async (route) => {
+      const url = new URL(route.request().url());
+      const pathname = url.pathname;
+      if (pathname === "/v1/me") {
+        await authenticated(route);
+        return;
+      }
+      if (pathname === "/v1/feed") {
+        await reply(route, 200, { posts: [] });
+        return;
+      }
+      if (pathname === "/v1/notifications") {
+        await reply(route, 200, { notifications: [] });
+        return;
+      }
+      if (pathname === "/v1/moderation/reports") {
+        if (url.searchParams.has("status")) {
+          await reply(route, 200, {
+            reports: [
+              {
+                id: reportId,
+                category: "spam",
+                targetType: "post",
+                createdAt: "2026-11-01T00:00:00.000Z",
+                status: "open"
+              }
+            ]
+          });
+        } else {
+          await reply(route, 200, { reports: [] });
+        }
+        return;
+      }
+      if (
+        pathname === `/v1/moderation/reports/${reportId}` &&
+        route.request().method() === "GET"
+      ) {
+        detailCalls += 1;
+        if (detailCalls === 1) {
+          markFirstDetailPending();
+          await firstDetailGate;
+        }
+        await reply(route, 200, {
+          report: { targetId: "private-target", details: "Confidential report evidence" }
+        });
+        return;
+      }
+      if (pathname === "/v1/moderation/appeals") {
+        await reply(route, 200, { appeals: [] });
+        return;
+      }
+      await reply(route, 200, {});
+    });
+
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Moderation" })).toBeVisible();
+    await page.getByRole("button", { name: "Moderation" }).click();
+    await page.getByRole("button", { name: "View case details" }).click();
+    await firstDetailSeen;
+    await page.getByRole("button", { name: "Hide case details" }).click();
+    releaseFirstDetail();
+
+    await page.getByRole("button", { name: "View case details" }).click();
+    await expect(page.getByText("Confidential report evidence")).toBeVisible();
+    expect(detailCalls).toBe(2);
+  }
+);
