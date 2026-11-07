@@ -44,16 +44,12 @@ describe("additional API contracts", () => {
     expect(handleParams.safeParse({ handle: "creator_01" }).success).toBe(true);
     expectValidAndInvalid(reportRequest, { status: "resolved" }, { status: "open" });
     expectValidAndInvalid(appealRequest, { status: "accepted" }, { status: "open" });
-    expectValidAndInvalid(
-      roleRequest,
-      { userId: id, role: "moderator" },
-      { userId: "invalid", role: "moderator" }
-    );
-    expectValidAndInvalid(
-      roleParams,
-      { userId: id, role: "admin" },
-      { userId: id, role: "owner" }
-    );
+    const validRoleRequest = { userId: id, role: "moderator" };
+    const invalidRoleRequest = { userId: "invalid", role: "moderator" };
+    expectValidAndInvalid(roleRequest, validRoleRequest, invalidRoleRequest);
+    const validRoleParams = { userId: id, role: "admin" };
+    const invalidRoleParams = { userId: id, role: "owner" };
+    expectValidAndInvalid(roleParams, validRoleParams, invalidRoleParams);
   });
 
   it("validates standalone feed, notification, account and moderation response rows", () => {
@@ -137,42 +133,34 @@ describe("additional API contracts", () => {
       createdAt: timestamp
     };
 
-    expectValidAndInvalid(postResponseSchema, post, { ...post, authorId: "invalid" });
-    expectValidAndInvalid(commentResponseSchema, comment, { id, body: "A comment" });
-    expectValidAndInvalid(notificationResponseSchema, notification, {
-      ...notification,
-      type: "unknown"
-    });
-    expectValidAndInvalid(accountControlResponseSchema, accountControl, {
-      ...accountControl,
-      createdAt: "invalid"
-    });
-    expectValidAndInvalid(followRequestResponseSchema, followRequest, {
-      ...followRequest,
-      requestedAt: "invalid"
-    });
-    expectValidAndInvalid(reportSummaryResponseSchema, report, { ...report, status: "unknown" });
+    const invalidPost = { ...post, authorId: "invalid" };
+    const invalidComment = { id, body: "A comment" };
+    const invalidNotification = { ...notification, type: "unknown" };
+    const invalidAccountControl = { ...accountControl, createdAt: "invalid" };
+    const invalidFollowRequest = { ...followRequest, requestedAt: "invalid" };
+    const invalidReport = { ...report, status: "unknown" };
+    const validModerationReport = { ...report, status: "reviewing", updatedAt: timestamp };
+    const invalidModerationReport = { ...report, updatedAt: "invalid" };
+    const invalidAppeal = { ...appeal, reportId: "invalid" };
+    const invalidAppealQueueItem = { ...appealQueueItem, status: "accepted" };
+    const invalidModeratorRole = { ...moderatorRole, userId: "invalid" };
+    const invalidAuditEvent = { ...auditEvent, actorRef: "invalid" };
+
+    expectValidAndInvalid(postResponseSchema, post, invalidPost);
+    expectValidAndInvalid(commentResponseSchema, comment, invalidComment);
+    expectValidAndInvalid(notificationResponseSchema, notification, invalidNotification);
+    expectValidAndInvalid(accountControlResponseSchema, accountControl, invalidAccountControl);
+    expectValidAndInvalid(followRequestResponseSchema, followRequest, invalidFollowRequest);
+    expectValidAndInvalid(reportSummaryResponseSchema, report, invalidReport);
     expectValidAndInvalid(
       moderationReportSummaryResponseSchema,
-      { ...report, status: "reviewing", updatedAt: timestamp },
-      { ...report, updatedAt: "invalid" }
+      validModerationReport,
+      invalidModerationReport
     );
-    expectValidAndInvalid(appealSummaryResponseSchema, appeal, {
-      ...appeal,
-      reportId: "invalid"
-    });
-    expectValidAndInvalid(moderationAppealQueueItemResponseSchema, appealQueueItem, {
-      ...appealQueueItem,
-      status: "accepted"
-    });
-    expectValidAndInvalid(moderatorRoleResponseSchema, moderatorRole, {
-      ...moderatorRole,
-      userId: "invalid"
-    });
-    expectValidAndInvalid(auditEventResponseSchema, auditEvent, {
-      ...auditEvent,
-      actorRef: "invalid"
-    });
+    expectValidAndInvalid(appealSummaryResponseSchema, appeal, invalidAppeal);
+    expectValidAndInvalid(moderationAppealQueueItemResponseSchema, appealQueueItem, invalidAppealQueueItem);
+    expectValidAndInvalid(moderatorRoleResponseSchema, moderatorRole, invalidModeratorRole);
+    expectValidAndInvalid(auditEventResponseSchema, auditEvent, invalidAuditEvent);
   });
 
   it("validates like, read, moderation and audit responses", () => {
@@ -188,11 +176,9 @@ describe("additional API contracts", () => {
       { appealId: id, status: "accepted" },
       { appealId: id, status: "open" }
     );
-    expectValidAndInvalid(
-      roleResponse,
-      { userId: id, role: "admin" },
-      { userId: "invalid", role: "admin" }
-    );
+    const validRoleResponse = { userId: id, role: "admin" };
+    const invalidRoleResponse = { userId: "invalid", role: "admin" };
+    expectValidAndInvalid(roleResponse, validRoleResponse, invalidRoleResponse);
     expectValidAndInvalid(auditResponse, { userId: id }, { userId: "invalid" });
   });
 });
