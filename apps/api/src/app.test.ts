@@ -90,7 +90,6 @@ describe("API", () => {
     await app.close();
   });
 
-
   it("uses Railway X-Real-IP and ignores caller-controlled X-Forwarded-For", async () => {
     const app = buildApp(config);
     for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -122,9 +121,9 @@ describe("API", () => {
   it("fails closed when production public-ingress client IP is missing", async () => {
     const productionConfig = { ...config, NODE_ENV: "production" as const };
     const store: RateLimitStore = {
-      connect: async () => undefined,
-      consume: async () => ({ count: 1, ttlMs: 900_000 }),
-      close: async () => undefined
+      connect: () => Promise.resolve(),
+      consume: () => Promise.resolve({ count: 1, ttlMs: 900_000 }),
+      close: () => Promise.resolve()
     };
     const app = buildApp(productionConfig, undefined, store);
     const response = await app.inject({
@@ -140,12 +139,12 @@ describe("API", () => {
   it("fails closed during Redis errors and resumes after the store recovers", async () => {
     let available = false;
     const store: RateLimitStore = {
-      connect: async () => undefined,
-      consume: async () => {
-        if (!available) throw new Error("simulated Redis outage");
-        return { count: 1, ttlMs: 900_000 };
+      connect: () => Promise.resolve(),
+      consume: () => {
+        if (!available) return Promise.reject(new Error("simulated Redis outage"));
+        return Promise.resolve({ count: 1, ttlMs: 900_000 });
       },
-      close: async () => undefined
+      close: () => Promise.resolve()
     };
     const app = buildApp(config, undefined, store);
     const request = {
