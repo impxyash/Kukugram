@@ -50,11 +50,11 @@ describe("API", () => {
     };
 
     expect(document.paths).toHaveProperty("/health");
-    expect(document.paths).toHaveProperty("/auth/providers");
+    expect(document.paths).toHaveProperty("/v1/auth/providers");
     expect(document.paths?.["/health"]?.get?.responses).toHaveProperty("200");
     expect(document.paths?.["/health"]?.get?.responses).toHaveProperty("500");
-    expect(document.paths?.["/auth/providers"]?.get?.responses).toHaveProperty("200");
-    expect(document.paths?.["/auth/providers"]?.get?.responses).toHaveProperty("500");
+    expect(document.paths?.["/v1/auth/providers"]?.get?.responses).toHaveProperty("200");
+    expect(document.paths?.["/v1/auth/providers"]?.get?.responses).toHaveProperty("500");
     await app.close();
   });
 

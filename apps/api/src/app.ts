@@ -111,7 +111,7 @@ export function buildApp(
   app.register(swagger, {
     openapi: {
       info: { title: "Kukugram API", version: "1.0.0" },
-      servers: [{ url: "/v1" }]
+      servers: [{ url: "/" }]
     }
   });
   app.register(swaggerUi, { routePrefix: "/documentation" });
