@@ -14,6 +14,8 @@ import {
   moderationAppealQueueResponseSchema,
   moderationRoleListResponseSchema,
   moderationAuditListResponseSchema,
+  postCreateResponseSchema,
+  followRequestListResponseSchema,
   moderationReportDetailResponseSchema,
   moderationAppealDetailResponseSchema,
   loginRequestSchema,
@@ -245,6 +247,41 @@ describe("API request contracts", () => {
             caseRef: null,
             metadata: {},
             createdAt: timestamp
+          }
+        ]
+      }).success
+    ).toBe(true);
+  });
+
+
+  it("validates post creation and follow-request list response wrappers", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const timestamp = "2026-11-07T00:00:00.000Z";
+    expect(
+      postCreateResponseSchema.safeParse({
+        post: {
+          id,
+          body: "Hello",
+          createdAt: timestamp,
+          handle: "creator",
+          displayName: "Creator",
+          avatarUrl: null,
+          likeCount: "0",
+          commentCount: "0",
+          likedByViewer: false,
+          authorId: id
+        }
+      }).success
+    ).toBe(true);
+    expect(
+      followRequestListResponseSchema.safeParse({
+        requests: [
+          {
+            id,
+            handle: "requester",
+            displayName: "Requester",
+            avatarUrl: null,
+            requestedAt: timestamp
           }
         ]
       }).success
