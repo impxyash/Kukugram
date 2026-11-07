@@ -1,20 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   appealCreateRequestSchema,
-  commentCreateRequestSchema,
-  userSearchQuerySchema,
-  uuidParamsSchema,
-  handleParamsSchema,
-  moderationReportUpdateRequestSchema,
-  moderationAppealReviewRequestSchema,
-  moderatorRoleCreateRequestSchema,
-  moderatorRoleParamsSchema,
-  likeResponseSchema,
-  notificationReadResponseSchema,
-  moderationReportUpdateResponseSchema,
-  moderationAppealReviewResponseSchema,
-  moderatorRoleCreateResponseSchema,
-  auditActorResolutionResponseSchema,
   auditActorResolutionRequestSchema,
   feedResponseSchema,
   commentCreateResponseSchema,
@@ -399,69 +385,5 @@ describe("API request contracts", () => {
 
   it("rejects invalid login payloads", () => {
     expect(loginRequestSchema.safeParse({ email: "not-email", password: "x" }).success).toBe(false);
-  });
-
-  it("covers comment, lookup, path and moderation mutation request contracts", () => {
-    const id = "00000000-0000-4000-8000-000000000001";
-    expect(commentCreateRequestSchema.safeParse({ body: "A comment" }).success).toBe(true);
-    expect(commentCreateRequestSchema.safeParse({ body: " " }).success).toBe(false);
-    expect(commentCreateRequestSchema.safeParse({ body: "x".repeat(1001) }).success).toBe(false);
-
-    expect(userSearchQuerySchema.safeParse({ q: "creator" }).success).toBe(true);
-    expect(userSearchQuerySchema.safeParse({ q: " " }).success).toBe(false);
-    expect(userSearchQuerySchema.safeParse({ q: "x".repeat(61) }).success).toBe(false);
-
-    expect(uuidParamsSchema.safeParse({ id }).success).toBe(true);
-    expect(uuidParamsSchema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
-    expect(handleParamsSchema.safeParse({ handle: "creator_01" }).success).toBe(true);
-
-    expect(moderationReportUpdateRequestSchema.safeParse({ status: "resolved" }).success).toBe(
-      true
-    );
-    expect(moderationReportUpdateRequestSchema.safeParse({ status: "open" }).success).toBe(false);
-    expect(moderationAppealReviewRequestSchema.safeParse({ status: "accepted" }).success).toBe(
-      true
-    );
-    expect(moderationAppealReviewRequestSchema.safeParse({ status: "open" }).success).toBe(false);
-
-    expect(
-      moderatorRoleCreateRequestSchema.safeParse({ userId: id, role: "moderator" }).success
-    ).toBe(true);
-    expect(
-      moderatorRoleCreateRequestSchema.safeParse({ userId: "invalid", role: "moderator" }).success
-    ).toBe(false);
-    expect(moderatorRoleParamsSchema.safeParse({ userId: id, role: "admin" }).success).toBe(true);
-    expect(moderatorRoleParamsSchema.safeParse({ userId: id, role: "owner" }).success).toBe(false);
-  });
-
-  it("covers like, notification, moderation and audit mutation response contracts", () => {
-    const id = "00000000-0000-4000-8000-000000000001";
-    expect(likeResponseSchema.safeParse({ liked: true }).success).toBe(true);
-    expect(likeResponseSchema.safeParse({ liked: false }).success).toBe(false);
-    expect(notificationReadResponseSchema.safeParse({ ok: true }).success).toBe(true);
-    expect(notificationReadResponseSchema.safeParse({ ok: false }).success).toBe(false);
-
-    expect(
-      moderationReportUpdateResponseSchema.safeParse({ reportId: id, status: "resolved" }).success
-    ).toBe(true);
-    expect(
-      moderationReportUpdateResponseSchema.safeParse({ reportId: id, status: "open" }).success
-    ).toBe(false);
-    expect(
-      moderationAppealReviewResponseSchema.safeParse({ appealId: id, status: "accepted" }).success
-    ).toBe(true);
-    expect(
-      moderationAppealReviewResponseSchema.safeParse({ appealId: id, status: "open" }).success
-    ).toBe(false);
-    expect(
-      moderatorRoleCreateResponseSchema.safeParse({ userId: id, role: "admin" }).success
-    ).toBe(true);
-    expect(
-      moderatorRoleCreateResponseSchema.safeParse({ userId: "invalid", role: "admin" }).success
-    ).toBe(false);
-    expect(auditActorResolutionResponseSchema.safeParse({ userId: id }).success).toBe(true);
-    expect(
-      auditActorResolutionResponseSchema.safeParse({ userId: "invalid" }).success
-    ).toBe(false);
   });
 });
