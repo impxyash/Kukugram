@@ -112,7 +112,53 @@ export function buildApp(
     stripBasePath: false,
     openapi: {
       info: { title: "Kukugram API", version: "1.0.0" },
-      servers: [{ url: "/" }]
+      servers: [{ url: "/" }],
+      paths: {
+        "/health": {
+          get: {
+            tags: ["System"],
+            summary: "Check API health",
+            responses: {
+              "200": {
+                description: "API is healthy",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      required: ["status", "requestId"],
+                      properties: {
+                        status: { type: "string", const: "ok" },
+                        requestId: { type: "string" }
+                      },
+                      additionalProperties: false
+                    }
+                  }
+                }
+              },
+              "500": {
+                description: "Health check failed",
+                content: {
+                  "application/problem+json": {
+                    schema: {
+                      type: "object",
+                      required: ["type", "title", "status", "instance", "requestId"],
+                      properties: {
+                        type: { type: "string", format: "uri" },
+                        title: { type: "string" },
+                        status: { type: "integer", minimum: 400, maximum: 599 },
+                        detail: { type: "string" },
+                        instance: { type: "string" },
+                        requestId: { type: "string" }
+                      },
+                      additionalProperties: false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   });
   app.register(swaggerUi, { routePrefix: "/documentation" });
