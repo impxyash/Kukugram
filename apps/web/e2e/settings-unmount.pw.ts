@@ -30,9 +30,9 @@ async function reply(route: Route, status: number, body: unknown) {
   });
 }
 
-test(
-  "pending Settings history requests cannot update state or errors after account unmount",
-  async ({ page }) => {
+test("pending Settings history requests cannot update state or errors after account unmount", async ({
+  page
+}) => {
   const pendingPaths = new Set([
     "/v1/me/follow-requests",
     "/v1/me/blocked",
@@ -161,5 +161,4 @@ test(
   await expect(page.getByText("spam", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
-  }
-);
+});
