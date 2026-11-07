@@ -590,7 +590,7 @@ test(
     await expect(page.getByText("Muted A").first()).toBeVisible();
 
     await page.getByRole("button", { name: "Save profile" }).click();
-    await page.getByRole("button", { name: "Accept" }).click();
+    await page.getByRole("button", { name: "Accept" }).first().click();
     await page.getByRole("button", { name: "Decline" }).click();
     await page.getByRole("button", { name: "Unblock" }).click();
     await page.getByRole("button", { name: "Unmute" }).click();
