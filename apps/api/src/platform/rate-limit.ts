@@ -34,13 +34,15 @@ export class RedisRateLimitStore implements RateLimitStore {
       socket: {
         connectTimeout: 5_000,
         reconnectStrategy: (retries) =>
-          retries < 5 ? Math.min(250 * 2 ** Math.min(retries, 4), 4_000) : new Error("Redis reconnect attempts exhausted.")
+          retries < 5
+            ? Math.min(250 * 2 ** Math.min(retries, 4), 4_000)
+            : new Error("Redis reconnect attempts exhausted.")
       }
     });
     this.client.on("error", onError);
   }
 
-  async connect() {
+  connect(): Promise<void> {
     if (this.client.isReady) return;
     if (!this.connectPromise) {
       this.connectPromise = (async () => {
@@ -90,11 +92,12 @@ export class InMemoryRateLimitStore implements RateLimitStore {
       this.buckets.set(key, bucket);
     }
     bucket.count += 1;
-    return { count: bucket.count, ttlMs: Math.max(0, bucket.resetAt - now) };
+    return Promise.resolve({ count: bucket.count, ttlMs: Math.max(0, bucket.resetAt - now) });
   }
 
-  async close() {
+  close(): Promise<void> {
     this.buckets.clear();
+    return Promise.resolve();
   }
 }
 
