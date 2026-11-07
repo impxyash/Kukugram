@@ -23,6 +23,10 @@ a {
   color: inherit;
   text-decoration: none;
 }
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid #d5ff58;
+  outline-offset: 3px;
+}
 .landing-shell {
   width: min(100%, 1280px);
   min-height: 100svh;
