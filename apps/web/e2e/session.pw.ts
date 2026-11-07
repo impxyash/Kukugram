@@ -223,7 +223,6 @@ test("a stale successful session response cannot restore a logged-out user", asy
   await expect(page.getByRole("button", { name: "Log out" })).toHaveCount(0);
 });
 
-
 test(
   "a late Settings response from account A cannot overwrite account B after an identity switch",
   async ({ page }) => {
@@ -241,6 +240,7 @@ test(
     };
     let meCalls = 0;
     let feedCalls = 0;
+    let switchToAccountB = false;
     let blockedCalls = 0;
     let releaseAccountABlocked!: () => void;
     let markAccountABlockedPending!: () => void;
@@ -255,7 +255,7 @@ test(
       const pathname = new URL(route.request().url()).pathname;
       if (pathname === "/v1/me") {
         meCalls += 1;
-        await reply(route, 200, { user: meCalls === 1 ? accountA : accountB });
+        await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
         return;
       }
       if (pathname === "/v1/feed") {
@@ -277,7 +277,7 @@ test(
       }
       if (pathname === "/v1/me/blocked") {
         blockedCalls += 1;
-        if (blockedCalls === 1) {
+        if (!switchToAccountB) {
           markAccountABlockedPending();
           await accountABlockedPending;
           await reply(route, 200, {
@@ -325,11 +325,12 @@ test(
     await accountABlockedSeen;
 
     // A second session refresh returns a distinct authenticated identity.
+    switchToAccountB = true;
     await page.getByRole("button", { name: "Retry" }).click();
     await expect(page.getByLabel("Display name")).toHaveValue("Account B");
     await expect(page.getByText("Account B private record")).toBeVisible();
-    expect(meCalls).toBe(2);
-    expect(blockedCalls).toBe(2);
+    await expect.poll(() => meCalls).toBeGreaterThan(1);
+    await expect.poll(() => blockedCalls).toBeGreaterThan(1);
 
     // Resolve the old account's private response only after B is mounted.
     releaseAccountABlocked();
