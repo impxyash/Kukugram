@@ -710,9 +710,9 @@ test("a collapsed moderation detail response is invalidated instead of cached", 
   expect(detailCalls).toBe(2);
 });
 
-test(
-  "a moderator permission revocation hides the panel while the same identity is rechecked",
-  async ({ page }) => {
+test("a moderator permission revocation hides the panel while the same identity is rechecked", async ({
+  page
+}) => {
   let feedCalls = 0;
   let probeCalls = 0;
   let releaseRevokedProbe!: () => void;
@@ -889,6 +889,19 @@ test("an appeal history refresh from account A cannot overwrite account B", asyn
       await reply(route, 403, { title: "Forbidden" });
       return;
     }
+
+    if (pathname === "/v1/me/follow-requests" && method === "GET") {
+      await reply(route, 200, { requests: [] });
+      return;
+    }
+    if (pathname === "/v1/me/blocked" && method === "GET") {
+      await reply(route, 200, { users: [] });
+      return;
+    }
+    if (pathname === "/v1/me/muted" && method === "GET") {
+      await reply(route, 200, { users: [] });
+      return;
+    }
     if (pathname === "/v1/me/reports" && method === "GET") {
       await reply(route, 200, {
         reports: switchToAccountB
@@ -943,6 +956,7 @@ test("an appeal history refresh from account A cannot overwrite account B", asyn
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByText("spam", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Appeal decision" })).toBeVisible();
   await page.getByRole("button", { name: "Appeal decision" }).click();
   await appealRefreshSeen;
@@ -958,3 +972,4 @@ test("an appeal history refresh from account A cannot overwrite account B", asyn
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
+
