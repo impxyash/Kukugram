@@ -158,6 +158,9 @@ export function AppShell() {
     }
 
     let cancelled = false;
+    // Fail closed while permissions are being revalidated, including refreshes
+    // where the authenticated user ID has not changed.
+    setModeratorUserId(null);
     void request<{ reports: ModerationReport[] }>("/moderation/reports?limit=1")
       .then(() => {
         if (!cancelled) setModeratorUserId(user.id);
@@ -998,6 +1001,8 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   >({});
   const [appealDetails, setAppealDetails] = useState<Record<string, string>>({});
   const queueRequestSequence = useRef(createSessionRequestSequence());
+  const reportDetailSequence = useRef(createSessionRequestSequence());
+  const appealDetailSequence = useRef(createSessionRequestSequence());
   const mountedRequestScope = useRef(createMountedRequestScope());
 
   useEffect(() => {
@@ -1009,42 +1014,54 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
     return () => {
       scope.invalidate();
       sequence.invalidate();
+      reportDetailSequence.current.invalidate();
+      appealDetailSequence.current.invalidate();
     };
   }, []);
 
   async function toggleReportDetails(id: string) {
     if (expandedReport === id) {
+      reportDetailSequence.current.invalidate();
       setExpandedReport(null);
       return;
     }
+    const requestId = reportDetailSequence.current.begin();
     setExpandedReport(id);
     if (reportDetails[id]) return;
+    const scope = mountedRequestScope.current;
     try {
       const result = await request<{
         report: { targetId: string; details: string | null };
       }>(`/moderation/reports/${id}`);
-      if (mountedRequestScope.current.isActive()) {
+      if (scope.isActive() && reportDetailSequence.current.isCurrent(requestId)) {
         setReportDetails((current) => ({ ...current, [id]: result.report }));
       }
     } catch (reason) {
-      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+      if (scope.isActive() && reportDetailSequence.current.isCurrent(requestId)) {
+        onError((reason as Error).message);
+      }
     }
   }
 
   async function toggleAppealDetails(id: string) {
     if (expandedAppeal === id) {
+      appealDetailSequence.current.invalidate();
       setExpandedAppeal(null);
       return;
     }
+    const requestId = appealDetailSequence.current.begin();
     setExpandedAppeal(id);
     if (appealDetails[id] !== undefined) return;
+    const scope = mountedRequestScope.current;
     try {
       const result = await request<{ appeal: { details: string } }>(`/moderation/appeals/${id}`);
-      if (mountedRequestScope.current.isActive()) {
+      if (scope.isActive() && appealDetailSequence.current.isCurrent(requestId)) {
         setAppealDetails((current) => ({ ...current, [id]: result.appeal.details }));
       }
     } catch (reason) {
-      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+      if (scope.isActive() && appealDetailSequence.current.isCurrent(requestId)) {
+        onError((reason as Error).message);
+      }
     }
   }
 
@@ -1084,6 +1101,12 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
 
   useEffect(() => {
     setActionNotice(null);
+    setExpandedReport(null);
+    setExpandedAppeal(null);
+    setReportDetails({});
+    setAppealDetails({});
+    reportDetailSequence.current.invalidate();
+    appealDetailSequence.current.invalidate();
     void refresh();
   }, [filter]);
 
