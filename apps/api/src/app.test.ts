@@ -93,7 +93,27 @@ describe("API", () => {
         | undefined;
 
       expect(successSchema?.content).toHaveProperty("application/json");
-      expect(successSchema?.content?.["application/json"]?.schema).toHaveProperty("type", "object");
+      expect(successSchema?.content?.["application/json"]?.schema).toMatchObject(
+        path === "/health"
+          ? {
+              type: "object",
+              required: ["status", "requestId"],
+              properties: {
+                status: { type: "string", const: "ok" },
+                requestId: { type: "string" }
+              },
+              additionalProperties: false
+            }
+          : {
+              type: "object",
+              required: ["password", "oauth"],
+              properties: {
+                password: { type: "boolean" },
+                oauth: { type: "array", items: { type: "string" } }
+              },
+              additionalProperties: false
+            }
+      );
       expect(problemSchema?.content).toHaveProperty("application/problem+json");
       expect(problemSchema?.content?.["application/problem+json"]?.schema).toEqual({
         $ref: "#/components/schemas/ProblemDetails"
