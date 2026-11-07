@@ -83,8 +83,9 @@ describe("API", () => {
       });
     }
 
-    expect(document.paths?.["/health"]?.get?.responses?.["200"]?.content?.["application/json"]?.schema)
-      .toMatchObject({
+    const healthResponseSchema =
+      document.paths?.["/health"]?.get?.responses?.["200"]?.content?.["application/json"]?.schema;
+    expect(healthResponseSchema).toMatchObject({
         type: "object",
         required: ["status", "requestId"],
         properties: {
@@ -112,7 +113,10 @@ describe("API", () => {
     const app = buildApp(config);
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
-    expect(health.json()).toMatchObject({ status: "ok", requestId: health.headers["x-request-id"] });
+    expect(health.json()).toMatchObject({
+      status: "ok",
+      requestId: health.headers["x-request-id"]
+    });
 
     const providers = await app.inject({ method: "GET", url: "/v1/auth/providers" });
     expect(providers.statusCode).toBe(200);
