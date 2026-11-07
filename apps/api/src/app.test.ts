@@ -264,8 +264,9 @@ describe("API", () => {
       title: "Invalid request",
       status: 400,
       instance: "/v1/auth/login",
-      requestId: expect.any(String)
     });
+    expect(typeof problemDetails.requestId).toBe("string");
+    expect(problemDetails.requestId.length).toBeGreaterThan(0);
     expect(problemDetails).not.toHaveProperty("unexpected");
     await app.close();
   });
