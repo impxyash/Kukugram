@@ -162,3 +162,4 @@ test("pending Settings history requests cannot update state or errors after acco
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
+
