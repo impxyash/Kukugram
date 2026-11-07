@@ -263,7 +263,7 @@ describe("API", () => {
       type: "https://kukugram.com/problems/validation",
       title: "Invalid request",
       status: 400,
-      instance: "/v1/auth/login",
+      instance: "/v1/auth/login"
     });
     expect(typeof problemDetails.requestId).toBe("string");
     expect(problemDetails.requestId.length).toBeGreaterThan(0);
