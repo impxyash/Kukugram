@@ -73,8 +73,7 @@ async function installApi(
 }
 
 const unavailable = (route: Route) => reply(route, 503, { title: "Service unavailable" });
-const unauthenticated = (route: Route) =>
-  reply(route, 401, { title: "Authentication required" });
+const unauthenticated = (route: Route) => reply(route, 401, { title: "Authentication required" });
 const authenticated = (route: Route) => reply(route, 200, { user });
 
 test("starts in the unauthenticated state when the session is missing", async ({ page }) => {
