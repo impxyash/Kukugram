@@ -695,3 +695,14 @@ test(
     expect(detailCalls).toBe(2);
   }
 );
+
+
+test("temporary prettier formatting inspection", async () => {
+  const prettier = await import("prettier");
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("./session.pw.ts", import.meta.url), "utf8");
+  const formatted = await prettier.format(source, { filepath: "apps/web/e2e/session.pw.ts" });
+  console.log("PRETTIER_OUTPUT_START");
+  console.log(formatted);
+  console.log("PRETTIER_OUTPUT_END");
+});
