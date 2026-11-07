@@ -89,7 +89,7 @@ test("displays a session error when the session endpoint is unavailable", async 
   await installApi(page, { me: async (_call, route) => unavailable(route) });
   await page.goto("/");
 
-  await expect(page.getByRole("alert")).toContainText("Service unavailable");
+  await expect(page.locator(".form-error")).toContainText("Service unavailable");
   await expect(page.getByRole("button", { name: "Retry session" })).toBeVisible();
 });
 
@@ -111,7 +111,7 @@ test("keeps the session error visible when a retry also fails", async ({ page })
   await page.goto("/");
   await page.getByRole("button", { name: "Retry session" }).click();
 
-  await expect(page.getByRole("alert")).toContainText("Service unavailable");
+  await expect(page.locator(".form-error")).toContainText("Service unavailable");
   await expect(page.getByRole("button", { name: "Retry session" })).toBeVisible();
 });
 
@@ -173,7 +173,7 @@ test("only the newest of concurrent retries can update the dashboard", async ({ 
   await expect(page.getByRole("heading", { name: "Your people, in motion." })).toBeVisible();
   releaseOlder();
   await expect(page.getByRole("heading", { name: "Your people, in motion." })).toBeVisible();
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator(".banner.error")).toHaveCount(0);
 });
 
 test("allows logout while a background session refresh is pending", async ({ page }) => {
