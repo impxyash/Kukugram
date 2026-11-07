@@ -208,7 +208,7 @@ describe("API", () => {
 
     for (const [path, methods] of Object.entries(document.paths ?? {})) {
       if (!path.startsWith("/v1/")) continue;
-      const expectedNames = Array.from(path.matchAll(/\\{([^}]+)\\}/g), (match) => match[1] ?? "").sort();
+      const expectedNames = Array.from(path.matchAll(/\{([^}]+)\}/g), (match) => match[1] ?? "").sort();
       if (expectedNames.length === 0) continue;
 
       for (const [method, operation] of Object.entries(methods)) {
