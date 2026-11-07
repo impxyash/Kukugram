@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api-client.js";
 import { loadSession } from "./session-bootstrap.js";
+import { reconcileSessionActivity } from "./app-shell.js";
 
 type TestUser = { id: string };
 type TestPost = { id: string };
@@ -82,6 +83,60 @@ describe("session bootstrap", () => {
       posts: [{ id: "post-1" }],
       notifications: undefined,
       activityError: true
+    });
+  });
+});
+
+
+describe("session activity reconciliation", () => {
+  it("preserves existing activity for the same user when one request fails", () => {
+    const previousPosts = [{ id: "post-old" }];
+    const previousNotices = [{ id: "notice-old" }];
+
+    expect(
+      reconcileSessionActivity(
+        "user-1",
+        "user-1",
+        previousPosts,
+        previousNotices,
+        undefined,
+        [{ id: "notice-new" }]
+      )
+    ).toEqual({
+      posts: previousPosts,
+      notices: [{ id: "notice-new" }]
+    });
+  });
+
+  it("clears activity from the previous user when the new user's request fails", () => {
+    expect(
+      reconcileSessionActivity(
+        "user-1",
+        "user-2",
+        [{ id: "post-private-to-user-1" }],
+        [{ id: "notice-private-to-user-1" }],
+        undefined,
+        [{ id: "notice-user-2" }]
+      )
+    ).toEqual({
+      posts: [],
+      notices: [{ id: "notice-user-2" }]
+    });
+  });
+
+  it("replaces both activity collections when the new user loads successfully", () => {
+    expect(
+      reconcileSessionActivity(
+        "user-1",
+        "user-2",
+        [{ id: "post-user-1" }],
+        [{ id: "notice-user-1" }],
+        [{ id: "post-user-2" }],
+        [{ id: "notice-user-2" }]
+      )
+    ).toEqual({
+      posts: [{ id: "post-user-2" }],
+      notices: [{ id: "notice-user-2" }]
     });
   });
 });
