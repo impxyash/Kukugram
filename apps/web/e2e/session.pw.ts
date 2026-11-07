@@ -709,3 +709,252 @@ test("a collapsed moderation detail response is invalidated instead of cached", 
   await expect(page.getByText("Confidential report evidence")).toBeVisible();
   expect(detailCalls).toBe(2);
 });
+
+test(
+  "a moderator permission revocation hides the panel while the same identity is rechecked",
+  async ({ page }) => {
+  let feedCalls = 0;
+  let probeCalls = 0;
+  let releaseRevokedProbe!: () => void;
+  let markRevokedProbePending!: () => void;
+  const revokedProbeGate = new Promise<void>((resolve) => {
+    releaseRevokedProbe = resolve;
+  });
+  const revokedProbeSeen = new Promise<void>((resolve) => {
+    markRevokedProbePending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    if (pathname === "/v1/me") {
+      await authenticated(route);
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      feedCalls += 1;
+      await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      if (url.searchParams.has("status")) {
+        await reply(route, 200, { reports: [] });
+        return;
+      }
+      probeCalls += 1;
+      if (probeCalls === 1) {
+        await reply(route, 200, { reports: [] });
+      } else {
+        markRevokedProbePending();
+        await revokedProbeGate;
+        await reply(route, 403, { title: "Forbidden" });
+      }
+      return;
+    }
+    if (pathname === "/v1/moderation/appeals") {
+      await reply(route, 200, { appeals: [] });
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Moderation" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry" }).click();
+  await revokedProbeSeen;
+
+  // The user ID is unchanged, but the role check is pending and must fail closed.
+  await expect(page.getByRole("button", { name: "Moderation" })).toHaveCount(0);
+  releaseRevokedProbe();
+  await expect(page.getByRole("button", { name: "Moderation" })).toHaveCount(0);
+});
+
+test("a collapsed appeal detail response is invalidated instead of cached", async ({ page }) => {
+  const appealId = "00000000-0000-4000-8000-000000000071";
+  const reportId = "00000000-0000-4000-8000-000000000072";
+  let detailCalls = 0;
+  let releaseFirstDetail!: () => void;
+  let markFirstDetailPending!: () => void;
+  const firstDetailGate = new Promise<void>((resolve) => {
+    releaseFirstDetail = resolve;
+  });
+  const firstDetailSeen = new Promise<void>((resolve) => {
+    markFirstDetailPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    if (pathname === "/v1/me") {
+      await authenticated(route);
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      await reply(route, 200, { posts: [] });
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      await reply(route, 200, { reports: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/appeals") {
+      await reply(route, 200, {
+        appeals: [
+          {
+            id: appealId,
+            reportId,
+            createdAt: "2026-11-01T00:00:00.000Z",
+            status: "pending"
+          }
+        ]
+      });
+      return;
+    }
+    if (pathname === `/v1/moderation/appeals/${appealId}` && route.request().method() === "GET") {
+      detailCalls += 1;
+      if (detailCalls === 1) {
+        markFirstDetailPending();
+        await firstDetailGate;
+      }
+      await reply(route, 200, { appeal: { details: "Confidential appeal evidence" } });
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Moderation" }).click();
+  await page.getByRole("button", { name: "View appeal details" }).click();
+  await firstDetailSeen;
+  await page.getByRole("button", { name: "Hide appeal details" }).click();
+  releaseFirstDetail();
+
+  await page.getByRole("button", { name: "View appeal details" }).click();
+  await expect(page.getByText("Confidential appeal evidence")).toBeVisible();
+  expect(detailCalls).toBe(2);
+});
+
+test("an appeal history refresh from account A cannot overwrite account B", async ({ page }) => {
+  const accountA = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000081",
+    handle: "appeal-a",
+    displayName: "Appeal Account A"
+  };
+  const accountB = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000082",
+    handle: "appeal-b",
+    displayName: "Appeal Account B"
+  };
+  const reportId = "00000000-0000-4000-8000-000000000083";
+  let switchToAccountB = false;
+  let feedCalls = 0;
+  let accountAAppealReads = 0;
+  let releaseAppealRefresh!: () => void;
+  let markAppealRefreshPending!: () => void;
+  const appealRefreshGate = new Promise<void>((resolve) => {
+    releaseAppealRefresh = resolve;
+  });
+  const appealRefreshSeen = new Promise<void>((resolve) => {
+    markAppealRefreshPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    const method = route.request().method();
+    if (pathname === "/v1/me") {
+      await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      feedCalls += 1;
+      await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      await reply(route, 403, { title: "Forbidden" });
+      return;
+    }
+    if (pathname === "/v1/me/reports" && method === "GET") {
+      await reply(route, 200, {
+        reports: switchToAccountB
+          ? []
+          : [
+              {
+                id: reportId,
+                category: "spam",
+                targetType: "post",
+                createdAt: "2026-11-01T00:00:00.000Z",
+                status: "resolved"
+              }
+            ]
+      });
+      return;
+    }
+    if (pathname === "/v1/me/appeals" && method === "GET") {
+      if (switchToAccountB) {
+        await reply(route, 200, { appeals: [] });
+        return;
+      }
+      accountAAppealReads += 1;
+      if (accountAAppealReads === 1) {
+        await reply(route, 200, { appeals: [] });
+      } else {
+        markAppealRefreshPending();
+        await appealRefreshGate;
+        await reply(route, 200, {
+          appeals: [
+            {
+              id: "00000000-0000-4000-8000-000000000084",
+              reportId,
+              createdAt: "2026-11-01T00:00:00.000Z",
+              status: "pending"
+            }
+          ]
+        });
+      }
+      return;
+    }
+    if (pathname === `/v1/reports/${reportId}/appeals` && method === "POST") {
+      await reply(route, 201, {});
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  page.on("dialog", async (dialog) => {
+    await dialog.accept("This decision should be reconsidered.");
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("button", { name: "Appeal decision" })).toBeVisible();
+  await page.getByRole("button", { name: "Appeal decision" }).click();
+  await appealRefreshSeen;
+
+  switchToAccountB = true;
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByLabel("Display name")).toHaveValue("Appeal Account B");
+  await expect(page.getByText("You have not submitted any appeals.")).toBeVisible();
+
+  releaseAppealRefresh();
+  await expect(page.getByLabel("Display name")).toHaveValue("Appeal Account B");
+  await expect(page.getByText("You have not submitted any appeals.")).toBeVisible();
+  await expect(page.getByText("Case 00000000")).toHaveCount(0);
+  await expect(page.locator(".banner.error")).toHaveCount(0);
+});
