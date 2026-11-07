@@ -109,6 +109,7 @@ export function buildApp(
   app.register(cors, { origin: config.WEB_ORIGIN, credentials: true });
   app.register(cookie, { hook: "onRequest" });
   app.register(swagger, {
+    stripBasePath: false,
     openapi: {
       info: { title: "Kukugram API", version: "1.0.0" },
       servers: [{ url: "/" }]
