@@ -162,3 +162,20 @@ test("pending Settings history requests cannot update state or errors after acco
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
+
+test("temporary formatter output for browser specs", async () => {
+  const prettier = await import("prettier");
+  const { readFile } = await import("node:fs/promises");
+  for (const target of ["session.pw.ts", "settings-unmount.pw.ts"]) {
+    const source = await readFile(new URL(`./${target}`, import.meta.url), "utf8");
+    const formatted = await prettier.format(source, {
+      filepath: `apps/web/e2e/${target}`,
+      printWidth: 100,
+      singleQuote: false,
+      trailingComma: "none"
+    });
+    console.log(`PRETTIER_OUTPUT_START:${target}`);
+    console.log(formatted);
+    console.log(`PRETTIER_OUTPUT_END:${target}`);
+  }
+});
