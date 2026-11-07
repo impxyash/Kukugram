@@ -315,6 +315,15 @@ export const moderationAppealDetailResponseSchema = z.object({
   updatedAt: isoDateTimeSchema
 });
 
+
+export const moderationReportDetailResponseWrapperSchema = z.object({
+  report: moderationReportDetailResponseSchema
+});
+
+export const moderationAppealDetailResponseWrapperSchema = z.object({
+  appeal: moderationAppealDetailResponseSchema
+});
+
 export const moderatorRoleResponseSchema = z.object({
   userId: z.string().uuid(),
   handle: z.string(),
