@@ -43,9 +43,7 @@ export const userSearchQuerySchema = z.object({
 });
 
 export const moderationReportListQuerySchema = z.object({
-  status: z
-    .enum(["open", "reviewing", "resolved", "dismissed"])
-    .optional(),
+  status: z.enum(["open", "reviewing", "resolved", "dismissed"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50)
 });
 
