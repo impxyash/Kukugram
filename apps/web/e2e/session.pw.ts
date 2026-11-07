@@ -522,40 +522,44 @@ test(
       }
       if (pathname === "/v1/me/follow-requests" && method === "GET") {
         await reply(route, 200, {
-          requests: [
-            { id: "follow-a", handle: "follow-a", displayName: "Follow A", avatarUrl: null },
-            { id: "follow-b", handle: "follow-b", displayName: "Follow B", avatarUrl: null }
-          ]
+          requests: switchToAccountB
+            ? []
+            : [
+                { id: "follow-a", handle: "follow-a", displayName: "Follow A", avatarUrl: null },
+                { id: "follow-b", handle: "follow-b", displayName: "Follow B", avatarUrl: null }
+              ]
         });
         return;
       }
       if (pathname === "/v1/me/blocked" && method === "GET") {
         await reply(route, 200, {
-          users: [
-            { id: "blocked-a", handle: "blocked-a", displayName: "Blocked A", avatarUrl: null }
-          ]
+          users: switchToAccountB
+            ? []
+            : [{ id: "blocked-a", handle: "blocked-a", displayName: "Blocked A", avatarUrl: null }]
         });
         return;
       }
       if (pathname === "/v1/me/muted" && method === "GET") {
         await reply(route, 200, {
-          users: [
-            { id: "muted-a", handle: "muted-a", displayName: "Muted A", avatarUrl: null }
-          ]
+          users: switchToAccountB
+            ? []
+            : [{ id: "muted-a", handle: "muted-a", displayName: "Muted A", avatarUrl: null }]
         });
         return;
       }
       if (pathname === "/v1/me/reports" && method === "GET") {
         await reply(route, 200, {
-          reports: [
-            {
-              id: reportId,
-              category: "spam",
-              targetType: "post",
-              createdAt: "2026-11-01T00:00:00.000Z",
-              status: "resolved"
-            }
-          ]
+          reports: switchToAccountB
+            ? []
+            : [
+                {
+                  id: reportId,
+                  category: "spam",
+                  targetType: "post",
+                  createdAt: "2026-11-01T00:00:00.000Z",
+                  status: "resolved"
+                }
+              ]
         });
         return;
       }
@@ -700,9 +704,27 @@ test(
 test("temporary prettier formatting inspection", async () => {
   const prettier = await import("prettier");
   const { readFile } = await import("node:fs/promises");
+  const settingsSource = await readFile(
+    new URL("./settings-unmount.pw.ts", import.meta.url),
+    "utf8"
+  );
+  const settingsFormatted = await prettier.format(settingsSource, {
+    filepath: "apps/web/e2e/settings-unmount.pw.ts",
+    printWidth: 100,
+    singleQuote: false,
+    trailingComma: "none"
+  });
+  console.log("SETTINGS_FORMAT_START");
+  console.log(settingsFormatted);
+  console.log("SETTINGS_FORMAT_END");
   const source = await readFile(new URL("./session.pw.ts", import.meta.url), "utf8");
-  const formatted = await prettier.format(source, { filepath: "apps/web/e2e/session.pw.ts" });
-  console.log("PRETTIER_OUTPUT_START");
+  const formatted = await prettier.format(source, {
+    filepath: "apps/web/e2e/session.pw.ts",
+    printWidth: 100,
+    singleQuote: false,
+    trailingComma: "none"
+  });
+  console.log("SESSION_FORMAT_START");
   console.log(formatted);
-  console.log("PRETTIER_OUTPUT_END");
+  console.log("SESSION_FORMAT_END");
 });
