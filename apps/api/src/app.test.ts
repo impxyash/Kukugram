@@ -42,6 +42,22 @@ describe("API configuration", () => {
 });
 
 describe("API", () => {
+  it("publishes health and identity success and Problem Details response schemas in OpenAPI", async () => {
+    const app = buildApp(config);
+    await app.ready();
+    const document = app.swagger() as {
+      paths?: Record<string, { get?: { responses?: Record<string, unknown> } }>;
+    };
+
+    expect(document.paths).toHaveProperty("/health");
+    expect(document.paths).toHaveProperty("/auth/providers");
+    expect(document.paths?.["/health"]?.get?.responses).toHaveProperty("200");
+    expect(document.paths?.["/health"]?.get?.responses).toHaveProperty("500");
+    expect(document.paths?.["/auth/providers"]?.get?.responses).toHaveProperty("200");
+    expect(document.paths?.["/auth/providers"]?.get?.responses).toHaveProperty("500");
+    await app.close();
+  });
+
   it("returns a request-correlated health response", async () => {
     const app = buildApp(config);
     const response = await app.inject({ method: "GET", url: "/health" });

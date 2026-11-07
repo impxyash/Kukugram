@@ -116,10 +116,43 @@ export function buildApp(
   });
   app.register(swaggerUi, { routePrefix: "/documentation" });
 
-  app.get("/health", { schema: { hide: true } }, (request) => ({
-    status: "ok",
-    requestId: request.id
-  }));
+  app.get(
+    "/health",
+    {
+      schema: {
+        tags: ["System"],
+        summary: "Check API health",
+        response: {
+          200: {
+            type: "object",
+            required: ["status", "requestId"],
+            properties: {
+              status: { type: "string", const: "ok" },
+              requestId: { type: "string" }
+            },
+            additionalProperties: false
+          },
+          500: {
+            type: "object",
+            required: ["type", "title", "status", "instance", "requestId"],
+            properties: {
+              type: { type: "string", format: "uri" },
+              title: { type: "string" },
+              status: { type: "integer", minimum: 400, maximum: 599 },
+              detail: { type: "string" },
+              instance: { type: "string" },
+              requestId: { type: "string" }
+            },
+            additionalProperties: false
+          }
+        }
+      }
+    },
+    (request) => ({
+      status: "ok",
+      requestId: request.id
+    })
+  );
   app.register(identityRoutes, { prefix: "/v1" });
   app.register(socialRoutes, { prefix: "/v1" });
 

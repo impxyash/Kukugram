@@ -14,7 +14,21 @@ export const identityRoutes: FastifyPluginAsync = (app) => {
             properties: {
               password: { type: "boolean" },
               oauth: { type: "array", items: { type: "string" } }
-            }
+            },
+            additionalProperties: false
+          },
+          500: {
+            type: "object",
+            required: ["type", "title", "status", "instance", "requestId"],
+            properties: {
+              type: { type: "string", format: "uri" },
+              title: { type: "string" },
+              status: { type: "integer", minimum: 400, maximum: 599 },
+              detail: { type: "string" },
+              instance: { type: "string" },
+              requestId: { type: "string" }
+            },
+            additionalProperties: false
           }
         }
       }
