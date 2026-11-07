@@ -1,4 +1,4 @@
-import { ApiError, request } from "./api-client.js";
+import { ApiError, request } from "./api-client";
 
 type Requester = (path: string) => Promise<unknown>;
 
