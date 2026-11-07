@@ -995,7 +995,11 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   const [appealDetails, setAppealDetails] = useState<Record<string, string>>({});
   const queueRequestSequence = useRef(createSessionRequestSequence());
 
-  useEffect(() => () => queueRequestSequence.current.invalidate(), []);
+  useEffect(() => {
+    return () => {
+      queueRequestSequence.current.invalidate();
+    };
+  }, []);
 
   async function toggleReportDetails(id: string) {
     if (expandedReport === id) {
