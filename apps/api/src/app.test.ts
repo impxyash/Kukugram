@@ -191,6 +191,44 @@ describe("API", () => {
     await app.close();
   });
 
+  it("documents every path parameter in the generated OpenAPI operations", async () => {
+    const app = buildApp(config);
+    await app.ready();
+    const document = app.swagger() as {
+      paths?: Record<
+        string,
+        Record<
+          string,
+          {
+            parameters?: Array<{ in?: string; name?: string; required?: boolean }>;
+          }
+        >
+      >;
+    };
+
+    for (const [path, methods] of Object.entries(document.paths ?? {})) {
+      if (!path.startsWith("/v1/")) continue;
+      const expectedNames = Array.from(path.matchAll(/\\{([^}]+)\\}/g), (match) => match[1] ?? "").sort();
+      if (expectedNames.length === 0) continue;
+
+      for (const [method, operation] of Object.entries(methods)) {
+        if (!["get", "post", "put", "patch", "delete"].includes(method)) continue;
+        const pathParameters = (operation.parameters ?? []).filter(
+          (parameter) => parameter.in === "path"
+        );
+        expect(
+          pathParameters.map((parameter) => parameter.name).sort(),
+          `${method.toUpperCase()} ${path} must document all path parameters`
+        ).toEqual(expectedNames);
+        for (const parameter of pathParameters) {
+          expect(parameter.required).toBe(true);
+        }
+      }
+    }
+
+    await app.close();
+  });
+
   it("returns request-correlated health, identity and Problem Details responses", async () => {
     const app = buildApp(config);
     const health = await app.inject({ method: "GET", url: "/health" });
