@@ -97,6 +97,49 @@ describe("API", () => {
     await app.close();
   });
 
+  it("guards the versioned OpenAPI route inventory and shared error contract", async () => {
+    const app = buildApp(config);
+    await app.ready();
+    const document = app.swagger() as {
+      paths?: Record<
+        string,
+        Record<
+          string,
+          {
+            responses?: Record<
+              string,
+              {
+                content?: Record<
+                  string,
+                  {
+                    schema?: { $ref?: string };
+                  }
+                >;
+              }
+            >;
+          }
+        >
+      >;
+    };
+    const operations = Object.entries(document.paths ?? {}).flatMap(([path, methods]) =>
+      Object.entries(methods)
+        .filter(([method]) => ["get", "post", "put", "patch", "delete"].includes(method))
+        .map(([method, operation]) => ({ path, method, operation }))
+    );
+    const versionedOperations = operations.filter(({ path }) => path.startsWith("/v1/"));
+
+    expect(versionedOperations).toHaveLength(43);
+    expect(versionedOperations.map(({ method, path }) => `${method.toUpperCase()} ${path}`).sort())
+      .toMatchSnapshot();
+    for (const { path, method, operation } of versionedOperations) {
+      expect(
+        operation.responses?.default?.content?.["application/problem+json"]?.schema?.$ref,
+        `${method.toUpperCase()} ${path} must document Problem Details`
+      ).toBe("#/components/schemas/ProblemDetails");
+    }
+    await app.close();
+  });
+
   it("returns request-correlated health, identity and Problem Details responses", async () => {
     const app = buildApp(config);
     const health = await app.inject({ method: "GET", url: "/health" });
