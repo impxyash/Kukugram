@@ -129,6 +129,22 @@ export function buildApp(
       buildLocalReference: (schema, _baseUri, _fragment, index) =>
         (schema as { title?: string }).title ?? `def-${index}`
     },
+    transformObject: ({ openapiObject }) => {
+      const normalizeProblemDetailsRefs = (value: unknown): void => {
+        if (Array.isArray(value)) {
+          value.forEach(normalizeProblemDetailsRefs);
+          return;
+        }
+        if (value === null || typeof value !== "object") return;
+        const object = value as Record<string, unknown>;
+        if (object.$ref === "ProblemDetails#") {
+          object.$ref = "#/components/schemas/ProblemDetails";
+        }
+        Object.values(object).forEach(normalizeProblemDetailsRefs);
+      };
+      normalizeProblemDetailsRefs(openapiObject);
+      return openapiObject;
+    },
     openapi: {
       info: { title: "Kukugram API", version: "1.0.0" },
       servers: [{ url: "/" }],
