@@ -34,9 +34,7 @@ describe("authentication rate-limit identity", () => {
   it("rejects missing, repeated, comma-separated and malformed public-ingress headers", () => {
     expect(() => resolveClientIp(undefined, "127.0.0.1", true)).toThrow();
     expect(() => resolveClientIp(["203.0.113.7", "198.51.100.9"], "127.0.0.1", true)).toThrow();
-    expect(() =>
-      resolveClientIp("203.0.113.7, 198.51.100.9", "127.0.0.1", true)
-    ).toThrow();
+    expect(() => resolveClientIp("203.0.113.7, 198.51.100.9", "127.0.0.1", true)).toThrow();
     expect(() => resolveClientIp("not-an-ip", "127.0.0.1", true)).toThrow();
   });
 
