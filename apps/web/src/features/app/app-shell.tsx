@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { ApiError, request } from "./api-client.js";
+import { ApiError, request } from "./api-client";
 import type {
   AccountControlResponse,
   AppealSummaryResponse,
