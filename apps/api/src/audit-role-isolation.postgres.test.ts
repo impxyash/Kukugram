@@ -57,6 +57,32 @@ integration("PostgreSQL audit resolver role isolation", () => {
     await resolverClient?.end();
     await isolatedPool?.end();
     if (admin) {
+      const remainingSessions = await admin.query<{
+        pid: number;
+        usename: string;
+        application_name: string;
+        state: string | null;
+        backend_type: string;
+        wait_event_type: string | null;
+        wait_event: string | null;
+      }>(
+        `SELECT
+           pid,
+           usename,
+           application_name,
+           state,
+           backend_type,
+           wait_event_type,
+           wait_event
+         FROM pg_stat_activity
+         WHERE datname = $1
+         ORDER BY pid`,
+        [databaseName]
+      );
+      console.info(
+        "[audit-role-isolation] sessions remaining after Pool.end():",
+        JSON.stringify(remainingSessions.rows)
+      );
       await admin.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
       await admin.query(`DROP ROLE IF EXISTS "${appRole}"`);
       await admin.query(`DROP ROLE IF EXISTS "${resolverRole}"`);
