@@ -45,34 +45,21 @@ describe("API", () => {
   it("publishes health and identity response media types in OpenAPI", async () => {
     const app = buildApp(config);
     await app.ready();
-    type OpenApiResponse = {
-      content?: Record<string, { schema?: Record<string, unknown> }>;
-    };
-    type OpenApiOperation = {
-      responses?: Record<string, OpenApiResponse>;
-    };
-    type OpenApiDocument = {
+    const document = app.swagger() as {
       servers?: Array<{ url: string }>;
-      paths?: Record<string, { get?: OpenApiOperation }>;
+      paths?: Record<string, { get?: { responses?: Record<string, unknown> } }>;
     };
-    const document = app.swagger() as OpenApiDocument;
-    const health = document.paths?.["/health"]?.get?.responses;
-    const providers = document.paths?.["/v1/auth/providers"]?.get?.responses;
 
     expect(document.servers).toEqual([{ url: "/" }]);
     expect(document.paths).toHaveProperty("/health");
     expect(document.paths).toHaveProperty("/v1/auth/providers");
 
-    for (const responses of [health, providers]) {
-      expect(responses?.["200"]?.content).toHaveProperty("application/json");
-      expect(responses?.["200"]?.content?.["application/json"]?.schema).toHaveProperty(
-        "type",
-        "object"
-      );
-      expect(responses?.["500"]?.content).toHaveProperty("application/problem+json");
+    for (const path of ["/health", "/v1/auth/providers"]) {
+      const responses = document.paths?.[path]?.get?.responses;
+      expect(responses).toHaveProperty("200.content.application/json.schema.type", "object");
       expect(
-        responses?.["500"]?.content?.["application/problem+json"]?.schema
-      ).toHaveProperty("type", "object");
+        responses
+      ).toHaveProperty("500.content.application/problem+json.schema.type", "object");
     }
     await app.close();
   });
