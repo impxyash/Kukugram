@@ -2,14 +2,18 @@ import { z } from "zod";
 
 /**
  * Request contracts extracted from the current API route implementations.
- * These schemas are additive documentation/validation contracts; routes are
- * not switched to them until protected local route changes are reconciled.
+ * These schemas are additive contracts. Routes are not switched to them until
+ * protected local route changes are reconciled.
  */
 
 export const signupRequestSchema = z.object({
   email: z.string().email().max(254),
   password: z.string().min(12).max(128),
-  handle: z.string().trim().toLowerCase().regex(/^[a-z0-9_]{3,30}$/),
+  handle: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9_]{3,30}$/),
   displayName: z.string().trim().min(1).max(60),
   bio: z.string().trim().max(500).optional()
 });
@@ -39,7 +43,9 @@ export const userSearchQuerySchema = z.object({
 });
 
 export const moderationReportListQuerySchema = z.object({
-  status: z.enum(["open", "reviewing", "resolved", "dismissed"]).optional(),
+  status: z
+    .enum(["open", "reviewing", "resolved", "dismissed"])
+    .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50)
 });
 
@@ -48,8 +54,13 @@ export const moderationAuditQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50)
 });
 
-export const uuidParamsSchema = z.object({ id: z.string().uuid() });
-export const handleParamsSchema = z.object({ handle: z.string() });
+export const uuidParamsSchema = z.object({
+  id: z.string().uuid()
+});
+
+export const handleParamsSchema = z.object({
+  handle: z.string()
+});
 
 export const reportCreateRequestSchema = z.object({
   targetType: z.enum(["profile", "post", "comment"]),
@@ -146,9 +157,17 @@ export const postResponseSchema = z.object({
   authorId: z.string().uuid()
 });
 
-export const authUserResponseSchema = z.object({ user: profileResponseSchema });
-export const feedResponseSchema = z.object({ posts: z.array(postResponseSchema) });
-export const userSearchResponseSchema = z.object({ users: z.array(profileResponseSchema) });
+export const authUserResponseSchema = z.object({
+  user: profileResponseSchema
+});
+
+export const feedResponseSchema = z.object({
+  posts: z.array(postResponseSchema)
+});
+
+export const userSearchResponseSchema = z.object({
+  users: z.array(profileResponseSchema)
+});
 
 export type SignupRequest = z.infer<typeof signupRequestSchema>;
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
