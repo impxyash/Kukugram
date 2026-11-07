@@ -2,29 +2,29 @@ import { describe, expect, it } from "vitest";
 import {
   accountControlResponseSchema,
   appealSummaryResponseSchema,
-  auditEventResponseSchema,
   auditActorResolutionResponseSchema as auditResponse,
+  auditEventResponseSchema,
+  commentCreateRequestSchema as commentRequest,
   commentResponseSchema,
   followRequestResponseSchema,
-  moderationAppealQueueItemResponseSchema,
-  moderationReportSummaryResponseSchema,
-  moderatorRoleResponseSchema,
-  notificationResponseSchema,
-  postResponseSchema,
-  reportSummaryResponseSchema,
-  commentCreateRequestSchema as commentRequest,
+  handleParamsSchema as handleParams,
   likeResponseSchema as likeResponse,
+  moderationAppealQueueItemResponseSchema,
   moderationAppealReviewRequestSchema as appealRequest,
   moderationAppealReviewResponseSchema as appealResponse,
+  moderationReportSummaryResponseSchema,
   moderationReportUpdateRequestSchema as reportRequest,
   moderationReportUpdateResponseSchema as reportResponse,
   moderatorRoleCreateRequestSchema as roleRequest,
   moderatorRoleCreateResponseSchema as roleResponse,
   moderatorRoleParamsSchema as roleParams,
+  moderatorRoleResponseSchema,
   notificationReadResponseSchema as readResponse,
+  notificationResponseSchema,
+  postResponseSchema,
+  reportSummaryResponseSchema,
   userSearchQuerySchema as searchQuery,
-  uuidParamsSchema as uuidParams,
-  handleParamsSchema as handleParams
+  uuidParamsSchema as uuidParams
 } from "./schemas.js";
 
 describe("additional API contracts", () => {
@@ -72,61 +72,154 @@ describe("additional API contracts", () => {
 
     expect(postResponseSchema.safeParse(post).success).toBe(true);
     expect(postResponseSchema.safeParse({ ...post, authorId: "invalid" }).success).toBe(false);
-    expect(commentResponseSchema.safeParse({
-      id, body: "A comment", createdAt: timestamp, handle: "creator",
-      displayName: "Creator", avatarUrl: null
-    }).success).toBe(true);
+    expect(
+      commentResponseSchema.safeParse({
+        id,
+        body: "A comment",
+        createdAt: timestamp,
+        handle: "creator",
+        displayName: "Creator",
+        avatarUrl: null
+      }).success
+    ).toBe(true);
     expect(commentResponseSchema.safeParse({ id, body: "A comment" }).success).toBe(false);
-    expect(notificationResponseSchema.safeParse({
-      id, type: "follow", postId: null, createdAt: timestamp, readAt: null,
-      handle: "creator", displayName: "Creator"
-    }).success).toBe(true);
-    expect(notificationResponseSchema.safeParse({
-      id, type: "unknown", postId: null, createdAt: timestamp, readAt: null,
-      handle: null, displayName: null
-    }).success).toBe(false);
-    expect(accountControlResponseSchema.safeParse({
-      id, handle: "creator", displayName: "Creator", avatarUrl: null, createdAt: timestamp
-    }).success).toBe(true);
-    expect(accountControlResponseSchema.safeParse({ id, createdAt: "invalid" }).success).toBe(false);
-    expect(followRequestResponseSchema.safeParse({
-      id, handle: "creator", displayName: "Creator", avatarUrl: null, requestedAt: timestamp
-    }).success).toBe(true);
-    expect(followRequestResponseSchema.safeParse({ id, requestedAt: "invalid" }).success).toBe(false);
+    expect(
+      notificationResponseSchema.safeParse({
+        id,
+        type: "follow",
+        postId: null,
+        createdAt: timestamp,
+        readAt: null,
+        handle: "creator",
+        displayName: "Creator"
+      }).success
+    ).toBe(true);
+    expect(
+      notificationResponseSchema.safeParse({
+        id,
+        type: "unknown",
+        postId: null,
+        createdAt: timestamp,
+        readAt: null,
+        handle: null,
+        displayName: null
+      }).success
+    ).toBe(false);
+    expect(
+      accountControlResponseSchema.safeParse({
+        id,
+        handle: "creator",
+        displayName: "Creator",
+        avatarUrl: null,
+        createdAt: timestamp
+      }).success
+    ).toBe(true);
+    expect(
+      accountControlResponseSchema.safeParse({ id, createdAt: "invalid" }).success
+    ).toBe(false);
+    expect(
+      followRequestResponseSchema.safeParse({
+        id,
+        handle: "creator",
+        displayName: "Creator",
+        avatarUrl: null,
+        requestedAt: timestamp
+      }).success
+    ).toBe(true);
+    expect(followRequestResponseSchema.safeParse({ id, requestedAt: "invalid" }).success).toBe(
+      false
+    );
     expect(reportSummaryResponseSchema.safeParse(report).success).toBe(true);
-    expect(reportSummaryResponseSchema.safeParse({ ...report, status: "unknown" }).success).toBe(false);
-    expect(moderationReportSummaryResponseSchema.safeParse({
-      ...report, status: "reviewing", updatedAt: timestamp
-    }).success).toBe(true);
-    expect(moderationReportSummaryResponseSchema.safeParse({
-      ...report, updatedAt: "invalid"
-    }).success).toBe(false);
-    expect(appealSummaryResponseSchema.safeParse({
-      id, reportId: id, details: "An appeal with supporting context.", status: "open",
-      createdAt: timestamp, updatedAt: timestamp
-    }).success).toBe(true);
-    expect(appealSummaryResponseSchema.safeParse({
-      id, reportId: "invalid", details: "An appeal", status: "open",
-      createdAt: timestamp, updatedAt: timestamp
-    }).success).toBe(false);
-    expect(moderationAppealQueueItemResponseSchema.safeParse({
-      id, reportId: id, status: "open", createdAt: timestamp
-    }).success).toBe(true);
-    expect(moderationAppealQueueItemResponseSchema.safeParse({
-      id, reportId: id, status: "accepted", createdAt: timestamp
-    }).success).toBe(false);
-    expect(moderatorRoleResponseSchema.safeParse({
-      userId: id, handle: "creator", role: "moderator", grantedByHandle: null, grantedAt: timestamp
-    }).success).toBe(true);
-    expect(moderatorRoleResponseSchema.safeParse({
-      userId: "invalid", handle: "creator", role: "moderator", grantedByHandle: null, grantedAt: timestamp
-    }).success).toBe(false);
-    expect(auditEventResponseSchema.safeParse({
-      id, action: "report.resolved", actorRef: id, caseRef: null, metadata: {}, createdAt: timestamp
-    }).success).toBe(true);
-    expect(auditEventResponseSchema.safeParse({
-      id, action: "report.resolved", actorRef: "invalid", caseRef: null, metadata: {}, createdAt: timestamp
-    }).success).toBe(false);
+    expect(
+      reportSummaryResponseSchema.safeParse({ ...report, status: "unknown" }).success
+    ).toBe(false);
+    expect(
+      moderationReportSummaryResponseSchema.safeParse({
+        ...report,
+        status: "reviewing",
+        updatedAt: timestamp
+      }).success
+    ).toBe(true);
+    expect(
+      moderationReportSummaryResponseSchema.safeParse({
+        ...report,
+        updatedAt: "invalid"
+      }).success
+    ).toBe(false);
+    expect(
+      appealSummaryResponseSchema.safeParse({
+        id,
+        reportId: id,
+        details: "An appeal with supporting context.",
+        status: "open",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }).success
+    ).toBe(true);
+    expect(
+      appealSummaryResponseSchema.safeParse({
+        id,
+        reportId: "invalid",
+        details: "An appeal",
+        status: "open",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }).success
+    ).toBe(false);
+    expect(
+      moderationAppealQueueItemResponseSchema.safeParse({
+        id,
+        reportId: id,
+        status: "open",
+        createdAt: timestamp
+      }).success
+    ).toBe(true);
+    expect(
+      moderationAppealQueueItemResponseSchema.safeParse({
+        id,
+        reportId: id,
+        status: "accepted",
+        createdAt: timestamp
+      }).success
+    ).toBe(false);
+    expect(
+      moderatorRoleResponseSchema.safeParse({
+        userId: id,
+        handle: "creator",
+        role: "moderator",
+        grantedByHandle: null,
+        grantedAt: timestamp
+      }).success
+    ).toBe(true);
+    expect(
+      moderatorRoleResponseSchema.safeParse({
+        userId: "invalid",
+        handle: "creator",
+        role: "moderator",
+        grantedByHandle: null,
+        grantedAt: timestamp
+      }).success
+    ).toBe(false);
+    expect(
+      auditEventResponseSchema.safeParse({
+        id,
+        action: "report.resolved",
+        actorRef: id,
+        caseRef: null,
+        metadata: {},
+        createdAt: timestamp
+      }).success
+    ).toBe(true);
+    expect(
+      auditEventResponseSchema.safeParse({
+        id,
+        action: "report.resolved",
+        actorRef: "invalid",
+        caseRef: null,
+        metadata: {},
+        createdAt: timestamp
+      }).success
+    ).toBe(false);
   });
 
   it("validates like, read, moderation and audit responses", () => {
