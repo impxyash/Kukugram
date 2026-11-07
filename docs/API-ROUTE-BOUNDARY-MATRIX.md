@@ -19,6 +19,7 @@ handler in the identity module.
   success status is 200.
 - The global error handler returns `application/problem+json`. Validation
   failures are 400; application errors can include 401, 403, 404, and 409;
+  auth rate limits return 429, Redis/IP-resolution outages return 503, and
   unclassified errors become 500. The Problem Details response contains
   `type`, `title`, `status`, optional `detail`, `instance`, and
   `requestId`.
