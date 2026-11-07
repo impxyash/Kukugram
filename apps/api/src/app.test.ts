@@ -83,14 +83,14 @@ describe("API", () => {
     const healthResponseSchema =
       document.paths?.["/health"]?.get?.responses?.["200"]?.content?.["application/json"]?.schema;
     expect(healthResponseSchema).toMatchObject({
-        type: "object",
-        required: ["status", "requestId"],
-        properties: {
-          status: { type: "string", const: "ok" },
-          requestId: { type: "string" }
-        },
-        additionalProperties: false
-      });
+      type: "object",
+      required: ["status", "requestId"],
+      properties: {
+        status: { type: "string", const: "ok" },
+        requestId: { type: "string" }
+      },
+      additionalProperties: false
+    });
     const identityResponseSchema =
       document.paths?.["/v1/auth/providers"]?.get?.responses?.["200"]?.content?.["application/json"]
         ?.schema;
