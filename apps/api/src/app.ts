@@ -131,12 +131,14 @@ export function buildApp(
     },
     transform: ({ schema, url }) => {
       if (!url.startsWith("/v1/")) return { schema, url };
-      const routeSchema = schema ?? {};
+      const routeSchema = (schema ?? {}) as Record<string, unknown> & {
+        response?: Record<string, unknown>;
+      };
       return {
         schema: {
           ...routeSchema,
           response: {
-            ...routeSchema.response,
+            ...(routeSchema.response ?? {}),
             default: {
               description: "Problem Details error response",
               content: {
