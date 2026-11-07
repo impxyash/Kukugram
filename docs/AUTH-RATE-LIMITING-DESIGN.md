@@ -1,17 +1,24 @@
 # Authentication Rate-Limit Design
 
-## Verified current implementation
+## Implemented behavior
 
-- Login and signup use a module-level in-memory Map in
-  `apps/api/src/app.ts`.
-- The current policy allows 10 attempts per endpoint in a 15-minute window.
-- The key currently uses Fastify `request.ip`, which is based on the
-  connection peer unless proxy trust is configured.
-- Counters are local to one API process and reset on process restart.
-- `REDIS_URL` is required by API configuration.
-- Docker Compose provisions Redis 7 with AOF persistence and a health check.
-- The API package does not yet declare a Redis client dependency or create a
-  Redis client.
+- Login and signup share one Redis-backed counter namespace across API
+  processes. The policy remains 10 attempts per endpoint in a 15-minute
+  fixed window.
+- The counter increment and first expiry are performed atomically by one Lua
+  script. Later attempts do not extend the expiry.
+- Redis keys contain an HMAC-SHA-256 digest of client IP and endpoint, using
+  the existing session pepper with a rate-limit-specific domain prefix.
+- Raw IP addresses are not written into Redis keys.
+- The API uses Node Redis 6.3.1, one client per process, connects during
+  Fastify readiness, disables the offline command queue, and closes the client
+  during shutdown.
+- Redis reconnect uses bounded backoff. Authentication attempts fail closed
+  with 503 if Redis or public client-IP resolution is unavailable.
+- The in-memory store is used only by the test runtime or explicit test
+  injection; production uses Redis.
+- Docker Compose and CI provide Redis 7. The CI Redis service is isolated test
+  infrastructure; no Railway production configuration was changed.
 
 ## Railway public-ingress client IP decision
 
@@ -104,13 +111,15 @@ policy from a fixed window to a sliding window.
 
 ## Required tests before rollout
 
-- Atomic concurrent increments from two independent Redis clients.
-- Two independent API instances share the same counter.
+- Atomic concurrent increments across two independent Redis clients (40
+  concurrent increments verified).
+- Two independent API instances share the same counter and enforce the 10th/
+  11th attempt boundary.
 - Login and signup use independent endpoint buckets.
 - Fixed-window expiry occurs once and is not extended by later requests.
 - The 10th attempt is allowed and the 11th is rejected.
-- Redis connection failure and command failure fail closed.
-- Redis reconnection restores counting without process restart.
+- Redis command failure fails closed at the API boundary; an explicit Redis
+  close/reconnect restores counting without restarting the API process.
 - Missing, malformed, repeated, and comma-separated `X-Real-IP` values fail
   closed in production.
 - `X-Forwarded-For` and `Forwarded` never affect the key.
