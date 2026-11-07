@@ -53,6 +53,12 @@ describe("API", () => {
     expect(document.servers).toEqual([{ url: "/" }]);
     expect(document.paths).toHaveProperty("/health");
     expect(document.paths).toHaveProperty("/v1/auth/providers");
+    expect(document.paths).toHaveProperty("/v1/feed");
+    expect(document.paths?.["/v1/feed"]?.get?.responses).toHaveProperty("default.content");
+    expect(
+      document.paths?.["/v1/feed"]?.get?.responses?.default?.content?.["application/problem+json"]
+        ?.schema
+    ).toEqual({ $ref: "#/components/schemas/ProblemDetails" });
     expect(document).toMatchObject({
       components: {
         schemas: {

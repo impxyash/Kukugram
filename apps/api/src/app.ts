@@ -129,6 +129,27 @@ export function buildApp(
       buildLocalReference: (schema, _baseUri, _fragment, index) =>
         (schema as { title?: string }).title ?? `def-${index}`
     },
+    transform: ({ schema, url }) => {
+      if (!url.startsWith("/v1/")) return { schema, url };
+      const routeSchema = schema ?? {};
+      return {
+        schema: {
+          ...routeSchema,
+          response: {
+            ...routeSchema.response,
+            default: {
+              description: "Problem Details error response",
+              content: {
+                "application/problem+json": {
+                  schema: { $ref: "ProblemDetails#" }
+                }
+              }
+            }
+          }
+        },
+        url
+      };
+    },
     transformObject: (documentObject) => {
       const normalizeProblemDetailsRefs = (value: unknown): void => {
         if (Array.isArray(value)) {
