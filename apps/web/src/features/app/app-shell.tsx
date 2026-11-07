@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { ApiError, request } from "./api-client.js";
 import type {
   AccountControlResponse,
   AppealSummaryResponse,
@@ -15,8 +16,6 @@ import type {
   ReportSummaryResponse
 } from "@kukugram/api-contract";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
 type User = ProfileResponse;
 type Post = PostResponse;
 type Notice = NotificationResponse;
@@ -27,19 +26,6 @@ type ReportRecord = ReportSummaryResponse;
 type ModerationReport = ModerationReportSummaryResponse;
 type AppealRecord = AppealSummaryResponse;
 type ModerationAppeal = ModerationAppealQueueItemResponse;
-
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${apiUrl}/v1${path}`, {
-    credentials: "include",
-    headers: { "content-type": "application/json", ...options.headers },
-    ...options
-  });
-  if (!response.ok) {
-    const problem = (await response.json().catch(() => null)) as { title?: string } | null;
-    throw new Error(problem?.title ?? "Something went wrong. Please try again.");
-  }
-  return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>);
-}
 
 async function reportContent(
   targetType: "profile" | "post" | "comment",
@@ -95,17 +81,32 @@ export function AppShell() {
     setLoading(true);
     setError(null);
     try {
-      const me = await request<{ user: User }>("/me");
+      let me: { user: User };
+      try {
+        me = await request<{ user: User }>("/me");
+      } catch (reason) {
+        setUser(null);
+        if (!(reason instanceof ApiError && [401, 403].includes(reason.status))) {
+          setError((reason as Error).message);
+        }
+        return;
+      }
+
       setUser(me.user);
-      const [feed, activity] = await Promise.all([
+      const [feedResult, activityResult] = await Promise.allSettled([
         request<{ posts: Post[] }>("/feed"),
         request<{ notifications: Notice[] }>("/notifications")
       ]);
-      setPosts(feed.posts);
-      setNotices(activity.notifications);
-    } catch (reason) {
-      setUser(null);
-      if ((reason as Error).message !== "Internal server error") setError(null);
+
+      if (feedResult.status === "fulfilled") {
+        setPosts(feedResult.value.posts);
+      }
+      if (activityResult.status === "fulfilled") {
+        setNotices(activityResult.value.notifications);
+      }
+      if (feedResult.status === "rejected" || activityResult.status === "rejected") {
+        setError("Some of your latest activity could not be loaded. Please refresh and try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -131,7 +132,15 @@ export function AppShell() {
         <span className="pulse-dot" /> Loading your corner...
       </main>
     );
-  if (!user) return <AuthScreen mode={authMode} setMode={setAuthMode} onAuthenticated={refresh} />;
+  if (!user)
+    return (
+      <AuthScreen
+        mode={authMode}
+        setMode={setAuthMode}
+        onAuthenticated={refresh}
+        sessionError={error}
+      />
+    );
 
   const unread = notices.filter((notice) => !notice.readAt).length;
 
@@ -205,11 +214,13 @@ export function AppShell() {
 function AuthScreen({
   mode,
   setMode,
-  onAuthenticated
+  onAuthenticated,
+  sessionError
 }: {
   mode: "login" | "signup";
   setMode: (mode: "login" | "signup") => void;
   onAuthenticated: () => Promise<void>;
+  sessionError: string | null;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -278,6 +289,11 @@ function AuthScreen({
             {error && (
               <p className="form-error" role="alert">
                 {error}
+              </p>
+            )}
+            {sessionError && (
+              <p className="form-error" role="alert">
+                {sessionError}
               </p>
             )}
             <form
