@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api-client.js";
-import { loadSession } from "./session-bootstrap.js";
+import { createSessionRequestSequence, loadSession } from "./session-bootstrap.js";
 import { reconcileSessionActivity } from "./app-shell.js";
 
 type TestUser = { id: string };
@@ -112,5 +112,36 @@ describe("session bootstrap", () => {
       posts: [],
       notices: [{ id: "new-notice" }]
     });
+  });
+});
+
+describe("session request sequencing", () => {
+  it("allows only the newest concurrent refresh to update session state", () => {
+    const sequence = createSessionRequestSequence();
+    const firstRefresh = sequence.begin();
+    const secondRefresh = sequence.begin();
+
+    expect(sequence.isCurrent(firstRefresh)).toBe(false);
+    expect(sequence.isCurrent(secondRefresh)).toBe(true);
+  });
+
+  it("invalidates an in-flight refresh when logout completes", () => {
+    const sequence = createSessionRequestSequence();
+    const pendingRefresh = sequence.begin();
+
+    sequence.invalidate();
+
+    expect(sequence.isCurrent(pendingRefresh)).toBe(false);
+    const refreshAfterLogout = sequence.begin();
+    expect(sequence.isCurrent(refreshAfterLogout)).toBe(true);
+  });
+
+  it("keeps loading ownership with the newest refresh", () => {
+    const sequence = createSessionRequestSequence();
+    const olderRefresh = sequence.begin();
+    const latestRefresh = sequence.begin();
+
+    expect(sequence.isCurrent(olderRefresh)).toBe(false);
+    expect(sequence.isCurrent(latestRefresh)).toBe(true);
   });
 });

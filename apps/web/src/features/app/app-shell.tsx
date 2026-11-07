@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { request } from "./api-client";
-import { loadSession } from "./session-bootstrap";
+import { createSessionRequestSequence, loadSession } from "./session-bootstrap";
 import type {
   AccountControlResponse,
   AppealSummaryResponse,
@@ -86,7 +86,7 @@ export function AppShell() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const activeUserId = useRef<string | null>(null);
-  const sessionRequestId = useRef(0);
+  const sessionRequestSequence = useRef(createSessionRequestSequence());
   const [tab, setTab] = useState<
     "home" | "discover" | "activity" | "profile" | "settings" | "moderation"
   >("home");
@@ -96,12 +96,12 @@ export function AppShell() {
   const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
 
   async function refresh() {
-    const requestId = ++sessionRequestId.current;
+    const requestId = sessionRequestSequence.current.begin();
     setLoading(true);
     setError(null);
     try {
       const result = await loadSession<User, Post, Notice>();
-      if (requestId !== sessionRequestId.current) return;
+      if (!sessionRequestSequence.current.isCurrent(requestId)) return;
 
       if (result.status === "unauthenticated") {
         activeUserId.current = null;
@@ -128,7 +128,7 @@ export function AppShell() {
         setError("Some of your latest activity could not be loaded. Please refresh and try again.");
       }
     } finally {
-      if (requestId === sessionRequestId.current) setLoading(false);
+      if (sessionRequestSequence.current.isCurrent(requestId)) setLoading(false);
     }
   }
 
@@ -211,7 +211,7 @@ export function AppShell() {
             void (async () => {
               try {
                 await request("/auth/logout", { method: "POST" });
-                sessionRequestId.current += 1;
+                sessionRequestSequence.current.invalidate();
                 activeUserId.current = null;
                 setUser(null);
                 setPosts([]);

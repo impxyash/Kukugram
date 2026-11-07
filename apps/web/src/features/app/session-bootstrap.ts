@@ -46,3 +46,25 @@ export async function loadSession<TUser, TPost, TNotification>(
     activityError: feedResult.status === "rejected" || activityResult.status === "rejected"
   };
 }
+
+/**
+ * Tracks the newest session refresh so stale responses cannot overwrite a
+ * newer refresh or a completed logout.
+ */
+export function createSessionRequestSequence() {
+  let currentRequestId = 0;
+
+  return {
+    begin(): number {
+      currentRequestId += 1;
+      return currentRequestId;
+    },
+    isCurrent(requestId: number): boolean {
+      return requestId === currentRequestId;
+    },
+    invalidate(): number {
+      currentRequestId += 1;
+      return currentRequestId;
+    }
+  };
+}
