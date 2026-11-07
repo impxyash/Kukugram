@@ -167,7 +167,6 @@ export const userSearchResponseSchema = z.object({
   users: z.array(profileResponseSchema)
 });
 
-
 export const commentResponseSchema = z.object({
   id: z.string().uuid(),
   body: z.string(),
