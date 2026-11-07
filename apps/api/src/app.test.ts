@@ -132,7 +132,9 @@ describe("API", () => {
       status: 400,
       instance: "/v1/auth/login"
     });
-    expect(invalidLogin.json().requestId).toBe(invalidLogin.headers["x-request-id"]);
+    expect(invalidLogin.json<{ requestId: string }>().requestId).toBe(
+      invalidLogin.headers["x-request-id"]
+    );
     await app.close();
   });
 
