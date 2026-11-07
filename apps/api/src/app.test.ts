@@ -130,9 +130,7 @@ describe("API", () => {
 
     expect(versionedOperations).toHaveLength(43);
     expect(
-      new Set(
-        versionedOperations.map(({ method, path }) => `${method.toUpperCase()} ${path}`)
-      ).size
+      new Set(versionedOperations.map(({ method, path }) => `${method.toUpperCase()} ${path}`)).size
     ).toBe(43);
     expect(new Set(versionedOperations.map(({ method }) => method))).toEqual(
       new Set(["get", "post", "patch", "delete"])
