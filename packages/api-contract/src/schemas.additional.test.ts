@@ -1,0 +1,54 @@
+import { describe, expect, it } from "vitest";
+import {
+  auditActorResolutionResponseSchema as auditResponse,
+  commentCreateRequestSchema as commentRequest,
+  likeResponseSchema as likeResponse,
+  moderationAppealReviewRequestSchema as appealRequest,
+  moderationAppealReviewResponseSchema as appealResponse,
+  moderationReportUpdateRequestSchema as reportRequest,
+  moderationReportUpdateResponseSchema as reportResponse,
+  moderatorRoleCreateRequestSchema as roleRequest,
+  moderatorRoleCreateResponseSchema as roleResponse,
+  moderatorRoleParamsSchema as roleParams,
+  notificationReadResponseSchema as readResponse,
+  userSearchQuerySchema as searchQuery,
+  uuidParamsSchema as uuidParams,
+  handleParamsSchema as handleParams
+} from "./schemas.js";
+
+describe("additional API contracts", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+
+  it("validates comment, search, path and moderation requests", () => {
+    expect(commentRequest.safeParse({ body: "A comment" }).success).toBe(true);
+    expect(commentRequest.safeParse({ body: " " }).success).toBe(false);
+    expect(searchQuery.safeParse({ q: "creator" }).success).toBe(true);
+    expect(searchQuery.safeParse({ q: " " }).success).toBe(false);
+    expect(uuidParams.safeParse({ id }).success).toBe(true);
+    expect(uuidParams.safeParse({ id: "invalid" }).success).toBe(false);
+    expect(handleParams.safeParse({ handle: "creator_01" }).success).toBe(true);
+    expect(reportRequest.safeParse({ status: "resolved" }).success).toBe(true);
+    expect(reportRequest.safeParse({ status: "open" }).success).toBe(false);
+    expect(appealRequest.safeParse({ status: "accepted" }).success).toBe(true);
+    expect(appealRequest.safeParse({ status: "open" }).success).toBe(false);
+    expect(roleRequest.safeParse({ userId: id, role: "moderator" }).success).toBe(true);
+    expect(roleRequest.safeParse({ userId: "invalid", role: "moderator" }).success).toBe(false);
+    expect(roleParams.safeParse({ userId: id, role: "admin" }).success).toBe(true);
+    expect(roleParams.safeParse({ userId: id, role: "owner" }).success).toBe(false);
+  });
+
+  it("validates like, read, moderation and audit responses", () => {
+    expect(likeResponse.safeParse({ liked: true }).success).toBe(true);
+    expect(likeResponse.safeParse({ liked: false }).success).toBe(false);
+    expect(readResponse.safeParse({ ok: true }).success).toBe(true);
+    expect(readResponse.safeParse({ ok: false }).success).toBe(false);
+    expect(reportResponse.safeParse({ reportId: id, status: "resolved" }).success).toBe(true);
+    expect(reportResponse.safeParse({ reportId: id, status: "open" }).success).toBe(false);
+    expect(appealResponse.safeParse({ appealId: id, status: "accepted" }).success).toBe(true);
+    expect(appealResponse.safeParse({ appealId: id, status: "open" }).success).toBe(false);
+    expect(roleResponse.safeParse({ userId: id, role: "admin" }).success).toBe(true);
+    expect(roleResponse.safeParse({ userId: "invalid", role: "admin" }).success).toBe(false);
+    expect(auditResponse.safeParse({ userId: id }).success).toBe(true);
+    expect(auditResponse.safeParse({ userId: "invalid" }).success).toBe(false);
+  });
+});
