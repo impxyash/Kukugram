@@ -426,6 +426,7 @@ function Home({
       >
         <Avatar user={user} />
         <textarea
+          aria-label="Write a post"
           value={body}
           onChange={(event) => setBody(event.target.value)}
           placeholder="What is moving through your mind?"
@@ -601,6 +602,7 @@ function PostCard({
             }}
           >
             <input
+              aria-label="Write a comment"
               value={comment}
               onChange={(event) => setComment(event.target.value)}
               maxLength={1000}
@@ -701,6 +703,7 @@ function Discover({ onError }: { onError: (message: string) => void }) {
         }}
       >
         <input
+          aria-label="Search people by name or username"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search username or name"
