@@ -42,7 +42,7 @@ Covered response areas include:
 2. Existing route handlers still parse their inline Zod schemas. Those inline
    schemas remain the runtime source of truth until the protected local route
    file is reconciled.
-3. The package is not yet consumed by the web client or API runtime.
+3. The web client now consumes shared inferred response types for its current user, post, notification, comment, follow-request, account-control, report and appeal models. The API runtime still uses its inline Zod parsers.
 4. Response schemas cover a selected set of observed response shapes; they do
    not constitute a complete API contract.
 5. Fastify Swagger output is still incomplete because most routes do not
