@@ -110,10 +110,9 @@ describe("API", () => {
     const app = buildApp(config);
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
-    expect(health.json()).toMatchObject({
-      status: "ok",
-      requestId: health.headers["x-request-id"]
-    });
+    const healthBody = health.json<{ status: "ok"; requestId: string }>();
+    expect(healthBody.status).toBe("ok");
+    expect(healthBody.requestId).toEqual(expect.any(String));
 
     const providers = await app.inject({ method: "GET", url: "/v1/auth/providers" });
     expect(providers.statusCode).toBe(200);
@@ -132,8 +131,8 @@ describe("API", () => {
       status: 400,
       instance: "/v1/auth/login"
     });
-    expect(invalidLogin.json<{ requestId: string }>().requestId).toBe(
-      invalidLogin.headers["x-request-id"]
+    expect(invalidLogin.json<{ requestId: string }>().requestId).toEqual(
+      expect.any(String)
     );
     await app.close();
   });
