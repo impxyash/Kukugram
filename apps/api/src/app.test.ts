@@ -65,7 +65,9 @@ describe("API", () => {
       const responses = document.paths?.[path]?.get?.responses;
       expect(responses?.["200"]?.content).toHaveProperty("application/json");
       expect(responses?.["500"]?.content).toHaveProperty("application/problem+json");
-      expect(responses?.["500"]?.content?.["application/problem+json"]?.schema).toMatchObject({
+      const problemResponseSchema =
+        responses?.["500"]?.content?.["application/problem+json"]?.schema;
+      expect(problemResponseSchema).toMatchObject({
         type: "object",
         required: ["type", "title", "status", "instance", "requestId"],
         properties: {
@@ -91,9 +93,9 @@ describe("API", () => {
       },
       additionalProperties: false
     });
-    const identityResponseSchema =
-      document.paths?.["/v1/auth/providers"]?.get?.responses?.["200"]?.content?.["application/json"]
-        ?.schema;
+    const identitySuccessContent =
+      document.paths?.["/v1/auth/providers"]?.get?.responses?.["200"]?.content;
+    const identityResponseSchema = identitySuccessContent?.["application/json"]?.schema;
     expect(identityResponseSchema).toMatchObject({
       type: "object",
       required: ["password", "oauth"],
