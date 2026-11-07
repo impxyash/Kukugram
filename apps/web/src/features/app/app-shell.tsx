@@ -1435,7 +1435,9 @@ function Settings({
                       }
                     })
                     .catch((reason) => {
-                      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+                      if (mountedRequestScope.current.isActive()) {
+                        onError((reason as Error).message);
+                      }
                     });
                 }}
               >
@@ -1479,7 +1481,9 @@ function Settings({
                       }
                     })
                     .catch((reason) => {
-                      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+                      if (mountedRequestScope.current.isActive()) {
+                        onError((reason as Error).message);
+                      }
                     });
                 }}
               >
@@ -1511,7 +1515,9 @@ function Settings({
                       }
                     })
                     .catch((reason) => {
-                      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+                      if (mountedRequestScope.current.isActive()) {
+                        onError((reason as Error).message);
+                      }
                     });
                 }}
               >
