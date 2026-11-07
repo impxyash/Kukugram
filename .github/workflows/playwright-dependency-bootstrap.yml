@@ -1,0 +1,31 @@
+name: Playwright dependency bootstrap
+
+on:
+  push:
+    branches: [feature/privacy-controls]
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - name: Resolve Playwright dependency with pnpm
+        run: pnpm add --workspace-root --save-dev --lockfile-only @playwright/test@latest
+      - name: Upload generated manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-pnpm-manifests
+          path: |
+            package.json
+            pnpm-lock.yaml
+          if-no-files-found: error
+          retention-days: 1
