@@ -303,7 +303,8 @@ function AuthScreen({
     }
   }
 
-  return (    <main className="auth-page">
+  return (
+    <main className="auth-page">
       <div className="auth-layout">
         <section className="auth-visual" aria-label="Welcome to Kukugram">
           <a className="brand auth-brand" href="/">
@@ -602,7 +603,8 @@ function PostCard({
     }
   }
 
-  return (    <article className="post-card">
+  return (
+    <article className="post-card">
       <header>
         <Avatar user={post} small />
         <div>
@@ -902,6 +904,7 @@ function Activity({
     </>
   );
 }
+
 function Profile({
   user,
   setUser,
@@ -1200,7 +1203,8 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
                   aria-label={`Reject appeal for case ${appeal.reportId.slice(0, 8)}`}
                   onClick={() => void reviewAppeal(appeal.id, "rejected")}
                 >
-                  Reject                </button>
+                  Reject
+                </button>
               </div>
             </article>
           ))
