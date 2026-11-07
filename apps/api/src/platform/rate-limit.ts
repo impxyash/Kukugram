@@ -42,7 +42,7 @@ export class RedisRateLimitStore implements RateLimitStore {
     this.client.on("error", onError);
   }
 
-  connect(): Promise<void> {
+  async connect() {
     if (this.client.isReady) return;
     if (!this.connectPromise) {
       this.connectPromise = (async () => {
@@ -82,9 +82,11 @@ export class RedisRateLimitStore implements RateLimitStore {
 export class InMemoryRateLimitStore implements RateLimitStore {
   private readonly buckets = new Map<string, { count: number; resetAt: number }>();
 
-  async connect() {}
+  connect(): Promise<void> {
+    return Promise.resolve();
+  }
 
-  async consume(key: string, windowMs: number): Promise<RateLimitResult> {
+  consume(key: string, windowMs: number): Promise<RateLimitResult> {
     const now = Date.now();
     let bucket = this.buckets.get(key);
     if (!bucket || bucket.resetAt <= now) {
