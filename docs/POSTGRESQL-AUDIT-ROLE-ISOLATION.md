@@ -16,8 +16,7 @@ On a fresh PostgreSQL 16 database using the CI PostgreSQL superuser:
 - Migration 0007 does not revoke the default PUBLIC EXECUTE privilege.
   The disposable-database test confirms PUBLIC EXECUTE is present under the
   PostgreSQL 16 CI default ACLs.
-- The identity-map table itself has PUBLIC privileges revoked by migration
-  0007.
+- The identity-map table itself has PUBLIC privileges revoked by migration 0007.
 
 The test then applies a fixture-only least-privilege policy:
 
