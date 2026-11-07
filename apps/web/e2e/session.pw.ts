@@ -223,9 +223,9 @@ test("a stale successful session response cannot restore a logged-out user", asy
   await expect(page.getByRole("button", { name: "Log out" })).toHaveCount(0);
 });
 
-test(
-  "a late Settings response from account A cannot overwrite account B after an identity switch",
-  async ({ page }) => {
+test("a late Settings response from account A cannot overwrite account B after an identity switch", async ({
+  page
+}) => {
     const accountA = {
       ...user,
       id: "00000000-0000-4000-8000-000000000011",
