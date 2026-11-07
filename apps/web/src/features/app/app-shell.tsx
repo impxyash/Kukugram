@@ -1001,9 +1001,14 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   const mountedRequestScope = useRef(createMountedRequestScope());
 
   useEffect(() => {
+    const scope = createMountedRequestScope();
+    const sequence = createSessionRequestSequence();
+    mountedRequestScope.current = scope;
+    queueRequestSequence.current = sequence;
+
     return () => {
-      mountedRequestScope.current.invalidate();
-      queueRequestSequence.current.invalidate();
+      scope.invalidate();
+      sequence.invalidate();
     };
   }, []);
 
@@ -1284,7 +1289,8 @@ function Settings({
   const mountedRequestScope = useRef(createMountedRequestScope());
 
   useEffect(() => {
-    const scope = mountedRequestScope.current;
+    const scope = createMountedRequestScope();
+    mountedRequestScope.current = scope;
     return () => scope.invalidate();
   }, []);
 
