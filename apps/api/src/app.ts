@@ -67,6 +67,7 @@ export function buildApp(
     const endpoint = request.url.split("?")[0] ?? "";
     let result: { count: number; ttlMs: number };
     try {
+      // Railway overwrites X-Real-IP only on public HTTP ingress; private-network callers must not use these auth routes.
       const clientIp = resolveClientIp(
         request.headers["x-real-ip"],
         request.raw.socket.remoteAddress,
