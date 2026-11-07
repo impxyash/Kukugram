@@ -14,6 +14,13 @@ import {
   moderationAppealQueueResponseSchema,
   moderationRoleListResponseSchema,
   moderationAuditListResponseSchema,
+  accountControlListResponseSchema,
+  authProvidersResponseSchema,
+  authUserResponseSchema,
+  healthResponseSchema,
+  problemDetailsSchema,
+  profileResponseSchema,
+  userSearchResponseSchema,
   postCreateResponseSchema,
   followRequestListResponseSchema,
   moderationReportDetailResponseSchema,
@@ -309,6 +316,62 @@ describe("API request contracts", () => {
             displayName: "Requester",
             avatarUrl: null,
             requestedAt: timestamp
+          }
+        ]
+      }).success
+    ).toBe(true);
+  });
+
+
+  it("validates profile, authentication provider and user lookup response contracts", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const profile = {
+      id,
+      handle: "creator",
+      displayName: "Creator",
+      bio: null,
+      avatarUrl: null,
+      followers: "12",
+      following: "8",
+      isFollowing: false,
+      isRequested: false,
+      privacy: "public" as const,
+      canViewContent: true,
+      isBlocked: false
+    };
+
+    expect(profileResponseSchema.safeParse(profile).success).toBe(true);
+    expect(authUserResponseSchema.safeParse({ user: profile }).success).toBe(true);
+    expect(userSearchResponseSchema.safeParse({ users: [profile] }).success).toBe(true);
+    expect(authProvidersResponseSchema.safeParse({ password: true, oauth: [] }).success).toBe(
+      true
+    );
+    expect(
+      healthResponseSchema.safeParse({ status: "ok", requestId: "request-123" }).success
+    ).toBe(true);
+    expect(
+      problemDetailsSchema.safeParse({
+        type: "https://kukugram.com/problems/validation",
+        title: "Validation failed",
+        status: 400,
+        detail: "The request body is invalid.",
+        instance: "/v1/me/profile",
+        requestId: "request-123"
+      }).success
+    ).toBe(true);
+  });
+
+  it("validates blocked and muted account response projections", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    expect(
+      accountControlListResponseSchema.safeParse({
+        users: [
+          {
+            id,
+            handle: "blocked_user",
+            displayName: "Blocked User",
+            avatarUrl: null,
+            createdAt: "2026-11-07T00:00:00.000Z"
           }
         ]
       }).success
