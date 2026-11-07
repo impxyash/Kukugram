@@ -142,24 +142,27 @@ export function AppShell() {
           <span className="brand-mark">k</span> kukugram
         </a>
         <p className="nav-kicker">your social orbit</p>
-        {(
-          [
-            ["home", "Home"],
-            ["discover", "Discover"],
-            ["activity", `Activity${unread ? ` (${unread})` : ""}`],
-            ["profile", "Profile"],
-            ["settings", "Settings"],
-            ...(canModerate ? ([["moderation", "Moderation"]] as const) : [])
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            className={tab === id ? "nav-item active" : "nav-item"}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
+        <nav aria-label="Primary navigation" className="primary-nav">
+          {(
+            [
+              ["home", "Home"],
+              ["discover", "Discover"],
+              ["activity", `Activity${unread ? ` (${unread})` : ""}`],
+              ["profile", "Profile"],
+              ["settings", "Settings"],
+              ...(canModerate ? ([["moderation", "Moderation"]] as const) : [])
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              className={tab === id ? "nav-item active" : "nav-item"}
+              aria-current={tab === id ? "page" : undefined}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
         <button
           className="nav-item logout"
           onClick={() => {
