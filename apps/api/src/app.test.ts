@@ -45,20 +45,17 @@ describe("API", () => {
   it("publishes complete health and identity response schemas in OpenAPI", async () => {
     const app = buildApp(config);
     await app.ready();
-    const document = app.swagger() as {
-      servers?: Array<{ url: string }>;
-      paths?: Record<
-        string,
-        {
-          get?: {
-            responses?: Record<
-              string,
-              { content?: Record<string, { schema?: Record<string, unknown> }> }
-            >;
-          };
-        }
-      >;
+    type OpenApiResponse = {
+      content?: Record<string, { schema?: Record<string, unknown> }>;
     };
+    type OpenApiOperation = {
+      responses?: Record<string, OpenApiResponse>;
+    };
+    type OpenApiDocument = {
+      servers?: Array<{ url: string }>;
+      paths?: Record<string, { get?: OpenApiOperation }>;
+    };
+    const document = app.swagger() as OpenApiDocument;
 
     expect(document.servers).toEqual([{ url: "/" }]);
     expect(document.paths).toHaveProperty("/health");
@@ -94,10 +91,10 @@ describe("API", () => {
         },
         additionalProperties: false
       });
-    expect(
+    const identityResponseSchema =
       document.paths?.["/v1/auth/providers"]?.get?.responses?.["200"]?.content?.["application/json"]
-        ?.schema
-    ).toMatchObject({
+        ?.schema;
+    expect(identityResponseSchema).toMatchObject({
       type: "object",
       required: ["password", "oauth"],
       properties: {
