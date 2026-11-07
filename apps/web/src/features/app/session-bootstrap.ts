@@ -68,3 +68,22 @@ export function createSessionRequestSequence() {
     }
   };
 }
+
+
+
+/**
+ * Prevents asynchronous component work from committing state after its
+ * account-scoped component has unmounted (for example, during account switch).
+ */
+export function createMountedRequestScope() {
+  let active = true;
+
+  return {
+    isActive(): boolean {
+      return active;
+    },
+    invalidate(): void {
+      active = false;
+    }
+  };
+}

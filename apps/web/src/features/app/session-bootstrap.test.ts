@@ -145,3 +145,35 @@ describe("session request sequencing", () => {
     expect(sequence.isCurrent(latestRefresh)).toBe(true);
   });
 });
+
+
+describe("mounted request scope", () => {
+  it("rejects a pending account request after its component is invalidated", async () => {
+    const scope = createMountedRequestScope();
+    let resolveRequest!: (value: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      resolveRequest = resolve;
+    });
+    const committed: string[] = [];
+    const completion = pending.then((value) => {
+      if (scope.isActive()) committed.push(value);
+    });
+
+    scope.invalidate();
+    resolveRequest("account-a-private-data");
+    await completion;
+
+    expect(scope.isActive()).toBe(false);
+    expect(committed).toEqual([]);
+  });
+
+  it("allows the current account component to commit its own response", async () => {
+    const scope = createMountedRequestScope();
+    const committed: string[] = [];
+    await Promise.resolve("account-b-data").then((value) => {
+      if (scope.isActive()) committed.push(value);
+    });
+
+    expect(committed).toEqual(["account-b-data"]);
+  });
+});
