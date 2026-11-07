@@ -532,12 +532,7 @@ test(
       if (pathname === "/v1/me/blocked" && method === "GET") {
         await reply(route, 200, {
           users: [
-            {
-              id: "blocked-a",
-              handle: "blocked-a",
-              displayName: "Blocked A",
-              avatarUrl: null
-            }
+            { id: "blocked-a", handle: "blocked-a", displayName: "Blocked A", avatarUrl: null }
           ]
         });
         return;
@@ -545,12 +540,7 @@ test(
       if (pathname === "/v1/me/muted" && method === "GET") {
         await reply(route, 200, {
           users: [
-            {
-              id: "muted-a",
-              handle: "muted-a",
-              displayName: "Muted A",
-              avatarUrl: null
-            }
+            { id: "muted-a", handle: "muted-a", displayName: "Muted A", avatarUrl: null }
           ]
         });
         return;
