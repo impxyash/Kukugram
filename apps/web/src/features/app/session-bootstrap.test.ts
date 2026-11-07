@@ -28,7 +28,9 @@ describe("session bootstrap", () => {
   });
 
   it("treats expired or missing sessions as unauthenticated without requesting activity", async () => {
-    const requester = vi.fn(<T>(): Promise<T> => Promise.reject(new ApiError("Authentication required", 401)));
+    const requester = vi.fn(
+      <T>(): Promise<T> => Promise.reject(new ApiError("Authentication required", 401))
+    );
 
     await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toEqual({
       status: "unauthenticated",
@@ -38,7 +40,9 @@ describe("session bootstrap", () => {
   });
 
   it("surfaces non-authentication session failures", async () => {
-    const requester = vi.fn(<T>(): Promise<T> => Promise.reject(new ApiError("Service unavailable", 503)));
+    const requester = vi.fn(
+      <T>(): Promise<T> => Promise.reject(new ApiError("Service unavailable", 503))
+    );
 
     await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toEqual({
       status: "unauthenticated",
@@ -64,9 +68,11 @@ describe("session bootstrap", () => {
   });
 
   it("keeps the feed when notification loading fails and signals a retry", async () => {
-    const requester = vi.fn(async <T>(path: string): Promise<T> => {
-      if (path === "/me") return { user: { id: "user-1" } } as T;
-      if (path === "/notifications") return Promise.reject(new ApiError("Notifications unavailable", 503));
+    const requester = vi.fn(<T>(path: string): Promise<T> => {
+      if (path === "/me") return Promise.resolve({ user: { id: "user-1" } } as T);
+      if (path === "/notifications") {
+        return Promise.reject(new ApiError("Notifications unavailable", 503));
+      }
       return Promise.resolve({ posts: [{ id: "post-1" }] } as T);
     });
 
