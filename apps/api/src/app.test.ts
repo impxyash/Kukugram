@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import type { RateLimitStore } from "./platform/rate-limit.js";
+import { authProvidersResponseSchema, healthResponseSchema } from "@kukugram/api-contract";
 
 const config = {
   NODE_ENV: "test" as const,
@@ -194,13 +195,16 @@ describe("API", () => {
     const app = buildApp(config);
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
-    const healthBody = health.json<{ status: "ok"; requestId: string }>();
+    const healthBody = healthResponseSchema.parse(health.json());
     expect(healthBody.status).toBe("ok");
     expect(healthBody.requestId).toEqual(expect.any(String));
 
     const providers = await app.inject({ method: "GET", url: "/v1/auth/providers" });
     expect(providers.statusCode).toBe(200);
-    expect(providers.json()).toEqual({ password: true, oauth: [] });
+    expect(authProvidersResponseSchema.parse(providers.json())).toEqual({
+      password: true,
+      oauth: []
+    });
 
     const invalidLogin = await app.inject({
       method: "POST",
