@@ -256,7 +256,6 @@ export const commentListResponseSchema = z.object({
   comments: z.array(commentResponseSchema)
 });
 
-
 export const reportSummaryResponseSchema = z.object({
   id: z.string().uuid(),
   targetType: z.enum(["profile", "post", "comment"]),
@@ -278,11 +277,10 @@ export const moderationReportSummaryResponseSchema = reportSummaryResponseSchema
   updatedAt: isoDateTimeSchema
 });
 
-export const moderationReportDetailResponseSchema =
-  moderationReportSummaryResponseSchema.extend({
-    targetId: z.string().uuid(),
-    details: z.string().nullable()
-  });
+export const moderationReportDetailResponseSchema = moderationReportSummaryResponseSchema.extend({
+  targetId: z.string().uuid(),
+  details: z.string().nullable()
+});
 
 export const appealSummaryResponseSchema = z.object({
   id: z.string().uuid(),
@@ -359,3 +357,11 @@ export type ProfileResponse = z.infer<typeof profileResponseSchema>;
 export type PostResponse = z.infer<typeof postResponseSchema>;
 export type CommentResponse = z.infer<typeof commentResponseSchema>;
 export type NotificationResponse = z.infer<typeof notificationResponseSchema>;
+export type FollowRequestResponse = z.infer<typeof followRequestResponseSchema>;
+export type AccountControlResponse = z.infer<typeof accountControlResponseSchema>;
+export type ReportSummaryResponse = z.infer<typeof reportSummaryResponseSchema>;
+export type ModerationReportSummaryResponse = z.infer<typeof moderationReportSummaryResponseSchema>;
+export type AppealSummaryResponse = z.infer<typeof appealSummaryResponseSchema>;
+export type ModerationAppealQueueItemResponse = z.infer<
+  typeof moderationAppealQueueItemResponseSchema
+>;
