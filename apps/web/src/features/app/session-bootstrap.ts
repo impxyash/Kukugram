@@ -69,8 +69,6 @@ export function createSessionRequestSequence() {
   };
 }
 
-
-
 /**
  * Prevents asynchronous component work from committing state after its
  * account-scoped component has unmounted (for example, during account switch).

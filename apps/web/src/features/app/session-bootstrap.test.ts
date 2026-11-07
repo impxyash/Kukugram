@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api-client.js";
-import { createSessionRequestSequence, loadSession } from "./session-bootstrap.js";
+import { createMountedRequestScope, createSessionRequestSequence, loadSession } from "./session-bootstrap.js";
 import { reconcileSessionActivity } from "./app-shell.js";
 
 type TestUser = { id: string };
@@ -145,7 +145,6 @@ describe("session request sequencing", () => {
     expect(sequence.isCurrent(latestRefresh)).toBe(true);
   });
 });
-
 
 describe("mounted request scope", () => {
   it("rejects a pending account request after its component is invalidated", async () => {
