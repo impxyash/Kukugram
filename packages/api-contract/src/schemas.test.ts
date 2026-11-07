@@ -146,7 +146,6 @@ describe("API request contracts", () => {
     );
   });
 
-
   it("validates moderation list and detail rows from the SQL projections", () => {
     const id = "00000000-0000-4000-8000-000000000001";
     const timestamp = "2026-11-07T00:00:00.000Z";
