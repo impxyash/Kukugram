@@ -297,9 +297,19 @@ function AuthScreen({
               </p>
             )}
             {sessionError && (
-              <p className="form-error" role="alert">
-                {sessionError}
-              </p>
+              <>
+                <p className="form-error" role="alert">
+                  {sessionError}
+                </p>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void onAuthenticated()}
+                >
+                  Retry session
+                </button>
+              </>
             )}
             <form
               className="auth-form"
