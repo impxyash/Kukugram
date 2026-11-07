@@ -158,7 +158,11 @@ describe("additional API contracts", () => {
       invalidModerationReport
     );
     expectValidAndInvalid(appealSummaryResponseSchema, appeal, invalidAppeal);
-    expectValidAndInvalid(moderationAppealQueueItemResponseSchema, appealQueueItem, invalidAppealQueueItem);
+    expectValidAndInvalid(
+      moderationAppealQueueItemResponseSchema,
+      appealQueueItem,
+      invalidAppealQueueItem
+    );
     expectValidAndInvalid(moderatorRoleResponseSchema, moderatorRole, invalidModeratorRole);
     expectValidAndInvalid(auditEventResponseSchema, auditEvent, invalidAuditEvent);
   });
