@@ -42,6 +42,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Print Prettier-formatted API test
+        run: pnpm exec prettier apps/api/src/app.test.ts
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
