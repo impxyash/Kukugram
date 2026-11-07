@@ -256,6 +256,100 @@ export const commentListResponseSchema = z.object({
   comments: z.array(commentResponseSchema)
 });
 
+
+export const reportSummaryResponseSchema = z.object({
+  id: z.string().uuid(),
+  targetType: z.enum(["profile", "post", "comment"]),
+  category: z.enum([
+    "harassment",
+    "spam",
+    "impersonation",
+    "self_harm",
+    "violence",
+    "nudity",
+    "copyright",
+    "other"
+  ]),
+  status: z.enum(["open", "reviewing", "resolved", "dismissed"]),
+  createdAt: isoDateTimeSchema
+});
+
+export const moderationReportSummaryResponseSchema = reportSummaryResponseSchema.extend({
+  updatedAt: isoDateTimeSchema
+});
+
+export const moderationReportDetailResponseSchema =
+  moderationReportSummaryResponseSchema.extend({
+    targetId: z.string().uuid(),
+    details: z.string().nullable()
+  });
+
+export const appealSummaryResponseSchema = z.object({
+  id: z.string().uuid(),
+  reportId: z.string().uuid(),
+  details: z.string(),
+  status: z.enum(["open", "accepted", "rejected"]),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema
+});
+
+export const moderationAppealQueueItemResponseSchema = z.object({
+  id: z.string().uuid(),
+  reportId: z.string().uuid(),
+  status: z.literal("open"),
+  createdAt: isoDateTimeSchema
+});
+
+export const moderationAppealDetailResponseSchema = z.object({
+  id: z.string().uuid(),
+  reportId: z.string().uuid(),
+  details: z.string(),
+  status: z.enum(["open", "accepted", "rejected"]),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema
+});
+
+export const moderatorRoleResponseSchema = z.object({
+  userId: z.string().uuid(),
+  handle: z.string(),
+  role: z.enum(["moderator", "admin"]),
+  grantedByHandle: z.string().nullable(),
+  grantedAt: isoDateTimeSchema
+});
+
+export const auditEventResponseSchema = z.object({
+  id: z.string().uuid(),
+  action: z.string(),
+  actorRef: z.string().uuid().nullable(),
+  caseRef: z.string().uuid().nullable(),
+  metadata: z.record(z.string(), z.unknown()),
+  createdAt: isoDateTimeSchema
+});
+
+export const reportSummaryListResponseSchema = z.object({
+  reports: z.array(reportSummaryResponseSchema)
+});
+
+export const moderationReportListResponseSchema = z.object({
+  reports: z.array(moderationReportSummaryResponseSchema)
+});
+
+export const appealSummaryListResponseSchema = z.object({
+  appeals: z.array(appealSummaryResponseSchema)
+});
+
+export const moderationAppealQueueResponseSchema = z.object({
+  appeals: z.array(moderationAppealQueueItemResponseSchema)
+});
+
+export const moderationRoleListResponseSchema = z.object({
+  roles: z.array(moderatorRoleResponseSchema)
+});
+
+export const moderationAuditListResponseSchema = z.object({
+  events: z.array(auditEventResponseSchema)
+});
+
 export type SignupRequest = z.infer<typeof signupRequestSchema>;
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 export type ProfileUpdateRequest = z.infer<typeof profileUpdateRequestSchema>;
