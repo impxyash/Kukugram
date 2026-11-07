@@ -110,6 +110,7 @@ export function AppShell() {
 
       if (result.status === "unauthenticated") {
         activeUserId.current = null;
+        setModeratorUserId(null);
         setUser(null);
         setPosts([]);
         setNotices([]);
@@ -148,7 +149,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (!user) {
-      setCanModerate(false);
+      setModeratorUserId(null);
       return;
     }
 
@@ -223,6 +224,7 @@ export function AppShell() {
                 await request("/auth/logout", { method: "POST" });
                 sessionRequestSequence.current.invalidate();
                 activeUserId.current = null;
+                setModeratorUserId(null);
                 setUser(null);
                 setPosts([]);
                 setNotices([]);
