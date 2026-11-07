@@ -361,6 +361,9 @@ describe("API request contracts", () => {
     expect(
       problemDetailsSchema.safeParse({ ...problemDetails, requestId: undefined }).success
     ).toBe(false);
+    expect(problemDetailsSchema.safeParse({ ...problemDetails, unexpected: true }).success).toBe(
+      false
+    );
   });
 
   it("validates blocked and muted account response projections", () => {
