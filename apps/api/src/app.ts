@@ -125,6 +125,10 @@ export function buildApp(
   app.register(cookie, { hook: "onRequest" });
   app.register(swagger, {
     stripBasePath: false,
+    refResolver: {
+      buildLocalReference: (schema, _baseUri, _fragment, index) =>
+        (schema as { title?: string }).title ?? `def-${index}`
+    },
     openapi: {
       info: { title: "Kukugram API", version: "1.0.0" },
       servers: [{ url: "/" }],
