@@ -7,7 +7,7 @@ on:
     branches: [feature/privacy-controls]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   playwright:
@@ -22,19 +22,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Format Playwright sources and commit
-        if: github.event_name == 'push'
-        run: |
-          pnpm exec prettier --write playwright.config.ts apps/web/e2e/session.spec.ts
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add playwright.config.ts apps/web/e2e/session.spec.ts
-          if git diff --cached --quiet; then
-            echo "Playwright sources already formatted"
-            exit 0
-          fi
-          git commit -m "style(web): format Playwright browser tests"
-          git push origin HEAD:feature/privacy-controls
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: Run browser E2E
