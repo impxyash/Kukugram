@@ -8,6 +8,14 @@ import {
   notificationListResponseSchema,
   reportCreateResponseSchema,
   appealCreateResponseSchema,
+  reportSummaryListResponseSchema,
+  moderationReportListResponseSchema,
+  appealSummaryListResponseSchema,
+  moderationAppealQueueResponseSchema,
+  moderationRoleListResponseSchema,
+  moderationAuditListResponseSchema,
+  moderationReportDetailResponseSchema,
+  moderationAppealDetailResponseSchema,
   loginRequestSchema,
   moderationAuditQuerySchema,
   moderationReportListQuerySchema,
@@ -136,6 +144,112 @@ describe("API request contracts", () => {
     expect(appealCreateResponseSchema.safeParse({ appealId: id, status: "open" }).success).toBe(
       true
     );
+  });
+
+
+  it("validates moderation list and detail rows from the SQL projections", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const timestamp = "2026-11-07T00:00:00.000Z";
+    expect(
+      reportSummaryListResponseSchema.safeParse({
+        reports: [
+          {
+            id,
+            targetType: "post",
+            category: "spam",
+            status: "open",
+            createdAt: timestamp
+          }
+        ]
+      }).success
+    ).toBe(true);
+    expect(
+      moderationReportListResponseSchema.safeParse({
+        reports: [
+          {
+            id,
+            targetType: "post",
+            category: "spam",
+            status: "reviewing",
+            createdAt: timestamp,
+            updatedAt: timestamp
+          }
+        ]
+      }).success
+    ).toBe(true);
+    expect(
+      moderationReportDetailResponseSchema.safeParse({
+        id,
+        targetType: "profile",
+        targetId: id,
+        category: "other",
+        details: null,
+        status: "resolved",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }).success
+    ).toBe(true);
+    expect(
+      appealSummaryListResponseSchema.safeParse({
+        appeals: [
+          {
+            id,
+            reportId: id,
+            details: "An appeal with enough explanatory detail.",
+            status: "open",
+            createdAt: timestamp,
+            updatedAt: timestamp
+          }
+        ]
+      }).success
+    ).toBe(true);
+    expect(
+      moderationAppealQueueResponseSchema.safeParse({
+        appeals: [{ id, reportId: id, status: "open", createdAt: timestamp }]
+      }).success
+    ).toBe(true);
+    expect(
+      moderationAppealDetailResponseSchema.safeParse({
+        id,
+        reportId: id,
+        details: "An appeal with enough explanatory detail.",
+        status: "rejected",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }).success
+    ).toBe(true);
+  });
+
+  it("preserves nullable moderator and legacy audit attribution fields", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const timestamp = "2026-11-07T00:00:00.000Z";
+    expect(
+      moderationRoleListResponseSchema.safeParse({
+        roles: [
+          {
+            userId: id,
+            handle: "moderator",
+            role: "moderator",
+            grantedByHandle: null,
+            grantedAt: timestamp
+          }
+        ]
+      }).success
+    ).toBe(true);
+    expect(
+      moderationAuditListResponseSchema.safeParse({
+        events: [
+          {
+            id,
+            action: "report.status_changed",
+            actorRef: null,
+            caseRef: null,
+            metadata: {},
+            createdAt: timestamp
+          }
+        ]
+      }).success
+    ).toBe(true);
   });
 
   it("rejects invalid login payloads", () => {
