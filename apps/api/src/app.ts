@@ -24,7 +24,8 @@ const AUTH_MAX_ATTEMPTS = 10;
 export function buildApp(
   config: ApiConfig,
   poolOverride?: Pool,
-  rateLimitStoreOverride?: RateLimitStore
+  rateLimitStoreOverride?: RateLimitStore,
+  requirePublicClientIpHeader = config.NODE_ENV === "production" && process.env.NODE_ENV !== "test"
 ) {
   const app = Fastify({
     logger: { level: config.NODE_ENV === "production" ? "info" : "debug" },
@@ -71,7 +72,7 @@ export function buildApp(
       const clientIp = resolveClientIp(
         request.headers["x-real-ip"],
         request.raw.socket.remoteAddress,
-        config.NODE_ENV === "production"
+        requirePublicClientIpHeader
       );
       const key = createAuthRateLimitKey(config.SESSION_TOKEN_PEPPER, clientIp, endpoint);
       result = await rateLimitStore.consume(key, AUTH_WINDOW_MS);
