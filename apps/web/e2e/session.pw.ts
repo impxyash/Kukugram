@@ -535,7 +535,14 @@ test("pending Settings mutations cannot commit after switching to another identi
       await reply(route, 200, {
         users: switchToAccountB
           ? []
-          : [{ id: "blocked-a", handle: "blocked-a", displayName: "Blocked A", avatarUrl: null }]
+          : [
+              {
+                id: "blocked-a",
+                handle: "blocked-a",
+                displayName: "Blocked A",
+                avatarUrl: null,
+              },
+            ],
       });
       return;
     }
@@ -543,7 +550,14 @@ test("pending Settings mutations cannot commit after switching to another identi
       await reply(route, 200, {
         users: switchToAccountB
           ? []
-          : [{ id: "muted-a", handle: "muted-a", displayName: "Muted A", avatarUrl: null }]
+          : [
+              {
+                id: "muted-a",
+                handle: "muted-a",
+                displayName: "Muted A",
+                avatarUrl: null,
+              },
+            ],
       });
       return;
     }
@@ -557,9 +571,9 @@ test("pending Settings mutations cannot commit after switching to another identi
                 category: "spam",
                 targetType: "post",
                 createdAt: "2026-11-01T00:00:00.000Z",
-                status: "resolved"
-              }
-            ]
+                status: "resolved",
+              },
+            ],
       });
       return;
     }
