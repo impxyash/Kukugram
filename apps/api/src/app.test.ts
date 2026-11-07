@@ -56,10 +56,23 @@ describe("API", () => {
 
     for (const path of ["/health", "/v1/auth/providers"]) {
       const responses = document.paths?.[path]?.get?.responses;
-      expect(responses).toHaveProperty("200.content.application/json.schema.type", "object");
-      expect(
-        responses
-      ).toHaveProperty("500.content.application/problem+json.schema.type", "object");
+      const successSchema = responses?.["200"] as
+        | { content?: Record<string, { schema?: Record<string, unknown> }> }
+        | undefined;
+      const problemSchema = responses?.["500"] as
+        | { content?: Record<string, { schema?: Record<string, unknown> }> }
+        | undefined;
+
+      expect(successSchema?.content).toHaveProperty("application/json");
+      expect(successSchema?.content?.["application/json"]?.schema).toHaveProperty(
+        "type",
+        "object"
+      );
+      expect(problemSchema?.content).toHaveProperty("application/problem+json");
+      expect(problemSchema?.content?.["application/problem+json"]?.schema).toHaveProperty(
+        "type",
+        "object"
+      );
     }
     await app.close();
   });
