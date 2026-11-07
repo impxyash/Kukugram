@@ -103,6 +103,35 @@ redisIntegration("Redis fixed-window rate limiter", () => {
     expect(reset.count).toBe(1);
   });
 
+  it("enforces the authentication threshold atomically under concurrent requests", async () => {
+    const appA = buildApp(config, undefined, firstStore);
+    const appB = buildApp(config, undefined, secondStore);
+    const requests = Array.from({ length: 20 }, (_, index) =>
+      (index % 2 === 0 ? appA : appB).inject({
+        method: "POST",
+        url: "/v1/auth/login",
+        headers: {
+          "x-real-ip": "203.0.113.91",
+          "x-forwarded-for": `198.51.100.${index + 1}`
+        },
+        payload: {}
+      })
+    );
+
+    try {
+      const responses = await Promise.all(requests);
+      expect(responses.filter((response) => response.statusCode === 400)).toHaveLength(10);
+      expect(responses.filter((response) => response.statusCode === 429)).toHaveLength(10);
+      expect(
+        responses
+          .filter((response) => response.statusCode === 429)
+          .every((response) => response.headers["retry-after"] !== undefined)
+      ).toBe(true);
+    } finally {
+      await Promise.all([appA.close(), appB.close()]);
+    }
+  });
+
   it("recovers after the Redis connection is closed and reopened", async () => {
     const key = `test:reconnect:${randomUUID()}`;
     const first = await firstStore.consume(key, 60_000);
