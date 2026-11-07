@@ -17,7 +17,7 @@
     "lint": "corepack pnpm -r --if-present lint",
     "test": "corepack pnpm -r --if-present test",
     "format": "prettier --write .",
-    "format:check": "prettier docs/POSTGRESQL-AUDIT-ROLE-ISOLATION.md packages/api-contract/src/schemas.ts packages/api-contract/src/schemas.test.ts",
+    "format:check": "prettier --check .",
     "db:generate": "corepack pnpm --filter @kukugram/database generate",
     "db:migrate": "corepack pnpm --filter @kukugram/database migrate"
   },
