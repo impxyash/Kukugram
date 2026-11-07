@@ -256,7 +256,9 @@ export function AppShell() {
             onError={setError}
           />
         )}
-        {tab === "settings" && <Settings key={user.id} user={user} setUser={setUser} onError={setError} />}
+        {tab === "settings" && (
+          <Settings key={user.id} user={user} setUser={setUser} onError={setError} />
+        )}
         {tab === "moderation" && canModerate && <ModerationPanel key={user.id} onError={setError} />}
       </section>
     </main>
