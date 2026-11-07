@@ -21,19 +21,7 @@ export const identityRoutes: FastifyPluginAsync = (app) => {
             description: "Internal server error",
             content: {
               "application/problem+json": {
-                schema: {
-                  type: "object",
-                  required: ["type", "title", "status", "instance", "requestId"],
-                  properties: {
-                    type: { type: "string", format: "uri" },
-                    title: { type: "string" },
-                    status: { type: "integer", minimum: 400, maximum: 599 },
-                    detail: { type: "string" },
-                    instance: { type: "string" },
-                    requestId: { type: "string" }
-                  },
-                  additionalProperties: false
-                }
+                schema: { $ref: "#/components/schemas/ProblemDetails" }
               }
             }
           }

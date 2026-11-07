@@ -53,6 +53,25 @@ describe("API", () => {
     expect(document.servers).toEqual([{ url: "/" }]);
     expect(document.paths).toHaveProperty("/health");
     expect(document.paths).toHaveProperty("/v1/auth/providers");
+    expect(document).toMatchObject({
+      components: {
+        schemas: {
+          ProblemDetails: {
+            type: "object",
+            required: ["type", "title", "status", "instance", "requestId"],
+            properties: {
+              type: { type: "string", format: "uri" },
+              title: { type: "string" },
+              status: { type: "integer", minimum: 400, maximum: 599 },
+              detail: { type: "string" },
+              instance: { type: "string" },
+              requestId: { type: "string" }
+            },
+            additionalProperties: false
+          }
+        }
+      }
+    });
 
     for (const path of ["/health", "/v1/auth/providers"]) {
       const responses = document.paths?.[path]?.get?.responses;
@@ -66,10 +85,9 @@ describe("API", () => {
       expect(successSchema?.content).toHaveProperty("application/json");
       expect(successSchema?.content?.["application/json"]?.schema).toHaveProperty("type", "object");
       expect(problemSchema?.content).toHaveProperty("application/problem+json");
-      expect(problemSchema?.content?.["application/problem+json"]?.schema).toHaveProperty(
-        "type",
-        "object"
-      );
+      expect(problemSchema?.content?.["application/problem+json"]?.schema).toEqual({
+        $ref: "#/components/schemas/ProblemDetails"
+      });
     }
     await app.close();
   });
