@@ -1,0 +1,85 @@
+import { describe, expect, it, vi } from "vitest";
+import { ApiError } from "./api-client.js";
+import { loadSession } from "./session-bootstrap.js";
+
+type TestUser = { id: string };
+type TestPost = { id: string };
+type TestNotification = { id: string };
+
+describe("session bootstrap", () => {
+  it("loads the signed-in user, feed and notifications", async () => {
+    const requester = vi.fn(async <T>(path: string): Promise<T> => {
+      const values = {
+        "/me": { user: { id: "user-1" } },
+        "/feed": { posts: [{ id: "post-1" }] },
+        "/notifications": { notifications: [{ id: "notice-1" }] }
+      };
+      return values[path as keyof typeof values] as T;
+    });
+
+    await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toEqual({
+      status: "authenticated",
+      user: { id: "user-1" },
+      posts: [{ id: "post-1" }],
+      notifications: [{ id: "notice-1" }],
+      activityError: false
+    });
+    expect(requester).toHaveBeenCalledTimes(3);
+  });
+
+  it("treats expired or missing sessions as unauthenticated without requesting activity", async () => {
+    const requester = vi.fn(async <T>(): Promise<T> => {
+      throw new ApiError("Authentication required", 401);
+    });
+
+    await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toEqual({
+      status: "unauthenticated",
+      error: null
+    });
+    expect(requester).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces non-authentication session failures", async () => {
+    const requester = vi.fn(async <T>(): Promise<T> => {
+      throw new ApiError("Service unavailable", 503);
+    });
+
+    await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toEqual({
+      status: "unauthenticated",
+      error: "Service unavailable"
+    });
+    expect(requester).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps successful activity when feed loading fails and signals a retry", async () => {
+    const requester = vi.fn(async <T>(path: string): Promise<T> => {
+      if (path === "/me") return { user: { id: "user-1" } } as T;
+      if (path === "/feed") throw new ApiError("Feed unavailable", 503);
+      return { notifications: [{ id: "notice-1" }] } as T;
+    });
+
+    await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toEqual({
+      status: "authenticated",
+      user: { id: "user-1" },
+      posts: undefined,
+      notifications: [{ id: "notice-1" }],
+      activityError: true
+    });
+  });
+
+  it("keeps the feed when notification loading fails and signals a retry", async () => {
+    const requester = vi.fn(async <T>(path: string): Promise<T> => {
+      if (path === "/me") return { user: { id: "user-1" } } as T;
+      if (path === "/notifications") throw new ApiError("Notifications unavailable", 503);
+      return { posts: [{ id: "post-1" }] } as T;
+    });
+
+    await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toEqual({
+      status: "authenticated",
+      user: { id: "user-1" },
+      posts: [{ id: "post-1" }],
+      notifications: undefined,
+      activityError: true
+    });
+  });
+});

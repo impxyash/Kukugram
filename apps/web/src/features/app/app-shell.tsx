@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { ApiError, request } from "./api-client";
+import { request } from "./api-client";
+import { loadSession } from "./session-bootstrap";
 import type {
   AccountControlResponse,
   AppealSummaryResponse,
@@ -81,30 +82,17 @@ export function AppShell() {
     setLoading(true);
     setError(null);
     try {
-      let me: { user: User };
-      try {
-        me = await request<{ user: User }>("/me");
-      } catch (reason) {
+      const result = await loadSession<User, Post, Notice>();
+      if (result.status === "unauthenticated") {
         setUser(null);
-        if (!(reason instanceof ApiError && [401, 403].includes(reason.status))) {
-          setError((reason as Error).message);
-        }
+        setError(result.error);
         return;
       }
 
-      setUser(me.user);
-      const [feedResult, activityResult] = await Promise.allSettled([
-        request<{ posts: Post[] }>("/feed"),
-        request<{ notifications: Notice[] }>("/notifications")
-      ]);
-
-      if (feedResult.status === "fulfilled") {
-        setPosts(feedResult.value.posts);
-      }
-      if (activityResult.status === "fulfilled") {
-        setNotices(activityResult.value.notifications);
-      }
-      if (feedResult.status === "rejected" || activityResult.status === "rejected") {
+      setUser(result.user);
+      if (result.posts) setPosts(result.posts);
+      if (result.notifications) setNotices(result.notifications);
+      if (result.activityError) {
         setError("Some of your latest activity could not be loaded. Please refresh and try again.");
       }
     } finally {
@@ -194,9 +182,17 @@ export function AppShell() {
       </aside>
       <section className="main-pane">
         {error && (
-          <p className="banner error" role="alert" aria-live="assertive">
-            {error}
-          </p>
+          <div className="banner error" role="alert" aria-live="assertive">
+            <p>{error}</p>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={loading}
+              onClick={() => void refresh()}
+            >
+              Retry
+            </button>
+          </div>
         )}
         {tab === "home" && (
           <Home user={user} posts={posts} setPosts={setPosts} onError={setError} />
