@@ -85,6 +85,7 @@ describe("session bootstrap", () => {
       activityError: true
     });
   });
+
   it("preserves same-user activity but clears activity when the account changes", () => {
     const sameUser = reconcileSessionActivity(
       "user-1",
@@ -112,6 +113,4 @@ describe("session bootstrap", () => {
       notices: [{ id: "new-notice" }]
     });
   });
-
 });
-
