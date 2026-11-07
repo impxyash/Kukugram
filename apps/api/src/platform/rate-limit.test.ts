@@ -28,7 +28,8 @@ const config = {
 describe("authentication rate-limit identity", () => {
   it("accepts a single IP from X-Real-IP and normalizes IPv4-mapped IPv6", () => {
     expect(resolveClientIp("203.0.113.7", "127.0.0.1", true)).toBe("203.0.113.7");
-    expect(resolveClientIp("::ffff:203.0.113.7", "127.0.0.1", true)).toBe("203.0.113.7");
+    expect(resolveClientIp(" ::ffff:203.0.113.7 ", "127.0.0.1", true)).toBe("203.0.113.7");
+    expect(resolveClientIp("2001:DB8::A", "127.0.0.1", true)).toBe("2001:db8::a");
   });
 
   it("rejects missing, repeated, comma-separated and malformed public-ingress headers", () => {
@@ -36,10 +37,12 @@ describe("authentication rate-limit identity", () => {
     expect(() => resolveClientIp(["203.0.113.7", "198.51.100.9"], "127.0.0.1", true)).toThrow();
     expect(() => resolveClientIp("203.0.113.7, 198.51.100.9", "127.0.0.1", true)).toThrow();
     expect(() => resolveClientIp("not-an-ip", "127.0.0.1", true)).toThrow();
+    expect(() => resolveClientIp("203.0.113.7:443", "127.0.0.1", true)).toThrow();
   });
 
   it("uses only the socket peer as a non-production fallback", () => {
     expect(resolveClientIp(undefined, "::ffff:127.0.0.1", false)).toBe("127.0.0.1");
+    expect(resolveClientIp("not-an-ip", "127.0.0.2", false)).toBe("127.0.0.2");
     expect(() => resolveClientIp(undefined, undefined, false)).toThrow();
   });
 
