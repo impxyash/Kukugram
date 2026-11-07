@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { request } from "./api-client";
-import { createMountedRequestScope, createSessionRequestSequence, loadSession } from "./session-bootstrap";
+import {
+  createMountedRequestScope,
+  createSessionRequestSequence,
+  loadSession
+} from "./session-bootstrap";
 import type {
   AccountControlResponse,
   AppealSummaryResponse,
@@ -1000,8 +1004,6 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
     return () => {
       mountedRequestScope.current.invalidate();
       queueRequestSequence.current.invalidate();
-      setExpandedReport(null);
-      setExpandedAppeal(null);
     };
   }, []);
 
@@ -1053,7 +1055,9 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
       if (
         !mountedRequestScope.current.isActive() ||
         !queueRequestSequence.current.isCurrent(requestId)
-      ) return;
+      ) {
+        return;
+      }
       setReports(reportResult.reports);
       setAppeals(appealResult.appeals);
     } catch (reason) {
@@ -1067,7 +1071,9 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
       if (
         mountedRequestScope.current.isActive() &&
         queueRequestSequence.current.isCurrent(requestId)
-      ) setLoading(false);
+      ) {
+        setLoading(false);
+      }
     }
   }
 
