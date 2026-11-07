@@ -252,6 +252,15 @@ export const notificationListResponseSchema = z.object({
   notifications: z.array(notificationResponseSchema)
 });
 
+
+export const postCreateResponseSchema = z.object({
+  post: postResponseSchema
+});
+
+export const followRequestListResponseSchema = z.object({
+  requests: z.array(followRequestResponseSchema)
+});
+
 export const commentListResponseSchema = z.object({
   comments: z.array(commentResponseSchema)
 });
