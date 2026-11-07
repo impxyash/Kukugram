@@ -2,13 +2,14 @@
 
 Implementation-derived inventory of the registered API handlers on
 `feature/privacy-controls`. This is a review aid, not an OpenAPI document.
-The route implementations remain the runtime source of truth.
+The route implementations remain the runtime source of truth. The matrix covers
+43 registered handlers: 42 in the social module and one provider-discovery
+handler in the identity module.
 
 ## Global behavior
 
 - API prefix: `/v1`; health is `/health`.
-- `POST /v1/auth/providers` is not used; the provider-discovery endpoint is
-  `GET /v1/auth/providers`.
+- Provider discovery is `GET /v1/auth/providers`.
 - Session authentication reads the opaque session cookie and checks that the
   session is not revoked or expired and that the user is active.
 - `requireViewer` returns 401 when no valid session exists.
@@ -105,10 +106,12 @@ Before replacing any inline parser, verify exact equivalence, including:
 - Role and ownership checks; these are runtime authorization rules, not merely
   request-schema constraints.
 
-The response schemas are not yet complete enough to describe every response
-listed above. In particular, report/appeal summary and detail rows, moderator
-role rows, audit event rows, follow-request rows and account-control rows need
-field-by-field contract tests against their SQL projections.
+Representative field-level contract tests now cover report and appeal summaries,
+moderation detail wrappers, moderator role rows, audit event rows, follow-request
+rows, account-control rows, profile lookup, and common response envelopes. These
+are fixture-based schema tests, not generated from live SQL results; route-level
+contract tests are still needed to detect drift between handler projections and
+the shared package.
 
 ## OpenAPI status
 
