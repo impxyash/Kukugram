@@ -79,14 +79,22 @@ integration("PostgreSQL audit resolver role isolation", () => {
          ORDER BY pid`,
         [databaseName]
       );
-      console.info(
-        "[audit-role-isolation] sessions remaining after Pool.end():",
-        JSON.stringify(remainingSessions.rows)
-      );
-      await admin.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
-      await admin.query(`DROP ROLE IF EXISTS "${appRole}"`);
-      await admin.query(`DROP ROLE IF EXISTS "${resolverRole}"`);
-      await admin.end();
+      try {
+        console.info(
+          "[audit-role-isolation] sessions remaining after Pool.end():",
+          JSON.stringify(remainingSessions.rows)
+        );
+        if (remainingSessions.rows.length > 0) {
+          throw new Error(
+            `Cannot drop isolated database while sessions remain: ${JSON.stringify(remainingSessions.rows)}`
+          );
+        }
+        await admin.query(`DROP DATABASE IF EXISTS "${databaseName}"`);
+        await admin.query(`DROP ROLE IF EXISTS "${appRole}"`);
+        await admin.query(`DROP ROLE IF EXISTS "${resolverRole}"`);
+      } finally {
+        await admin.end();
+      }
     }
   }, 30_000);
 
