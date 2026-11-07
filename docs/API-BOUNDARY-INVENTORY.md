@@ -1,101 +1,134 @@
 # API Boundary Inventory
 
-> Status: implementation-derived inventory, not yet a generated or complete machine-readable API contract.
->
-> Source baseline: `feature/privacy-controls` at `3d0d3fe0892145a96e61e2c7f3063e7b2559f78b`.
-> Inspected sources: `apps/api/src/app.ts`, `apps/api/src/modules/identity/routes.ts`, and `apps/api/src/modules/social/routes.ts`.
-> All social and identity paths below are mounted beneath `/v1`.
+> Implementation-derived inventory, not a complete machine-readable contract.
+> Source baseline: `3d0d3fe0892145a96e61e2c7f3063e7b2559f78b`.
+> Identity and social routes are mounted beneath `/v1`.
 
-## Runtime and error boundary
+## Runtime and errors
 
-- API framework: Fastify 5; database access: PostgreSQL through `pg` and Drizzle package initialization.
-- Health endpoint: `GET /health`; response contains `status: "ok"` and a request ID.
-- OpenAPI UI is mounted at `/documentation`.
-- The shared error handler emits `application/problem+json` with `type`, `title`, `status`, optional `detail`, `instance`, and `requestId`.
-- Zod/Fastify validation errors are mapped to HTTP 400. Explicit application errors below 500 retain their status; other errors map to 500.
-- The current handler logs the raw error object. No claim is made here that its serializers redact all sensitive PostgreSQL or application metadata.
-- Authentication uses an opaque session token in an HTTP-only cookie. Production cookies are Secure and SameSite=Lax. Sessions are stored as token hashes and have a 30-day expiry in the current signup/login handlers.
-- `GET /v1/auth/providers` currently reports password sign-in enabled and an empty OAuth provider list.
+- Framework: Fastify 5.
+- Database: PostgreSQL through `pg`; Drizzle provides schema and migrations.
+- Health: `GET /health`; returns `status: "ok"` and a request ID.
+- OpenAPI UI: `/documentation`.
+- Errors use `application/problem+json` with type, title, status,
+  optional detail, instance, and requestId.
+- Zod and Fastify validation errors map to HTTP 400.
+- Explicit application errors below 500 retain their status.
+- Other errors map to HTTP 500.
+- The error handler currently logs raw error objects. Complete redaction has
+  not been established.
+- Sessions use opaque cookie tokens; only token hashes are stored.
+- Production cookies are HttpOnly, Secure, and SameSite=Lax.
+- Signup and login create sessions with a 30-day expiry.
+- `GET /v1/auth/providers` currently reports password enabled and no OAuth
+  providers.
 
 ## Identity and account
 
-| Method | Path | Access boundary | Verified behavior |
-|---|---|---|---|
-| GET | `/v1/auth/providers` | Public | Returns password and OAuth provider availability. |
-| POST | `/v1/auth/signup` | Public | Validates email, password (12–128 chars), handle (3–30 lowercase alphanumeric/underscore), display name (1–60), optional bio (max 500); creates user/profile/session; returns 201. |
-| POST | `/v1/auth/login` | Public | Validates email/password; creates a session on success; invalid credentials return 401. |
-| POST | `/v1/auth/logout` | Cookie optional | Revokes the presented session if present, clears cookie, returns 204. |
-| GET | `/v1/me` | Authenticated | Returns the current user's profile. |
-| PATCH | `/v1/me/profile` | Authenticated | Accepts optional displayName, bio, avatarUrl, and privacy updates. |
+- `GET /v1/auth/providers` — public; reports configured sign-in providers.
+- `POST /v1/auth/signup` — public; validates email (max 254), password
+  (12–128), handle (3–30 lowercase letters, digits, underscore), display name
+  (1–60), optional bio (max 500); creates account and session; returns 201.
+- `POST /v1/auth/login` — public; validates email and password; invalid
+  credentials return 401.
+- `POST /v1/auth/logout` — cookie optional; revokes presented session,
+  clears cookie, returns 204.
+- `GET /v1/me` — authenticated; returns current profile.
+- `PATCH /v1/me/profile` — authenticated; accepts optional displayName,
+  bio, avatarUrl, and privacy.
 
 ## Profiles and social graph
 
-| Method | Path | Access boundary | Verified behavior |
-|---|---|---|---|
-| GET | `/v1/users/search?q=...` | Authenticated | Search query required (1–60 chars); fixed maximum of 20 results. |
-| GET | `/v1/users/:handle` | Public; viewer context optional | Returns profile metadata; blocked or missing profiles return 404. |
-| POST | `/v1/users/:handle/follow` | Authenticated | Creates pending request for private profiles, accepted follow otherwise. |
-| DELETE | `/v1/users/:handle/follow` | Authenticated | Removes current user's follow relationship; returns 204. |
-| GET | `/v1/me/follow-requests` | Authenticated | Lists pending incoming requests; fixed maximum of 100. |
-| POST | `/v1/me/follow-requests/:handle/accept` | Authenticated | Accepts a pending request addressed to the current user; returns 204. |
-| DELETE | `/v1/me/follow-requests/:handle` | Authenticated | Declines a pending request addressed to the current user; returns 204. |
-| GET | `/v1/me/blocked` | Authenticated | Lists blocked profiles; fixed maximum of 200. |
-| POST | `/v1/users/:handle/block` | Authenticated | Creates a block relationship; returns 204. |
-| DELETE | `/v1/users/:handle/block` | Authenticated | Removes a block relationship; returns 204. |
-| GET | `/v1/me/muted` | Authenticated | Lists muted profiles; fixed maximum of 200. |
-| POST | `/v1/users/:handle/mute` | Authenticated | Creates a mute relationship; returns 204. |
-| DELETE | `/v1/users/:handle/mute` | Authenticated | Removes a mute relationship; returns 204. |
+- `GET /v1/users/search?q=...` — authenticated; query is 1–60 characters;
+  maximum 20 results.
+- `GET /v1/users/:handle` — public with optional viewer context; unavailable
+  or blocked profiles return 404.
+- `POST /v1/users/:handle/follow` — authenticated; private profiles create
+  pending requests; public profiles create accepted follows.
+- `DELETE /v1/users/:handle/follow` — authenticated; removes current follow.
+- `GET /v1/me/follow-requests` — authenticated; maximum 100 pending requests.
+- `POST /v1/me/follow-requests/:handle/accept` — authenticated; accepts
+  an incoming request; returns 204.
+- `DELETE /v1/me/follow-requests/:handle` — authenticated; declines request;
+  returns 204.
+- `GET /v1/me/blocked` — authenticated; maximum 200 profiles.
+- `POST /v1/users/:handle/block` — authenticated; creates a block.
+- `DELETE /v1/users/:handle/block` — authenticated; removes a block.
+- `GET /v1/me/muted` — authenticated; maximum 200 profiles.
+- `POST /v1/users/:handle/mute` — authenticated; creates a mute.
+- `DELETE /v1/users/:handle/mute` — authenticated; removes a mute.
 
-## Reports, appeals, moderation and audit
+## Reports, appeals, moderation, and audit
 
-| Method | Path | Access boundary | Verified behavior |
-|---|---|---|---|
-| POST | `/v1/reports` | Authenticated | Creates a report; validates target type, UUID target, category and optional details. |
-| GET | `/v1/me/reports` | Authenticated | Lists the current user's reports; fixed maximum of 100. |
-| POST | `/v1/reports/:id/appeals` | Authenticated | Submits an appeal with 20–2,000 characters of details; returns 202. |
-| GET | `/v1/me/appeals` | Authenticated | Lists the current user's appeals; fixed maximum of 100. |
-| GET | `/v1/moderation/reports` | Moderator or admin | Optional status and limit (1–100, default 50). |
-| GET | `/v1/moderation/reports/:id` | Moderator or admin | Reads a moderation case detail. |
-| PATCH | `/v1/moderation/reports/:id` | Moderator or admin | Changes report status; writes an audit event. |
-| GET | `/v1/moderation/appeals` | Moderator or admin | Lists open appeals; fixed maximum of 100. |
-| GET | `/v1/moderation/appeals/:id` | Moderator or admin | Reads appeal detail. |
-| PATCH | `/v1/moderation/appeals/:id` | Moderator or admin | Accepts or rejects an appeal; writes an audit event. |
-| GET | `/v1/moderation/roles` | Admin | Lists moderator roles. |
-| POST | `/v1/moderation/roles` | Admin | Grants a moderator role; writes an audit event. |
-| DELETE | `/v1/moderation/roles/:userId/:role` | Admin | Revokes a moderator role; writes an audit event. |
-| GET | `/v1/moderation/audit` | Admin | Optional reportId and limit (1–100, default 50); returns redacted event metadata. |
-| POST | `/v1/moderation/audit/resolve-actor` | Authenticated, then admin and password step-up | Requires actorRef UUID, reason (20–500 chars), and password; records resolution outcomes in the access log. |
+- `POST /v1/reports` — authenticated; validates target type, UUID, category,
+  and optional details (max 1,000); returns 202.
+- `GET /v1/me/reports` — authenticated; maximum 100 reports.
+- `POST /v1/reports/:id/appeals` — authenticated; details are 20–2,000
+  characters; returns 202.
+- `GET /v1/me/appeals` — authenticated; maximum 100 appeals.
+- `GET /v1/moderation/reports` — moderator or admin; optional status and
+  limit (1–100, default 50).
+- `GET /v1/moderation/reports/:id` — moderator or admin; reads case detail.
+- `PATCH /v1/moderation/reports/:id` — moderator or admin; changes status
+  and writes an audit event.
+- `GET /v1/moderation/appeals` — moderator or admin; maximum 100 open appeals.
+- `GET /v1/moderation/appeals/:id` — moderator or admin; reads appeal detail.
+- `PATCH /v1/moderation/appeals/:id` — moderator or admin; reviews appeal
+  and writes an audit event.
+- `GET /v1/moderation/roles` — admin; lists moderator roles.
+- `POST /v1/moderation/roles` — admin; grants a role and writes an audit event.
+- `DELETE /v1/moderation/roles/:userId/:role` — admin; revokes a role.
+- `GET /v1/moderation/audit` — admin; optional reportId and limit
+  (1–100, default 50); returns selected audit metadata.
+- `POST /v1/moderation/audit/resolve-actor` — authenticated, admin-only
+  after password step-up; requires actorRef UUID, reason (20–500), and
+  password; records resolution outcomes.
 
 ## Content and notifications
 
-| Method | Path | Access boundary | Verified behavior |
-|---|---|---|---|
-| GET | `/v1/feed` | Authenticated | Returns up to 50 feed posts. |
-| POST | `/v1/posts` | Authenticated | Creates a text post; body is 1–2,000 characters; returns 201. |
-| DELETE | `/v1/posts/:id` | Authenticated | Deletes the caller's post; returns 204. |
-| POST | `/v1/posts/:id/like` | Authenticated | Adds a like. |
-| DELETE | `/v1/posts/:id/like` | Authenticated | Removes a like; returns 204. |
-| GET | `/v1/posts/:id/comments` | Viewer context optional | Reads comments subject to post visibility checks. |
-| POST | `/v1/posts/:id/comments` | Authenticated | Creates a comment; body is 1–1,000 characters; returns 201. |
-| GET | `/v1/notifications` | Authenticated | Lists up to 50 notifications. |
-| POST | `/v1/notifications/read` | Authenticated | Applies the current implementation's notification-read operation. |
+- `GET /v1/feed` — authenticated; maximum 50 posts.
+- `POST /v1/posts` — authenticated; text body is 1–2,000 characters;
+  returns 201.
+- `DELETE /v1/posts/:id` — authenticated; deletes caller's post; returns 204.
+- `POST /v1/posts/:id/like` — authenticated; adds a like and returns
+  `{ liked: true }`.
+- `DELETE /v1/posts/:id/like` — authenticated; removes a like; returns 204.
+- `GET /v1/posts/:id/comments` — public with optional viewer context;
+  checks post visibility.
+- `POST /v1/posts/:id/comments` — authenticated; body is 1–1,000
+  characters; returns 201.
+- `GET /v1/notifications` — authenticated; maximum 50 notifications.
+- `POST /v1/notifications/read` — authenticated; marks all unread
+  notifications for the current user as read; returns `{ ok: true }`.
 
-## Contract gaps and implementation constraints
+## Contract and implementation gaps
 
-1. Most route schemas are parsed inline with Zod and are not attached to Fastify's OpenAPI route schemas. The current Swagger document therefore must not be treated as a complete contract.
-2. Several response types are inferred from SQL row shapes rather than declared public response schemas. A generated contract needs explicit response schemas and tests before clients rely on it.
-3. Existing list endpoints generally use fixed LIMIT values; cursor/offset pagination is not implemented in the inspected handlers. Do not document cursor pagination.
-4. The profile avatar field accepts a URL. There is no verified upload, object-storage, image-processing, or signed-delivery pipeline.
-5. The inspected route module does not implement direct messaging, realtime WebSockets, or push notification delivery.
-6. The current authentication limiter is a process-local in-memory Map (10 attempts per IP per endpoint in a 15-minute window), not a distributed Redis limiter.
-7. Fastify does not explicitly configure `trustProxy` in the inspected app initialization. Do not rely on forwarded client-IP headers until the ingress trust chain is verified.
-8. The audit identity resolver uses the ordinary API pool in the inspected implementation. Dedicated resolver-role isolation has not been demonstrated.
-9. Anonymous attempts to call the audit identity resolution route are rejected by authentication before an access-log entry is written. Invalid authenticated requests can use a synthetic all-zero UUID as a placeholder actor reference; this is not a genuine actor identity.
+1. Most request schemas are parsed inline with Zod and are not attached to
+   Fastify route schemas. The generated Swagger document is incomplete.
+2. Several response types are inferred from SQL row shapes. Explicit public
+   response schemas and contract tests are still needed.
+3. Lists use fixed SQL limits or a bounded limit parameter. Cursor and offset
+   pagination are not implemented in the inspected handlers.
+4. The avatar field accepts a URL. No secure upload, object storage,
+   image processing, or signed delivery pipeline was found.
+5. The inspected routes do not implement direct messaging, realtime
+   WebSockets, or push notification delivery.
+6. Authentication limiting uses a process-local Map: 10 attempts per endpoint
+   in 15 minutes, keyed by `request.ip`. This is not a distributed limiter.
+7. Fastify does not explicitly configure `trustProxy`. The effective
+   `request.ip` behind Railway ingress is unverified; do not trust arbitrary
+   forwarded headers.
+8. The audit identity resolver uses the ordinary API pool. Dedicated
+   resolver-role isolation has not been demonstrated.
+9. Anonymous audit-resolution requests are rejected before access logging.
+   Invalid authenticated requests can use an all-zero UUID placeholder;
+   it is not a genuine actor reference.
 
 ## Next contract work
 
-- Extract request schemas into reusable, exported Zod schemas without changing route behavior.
-- Add explicit success and error response schemas to each route.
+- Extract reusable request schemas without changing route behavior.
+- Add explicit success and error response schemas.
 - Generate and snapshot the OpenAPI document in CI.
-- Add contract tests for authentication requirements, status codes, validation, response redaction, and list limits.
-- Keep behavior changes separate from contract extraction so each diff is reviewable.
+- Add tests for access control, validation, status codes, response redaction,
+  and list limits.
+- Keep contract extraction separate from behavior changes.
