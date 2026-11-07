@@ -142,8 +142,12 @@ export function buildApp(
         }
         Object.values(object).forEach(normalizeProblemDetailsRefs);
       };
-      normalizeProblemDetailsRefs(documentObject);
-      return documentObject;
+      const document =
+        "openapiObject" in documentObject
+          ? documentObject.openapiObject
+          : documentObject.swaggerObject;
+      normalizeProblemDetailsRefs(document);
+      return document;
     },
     openapi: {
       info: { title: "Kukugram API", version: "1.0.0" },
