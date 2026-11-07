@@ -129,8 +129,11 @@ describe("API", () => {
     const versionedOperations = operations.filter(({ path }) => path.startsWith("/v1/"));
 
     expect(versionedOperations).toHaveLength(43);
-    expect(new Set(versionedOperations.map(({ method, path }) => `${method.toUpperCase()} ${path}`)).size)
-      .toBe(43);
+    expect(
+      new Set(
+        versionedOperations.map(({ method, path }) => `${method.toUpperCase()} ${path}`)
+      ).size
+    ).toBe(43);
     expect(new Set(versionedOperations.map(({ method }) => method))).toEqual(
       new Set(["get", "post", "patch", "delete"])
     );
