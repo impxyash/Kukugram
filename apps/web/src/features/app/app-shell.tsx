@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { request } from "./api-client";
 import { loadSession } from "./session-bootstrap";
@@ -27,6 +27,21 @@ type ReportRecord = ReportSummaryResponse;
 type ModerationReport = ModerationReportSummaryResponse;
 type AppealRecord = AppealSummaryResponse;
 type ModerationAppeal = ModerationAppealQueueItemResponse;
+
+export function reconcileSessionActivity<TPost, TNotice>(
+  previousUserId: string | null,
+  nextUserId: string,
+  previousPosts: TPost[],
+  previousNotices: TNotice[],
+  nextPosts: TPost[] | undefined,
+  nextNotices: TNotice[] | undefined
+) {
+  const sameUser = previousUserId === nextUserId;
+  return {
+    posts: nextPosts ?? (sameUser ? previousPosts : []),
+    notices: nextNotices ?? (sameUser ? previousNotices : [])
+  };
+}
 
 async function reportContent(
   targetType: "profile" | "post" | "comment",
@@ -70,6 +85,8 @@ export function AppShell() {
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const activeUserId = useRef<string | null>(null);
+  const sessionRequestId = useRef(0);
   const [tab, setTab] = useState<
     "home" | "discover" | "activity" | "profile" | "settings" | "moderation"
   >("home");
@@ -79,24 +96,39 @@ export function AppShell() {
   const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
 
   async function refresh() {
+    const requestId = ++sessionRequestId.current;
     setLoading(true);
     setError(null);
     try {
       const result = await loadSession<User, Post, Notice>();
+      if (requestId !== sessionRequestId.current) return;
+
       if (result.status === "unauthenticated") {
+        activeUserId.current = null;
         setUser(null);
+        setPosts([]);
+        setNotices([]);
         setError(result.error);
         return;
       }
 
+      const activity = reconcileSessionActivity(
+        activeUserId.current,
+        result.user.id,
+        posts,
+        notices,
+        result.posts,
+        result.notifications
+      );
+      activeUserId.current = result.user.id;
       setUser(result.user);
-      if (result.posts) setPosts(result.posts);
-      if (result.notifications) setNotices(result.notifications);
+      setPosts(activity.posts);
+      setNotices(activity.notices);
       if (result.activityError) {
         setError("Some of your latest activity could not be loaded. Please refresh and try again.");
       }
     } finally {
-      setLoading(false);
+      if (requestId === sessionRequestId.current) setLoading(false);
     }
   }
 
@@ -169,8 +201,13 @@ export function AppShell() {
             void (async () => {
               try {
                 await request("/auth/logout", { method: "POST" });
+                sessionRequestId.current += 1;
+                activeUserId.current = null;
                 setUser(null);
                 setPosts([]);
+                setNotices([]);
+                setError(null);
+                setLoading(false);
               } catch (reason) {
                 setError((reason as Error).message);
               }
