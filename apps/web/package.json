@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@kukugram/api-contract": "workspace:*",
     "@tailwindcss/postcss": "4.1.4",
     "framer-motion": "13.1.0",
     "next": "15.3.9",
