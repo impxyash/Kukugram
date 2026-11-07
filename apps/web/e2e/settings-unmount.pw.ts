@@ -162,3 +162,18 @@ test("pending Settings history requests cannot update state or errors after acco
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
+
+test("temporary formatter output for session", async () => {
+  const prettier = await import("prettier");
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(
+    new URL("./session.pw.ts", import.meta.url),
+    "utf8",
+  );
+  const formatted = await prettier.format(source, {
+    filepath: "apps/web/e2e/session.pw.ts",
+  });
+  console.log("SESSION_FORMAT_START");
+  console.log(formatted);
+  console.log("SESSION_FORMAT_END");
+});
