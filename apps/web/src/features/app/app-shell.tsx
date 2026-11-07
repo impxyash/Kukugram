@@ -195,7 +195,9 @@ export function AppShell() {
           <Home user={user} posts={posts} setPosts={setPosts} onError={setError} />
         )}
         {tab === "discover" && <Discover onError={setError} />}
-        {tab === "activity" && <Activity notices={notices} setNotices={setNotices} />}
+        {tab === "activity" && (
+          <Activity notices={notices} setNotices={setNotices} onError={setError} />
+        )}
         {tab === "profile" && (
           <Profile
             user={user}
@@ -770,17 +772,24 @@ function Discover({ onError }: { onError: (message: string) => void }) {
 
 function Activity({
   notices,
-  setNotices
+  setNotices,
+  onError
 }: {
   notices: Notice[];
   setNotices: (notices: Notice[]) => void;
+  onError: (message: string) => void;
 }) {
   useEffect(() => {
-    void request("/notifications/read", { method: "POST" }).then(() => {
-      setNotices(
-        notices.map((notice) => ({ ...notice, readAt: notice.readAt ?? new Date().toISOString() }))
-      );
-    });
+    void request("/notifications/read", { method: "POST" })
+      .then(() => {
+        setNotices(
+          notices.map((notice) => ({
+            ...notice,
+            readAt: notice.readAt ?? new Date().toISOString()
+          }))
+        );
+      })
+      .catch((reason) => onError((reason as Error).message));
   }, []);
 
   return (
