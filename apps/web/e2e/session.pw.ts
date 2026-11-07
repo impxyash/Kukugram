@@ -971,3 +971,93 @@ test("an appeal history refresh from account A cannot overwrite account B", asyn
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
+
+test("changing moderation filters resets expanded report and appeal details", async ({ page }) => {
+  const reportId = "00000000-0000-4000-8000-000000000091";
+  const appealId = "00000000-0000-4000-8000-000000000092";
+  let reportDetailCalls = 0;
+  let appealDetailCalls = 0;
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    if (pathname === "/v1/me") {
+      await authenticated(route);
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      await reply(route, 200, { posts: [] });
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      await reply(
+        route,
+        200,
+        url.searchParams.has("status")
+          ? {
+              reports: [
+                {
+                  id: reportId,
+                  category: "spam",
+                  targetType: "post",
+                  createdAt: "2026-11-01T00:00:00.000Z",
+                  status: "open"
+                }
+              ]
+            }
+          : { reports: [] }
+      );
+      return;
+    }
+    if (pathname === "/v1/moderation/appeals") {
+      await reply(route, 200, {
+        appeals: [
+          {
+            id: appealId,
+            reportId,
+            createdAt: "2026-11-01T00:00:00.000Z",
+            status: "pending"
+          }
+        ]
+      });
+      return;
+    }
+    if (pathname === `/v1/moderation/reports/${reportId}` && route.request().method() === "GET") {
+      reportDetailCalls += 1;
+      await reply(route, 200, {
+        report: { targetId: "target-reference", details: "Report detail evidence" }
+      });
+      return;
+    }
+    if (pathname === `/v1/moderation/appeals/${appealId}` && route.request().method() === "GET") {
+      appealDetailCalls += 1;
+      await reply(route, 200, { appeal: { details: "Appeal detail evidence" } });
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Moderation" }).click();
+  await page.getByRole("button", { name: "View case details" }).click();
+  await expect(page.getByText("Report detail evidence")).toBeVisible();
+  await page.getByRole("button", { name: "View appeal details" }).click();
+  await expect(page.getByText("Appeal detail evidence")).toBeVisible();
+
+  await page.getByLabel("Report status").selectOption("resolved");
+  await expect(page.getByRole("button", { name: "View case details" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View appeal details" })).toBeVisible();
+  await expect(page.getByText("Report detail evidence")).toHaveCount(0);
+  await expect(page.getByText("Appeal detail evidence")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "View case details" }).click();
+  await expect(page.getByText("Report detail evidence")).toBeVisible();
+  await page.getByRole("button", { name: "View appeal details" }).click();
+  await expect(page.getByText("Appeal detail evidence")).toBeVisible();
+  expect(reportDetailCalls).toBe(2);
+  expect(appealDetailCalls).toBe(2);
+});
