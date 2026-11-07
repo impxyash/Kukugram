@@ -130,7 +130,7 @@ test("renders the recovered dashboard and feed after session recovery", async ({
     me: async (call, route) => (call === 1 ? unavailable(route) : authenticated(route))
   });
   await page.goto("/");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator(".form-error")).toBeVisible();
   await page.getByRole("button", { name: "Retry session" }).click();
 
   await expect(page.getByRole("heading", { name: "Your feed is waiting." })).toBeVisible();
