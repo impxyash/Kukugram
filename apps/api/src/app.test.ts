@@ -3,7 +3,11 @@ import type { Pool } from "pg";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import type { RateLimitStore } from "./platform/rate-limit.js";
-import { authProvidersResponseSchema, healthResponseSchema, problemDetailsSchema } from "@kukugram/api-contract";
+import {
+  authProvidersResponseSchema,
+  healthResponseSchema,
+  problemDetailsSchema
+} from "@kukugram/api-contract";
 
 const config = {
   NODE_ENV: "test" as const,
