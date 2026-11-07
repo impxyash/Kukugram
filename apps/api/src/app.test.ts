@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import type { RateLimitStore } from "./platform/rate-limit.js";
-import { authProvidersResponseSchema, healthResponseSchema } from "@kukugram/api-contract";
+import { authProvidersResponseSchema, healthResponseSchema, problemDetailsSchema } from "@kukugram/api-contract";
 
 const config = {
   NODE_ENV: "test" as const,
@@ -254,13 +254,15 @@ describe("API", () => {
     });
     expect(invalidLogin.statusCode).toBe(400);
     expect(invalidLogin.headers["content-type"]).toContain("application/problem+json");
-    expect(invalidLogin.json()).toMatchObject({
+    const problemDetails = problemDetailsSchema.parse(invalidLogin.json());
+    expect(problemDetails).toMatchObject({
       type: "https://kukugram.com/problems/validation",
       title: "Invalid request",
       status: 400,
-      instance: "/v1/auth/login"
+      instance: "/v1/auth/login",
+      requestId: expect.any(String)
     });
-    expect(invalidLogin.json<{ requestId: string }>().requestId).toEqual(expect.any(String));
+    expect(problemDetails).not.toHaveProperty("unexpected");
     await app.close();
   });
 
