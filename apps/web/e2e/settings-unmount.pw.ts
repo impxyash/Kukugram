@@ -162,36 +162,3 @@ test("pending Settings history requests cannot update state or errors after acco
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
-
-test("temporary session formatter output", async () => {
-  const prettier = await import("prettier");
-  const { readFile } = await import("node:fs/promises");
-  const source = await readFile(new URL("./session.pw.ts", import.meta.url), "utf8");
-  const formatted = await prettier.format(source, {
-    filepath: "apps/web/e2e/session.pw.ts",
-    parser: "typescript",
-    printWidth: 100,
-    singleQuote: false,
-    trailingComma: "none"
-  });
-  console.log("SESSION_FORMAT_START");
-  console.log(formatted);
-  console.log("SESSION_FORMAT_END");
-});
-
-test("temporary formatter output for current session spec", async () => {
-  const prettier = await import("prettier");
-  const { readFile } = await import("node:fs/promises");
-  const source = await readFile(
-    new URL("./session.pw.ts", import.meta.url),
-    "utf8"
-  );
-  const options = await prettier.resolveConfig("apps/web/e2e/session.pw.ts");
-  const formatted = await prettier.format(source, {
-    ...options,
-    filepath: "apps/web/e2e/session.pw.ts"
-  });
-  console.log("SESSION_FORMAT_START");
-  console.log(formatted);
-  console.log("SESSION_FORMAT_END");
-});

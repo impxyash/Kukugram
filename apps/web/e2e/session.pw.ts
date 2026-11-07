@@ -889,7 +889,6 @@ test("an appeal history refresh from account A cannot overwrite account B", asyn
       await reply(route, 403, { title: "Forbidden" });
       return;
     }
-
     if (pathname === "/v1/me/follow-requests" && method === "GET") {
       await reply(route, 200, { requests: [] });
       return;
@@ -972,4 +971,3 @@ test("an appeal history refresh from account A cannot overwrite account B", asyn
   await expect(page.getByText("Case 00000000")).toHaveCount(0);
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
-
