@@ -17,6 +17,8 @@ import {
   postCreateResponseSchema,
   followRequestListResponseSchema,
   moderationReportDetailResponseSchema,
+  moderationReportDetailResponseWrapperSchema,
+  moderationAppealDetailResponseWrapperSchema,
   moderationAppealDetailResponseSchema,
   loginRequestSchema,
   moderationAuditQuerySchema,
@@ -191,6 +193,20 @@ describe("API request contracts", () => {
       }).success
     ).toBe(true);
     expect(
+      moderationReportDetailResponseWrapperSchema.safeParse({
+        report: {
+          id,
+          targetType: "profile",
+          targetId: id,
+          category: "other",
+          details: null,
+          status: "resolved",
+          createdAt: timestamp,
+          updatedAt: timestamp
+        }
+      }).success
+    ).toBe(true);
+    expect(
       appealSummaryListResponseSchema.safeParse({
         appeals: [
           {
@@ -202,6 +218,18 @@ describe("API request contracts", () => {
             updatedAt: timestamp
           }
         ]
+      }).success
+    ).toBe(true);
+    expect(
+      moderationAppealDetailResponseWrapperSchema.safeParse({
+        appeal: {
+          id,
+          reportId: id,
+          details: "An appeal with enough explanatory detail.",
+          status: "rejected",
+          createdAt: timestamp,
+          updatedAt: timestamp
+        }
       }).success
     ).toBe(true);
     expect(
