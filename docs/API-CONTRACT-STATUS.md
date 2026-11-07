@@ -27,7 +27,7 @@ Covered response areas include:
 - Blocked/muted account lists and follow requests.
 - Report and appeal creation.
 - Like and notification-read acknowledgements.
-- Moderation mutations and audit actor resolution.
+- Moderation mutations, audit actor resolution, report/appeal summary and detail rows, moderator roles, and audit event rows.
 
 ## Verification
 
@@ -55,9 +55,8 @@ Covered response areas include:
 2. Compare every shared request schema against the exact inline route schema.
 3. Replace duplicated inline schemas incrementally, preserving all parsing,
    defaults, transforms, status codes, and authorization behavior.
-4. Add Fastify route schemas for documented success and error responses.
-5. Generate OpenAPI from the actual registered routes, not a hand-written
+4. Keep the web app on shared inferred types and add runtime response validation only where it is explicitly required.
+5. Add Fastify route schemas for documented success and error responses.
+6. Generate OpenAPI from the actual registered routes, not a hand-written
    endpoint list.
-6. Snapshot the generated OpenAPI document and fail CI on unreviewed changes.
-7. Migrate frontend local interfaces to inferred shared types only after the
-   relevant response contracts are verified.
+7. Snapshot the generated OpenAPI document and fail CI on unreviewed changes.
