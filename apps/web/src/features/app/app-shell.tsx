@@ -2,81 +2,31 @@
 
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import type {
+  AccountControlResponse,
+  AppealSummaryResponse,
+  CommentResponse,
+  FollowRequestResponse,
+  ModerationAppealQueueItemResponse,
+  ModerationReportSummaryResponse,
+  NotificationResponse,
+  PostResponse,
+  ProfileResponse,
+  ReportSummaryResponse
+} from "@kukugram/api-contract";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type User = {
-  id: string;
-  handle: string;
-  displayName: string;
-  bio: string | null;
-  avatarUrl: string | null;
-  followers: string;
-  following: string;
-  isFollowing: boolean;
-  isRequested: boolean;
-  privacy: "public" | "private" | "restricted_creator";
-  canViewContent: boolean;
-};
-type Post = {
-  id: string;
-  body: string;
-  createdAt: string;
-  handle: string;
-  displayName: string;
-  avatarUrl: string | null;
-  likeCount: string;
-  commentCount: string;
-  likedByViewer: boolean;
-  authorId: string;
-};
-type Notice = {
-  id: string;
-  type: "follow" | "follow_request" | "like" | "comment";
-  postId: string | null;
-  createdAt: string;
-  readAt: string | null;
-  handle: string | null;
-  displayName: string | null;
-};
-type Comment = { id: string; body: string; handle: string; displayName: string; createdAt: string };
-type FollowRequest = {
-  id: string;
-  handle: string;
-  displayName: string;
-  avatarUrl: string | null;
-  requestedAt: string;
-};
-type AccountControl = {
-  id: string;
-  handle: string;
-  displayName: string;
-  avatarUrl: string | null;
-  createdAt: string;
-};
-type ReportRecord = {
-  id: string;
-  targetType: string;
-  category: string;
-  status: string;
-  createdAt: string;
-};
-type ModerationReport = ReportRecord & {
-  updatedAt: string;
-};
-type AppealRecord = {
-  id: string;
-  reportId: string;
-  details: string;
-  status: string;
-  createdAt: string;
-};
-type ModerationAppeal = {
-  id: string;
-  reportId: string;
-  status: string;
-  createdAt: string;
-};
+type User = ProfileResponse;
+type Post = PostResponse;
+type Notice = NotificationResponse;
+type Comment = CommentResponse;
+type FollowRequest = FollowRequestResponse;
+type AccountControl = AccountControlResponse;
+type ReportRecord = ReportSummaryResponse;
+type ModerationReport = ModerationReportSummaryResponse;
+type AppealRecord = AppealSummaryResponse;
+type ModerationAppeal = ModerationAppealQueueItemResponse;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${apiUrl}/v1${path}`, {
