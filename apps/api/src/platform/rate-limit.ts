@@ -25,6 +25,7 @@ return { count, ttl }
 
 export class RedisRateLimitStore implements RateLimitStore {
   private readonly client;
+  private connectPromise: Promise<void> | undefined;
 
   constructor(url: string, onError: () => void = () => undefined) {
     this.client = createClient({
@@ -32,18 +33,28 @@ export class RedisRateLimitStore implements RateLimitStore {
       disableOfflineQueue: true,
       socket: {
         connectTimeout: 5_000,
-        reconnectStrategy: (retries) => Math.min(250 * 2 ** Math.min(retries, 4), 4_000)
+        reconnectStrategy: (retries) =>
+          retries < 5 ? Math.min(250 * 2 ** Math.min(retries, 4), 4_000) : new Error("Redis reconnect attempts exhausted.")
       }
     });
     this.client.on("error", onError);
   }
 
   async connect() {
-    if (!this.client.isOpen) await this.client.connect();
-    if (!this.client.isReady) throw new Error("Redis rate limiter is not ready.");
+    if (this.client.isReady) return;
+    if (!this.connectPromise) {
+      this.connectPromise = (async () => {
+        if (!this.client.isOpen) await this.client.connect();
+        if (!this.client.isReady) throw new Error("Redis rate limiter is not ready.");
+      })().finally(() => {
+        this.connectPromise = undefined;
+      });
+    }
+    await this.connectPromise;
   }
 
   async consume(key: string, windowMs: number): Promise<RateLimitResult> {
+    if (!this.client.isReady && !this.client.isOpen) await this.connect();
     if (!this.client.isReady) throw new Error("Redis rate limiter is unavailable.");
     const result = await this.client.eval(fixedWindowScript, {
       keys: [key],
