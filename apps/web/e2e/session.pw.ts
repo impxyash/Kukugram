@@ -338,7 +338,6 @@ test("a late Settings response from account A cannot overwrite account B after a
   await expect(page.getByText("Account B private record")).toBeVisible();
 });
 
-
 test("moderation case work is discarded when switching to a non-moderator account", async ({
   page
 }) => {
