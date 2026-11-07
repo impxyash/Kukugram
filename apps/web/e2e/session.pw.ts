@@ -337,3 +337,129 @@ test("a late Settings response from account A cannot overwrite account B after a
   await expect(page.getByText("Account A private record")).toHaveCount(0);
   await expect(page.getByText("Account B private record")).toBeVisible();
 });
+
+
+test("moderation case work is discarded when switching to a non-moderator account", async ({
+  page
+}) => {
+  const reportId = "00000000-0000-4000-8000-000000000099";
+  const accountA = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000031",
+    handle: "moderator-a",
+    displayName: "Moderator A"
+  };
+  const accountB = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000032",
+    handle: "member-b",
+    displayName: "Member B"
+  };
+  let switchToAccountB = false;
+  let meCalls = 0;
+  let feedCalls = 0;
+  let moderatorProbeCalls = 0;
+  let releaseDetails!: () => void;
+  let releaseAction!: () => void;
+  let markDetailsPending!: () => void;
+  let markActionPending!: () => void;
+  const detailsPending = new Promise<void>((resolve) => {
+    releaseDetails = resolve;
+  });
+  const actionPending = new Promise<void>((resolve) => {
+    releaseAction = resolve;
+  });
+  const detailsSeen = new Promise<void>((resolve) => {
+    markDetailsPending = resolve;
+  });
+  const actionSeen = new Promise<void>((resolve) => {
+    markActionPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    const method = route.request().method();
+    if (pathname === "/v1/me") {
+      meCalls += 1;
+      await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      feedCalls += 1;
+      if (feedCalls === 1) {
+        await unavailable(route);
+      } else {
+        await reply(route, 200, { posts: [] });
+      }
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      if (url.searchParams.has("status")) {
+        await reply(route, 200, {
+          reports: [
+            {
+              id: reportId,
+              category: "spam",
+              targetType: "post",
+              createdAt: "2026-11-01T00:00:00.000Z",
+              status: "open"
+            }
+          ]
+        });
+      } else {
+        moderatorProbeCalls += 1;
+        await reply(route, switchToAccountB ? 403 : 200, { reports: [] });
+      }
+      return;
+    }
+    if (pathname === "/v1/moderation/appeals") {
+      await reply(route, 200, { appeals: [] });
+      return;
+    }
+    if (pathname === `/v1/moderation/reports/${reportId}`) {
+      if (method === "GET") {
+        markDetailsPending();
+        await detailsPending;
+        await reply(route, 200, {
+          report: {
+            targetId: "private-target-a",
+            details: "Account A confidential report details"
+          }
+        });
+      } else if (method === "PATCH") {
+        markActionPending();
+        await actionPending;
+        await reply(route, 200, {});
+      }
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Your people, in motion." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Moderation" })).toBeVisible();
+  await page.getByRole("button", { name: "Moderation" }).click();
+  await page.getByRole("button", { name: "View case details" }).click();
+  await detailsSeen;
+  await page.getByRole("button", { name: `Resolve report ${reportId.slice(0, 8)}` }).click();
+  await actionSeen;
+
+  // Switch from a moderator identity to a distinct non-moderator identity.
+  switchToAccountB = true;
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("button", { name: "Moderation" })).toHaveCount(0);
+  await expect.poll(() => meCalls).toBeGreaterThan(1);
+  await expect.poll(() => moderatorProbeCalls).toBeGreaterThan(1);
+
+  // Complete both old-account requests after its moderation panel unmounts.
+  releaseDetails();
+  releaseAction();
+  await expect(page.getByText("Account A confidential report details")).toHaveCount(0);
+  await expect(page.getByText("Report marked as resolved.")).toHaveCount(0);
+});
