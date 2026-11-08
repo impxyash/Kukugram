@@ -904,6 +904,7 @@ function Discover({ onError }: { onError: (message: string) => void }) {
   const [activeQuery, setActiveQuery] = useState("");
   const [nextCursor, setNextCursor] = useState<string | undefined>();
   const paginationInFlight = useRef(false);
+  const paginationLockSequence = useRef(0);
   const mountedRequestScope = useRef(createMountedRequestScope());
   const searchRequestSequence = useRef(createSessionRequestSequence());
   const userActionInFlight = useRef(new Set<string>());
@@ -925,6 +926,9 @@ function Discover({ onError }: { onError: (message: string) => void }) {
     if (!normalizedQuery) return;
     const scope = mountedRequestScope.current;
     const requestId = searchRequestSequence.current.begin();
+    paginationLockSequence.current += 1;
+    paginationInFlight.current = false;
+    setLoadingMore(false);
     setActiveQuery(normalizedQuery);
     setUsers([]);
     setNextCursor(undefined);
@@ -951,6 +955,7 @@ function Discover({ onError }: { onError: (message: string) => void }) {
   async function loadMore() {
     if (!nextCursor || !activeQuery || paginationInFlight.current) return;
     paginationInFlight.current = true;
+    const lockId = ++paginationLockSequence.current;
     const scope = mountedRequestScope.current;
     const requestId = searchRequestSequence.current.begin();
     setLoadingMore(true);
@@ -973,10 +978,12 @@ function Discover({ onError }: { onError: (message: string) => void }) {
         onError((reason as Error).message);
       }
     } finally {
-      if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
-        setLoadingMore(false);
+      if (paginationLockSequence.current === lockId) {
+        paginationInFlight.current = false;
+        if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
+          setLoadingMore(false);
+        }
       }
-      paginationInFlight.current = false;
     }
   }
 

@@ -692,6 +692,26 @@ describe("social privacy authorization", () => {
       false
     );
     await mismatchApp.close();
+
+    const canonicalCursor = Buffer.from(
+      JSON.stringify({
+        query: "target",
+        handle: "target_020",
+        id: targetId
+      })
+    ).toString("base64url");
+    const noncanonicalPool = makePool();
+    const noncanonicalApp = appWithPool(noncanonicalPool);
+    const noncanonical = await noncanonicalApp.inject({
+      method: "GET",
+      url: `/v1/users/search?q=target&cursor=${encodeURIComponent(`${canonicalCursor}=`)}`,
+      headers: { cookie }
+    });
+    expect(noncanonical.statusCode).toBe(400);
+    expect(noncanonicalPool.statements.some((sql) => sql.includes("ORDER BY p.handle ASC"))).toBe(
+      false
+    );
+    await noncanonicalApp.close();
   });
 
   it("uses recipient-scoped deterministic search keyset pagination", async () => {
