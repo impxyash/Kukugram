@@ -3,7 +3,7 @@ import { ApiError, request } from "./api-client";
 type Requester = (path: string) => Promise<unknown>;
 
 type SessionUser = { user: unknown };
-type Feed = { posts: unknown[] };
+type Feed = { posts: unknown[]; nextCursor?: string };
 type Activity = { notifications: unknown[] };
 
 export type SessionBootstrapResult<TUser, TPost, TNotification> =
@@ -12,6 +12,7 @@ export type SessionBootstrapResult<TUser, TPost, TNotification> =
       status: "authenticated";
       user: TUser;
       posts: TPost[] | undefined;
+      nextCursor: string | undefined;
       notifications: TNotification[] | undefined;
       activityError: boolean;
     };
@@ -39,6 +40,7 @@ export async function loadSession<TUser, TPost, TNotification>(
     status: "authenticated",
     user: session.user as TUser,
     posts: feedResult.status === "fulfilled" ? (feedResult.value.posts as TPost[]) : undefined,
+    nextCursor: feedResult.status === "fulfilled" ? feedResult.value.nextCursor : undefined,
     notifications:
       activityResult.status === "fulfilled"
         ? (activityResult.value.notifications as TNotification[])
@@ -92,4 +94,14 @@ export async function runIfRequestScopeActive(
   action: () => Promise<void>
 ): Promise<void> {
   if (scope.isActive()) await action();
+}
+
+
+/** Merge a page into the current feed without duplicating posts across boundaries. */
+export function mergeFeedPosts<TPost extends { id: string }>(
+  current: TPost[],
+  incoming: TPost[]
+): TPost[] {
+  const seen = new Set(current.map((post) => post.id));
+  return [...current, ...incoming.filter((post) => !seen.has(post.id) && seen.add(post.id))];
 }
