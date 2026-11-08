@@ -365,17 +365,18 @@ async function runTimedSuite(database, suiteName, variant, workerCount, round) {
         values = [viewers[0], notificationCursorId];
       }
     } else {
+      const cohort = ["dense", "sparse", "high"][workerIndex % 3];
       const viewer = viewers[workerIndex % viewers.length];
       if (draw < 0.4) {
-        label = "first_page";
+        label = "first_page_" + cohort;
         sql = FEED_SQL;
         values = [viewer, null, null];
       } else if (draw < 0.8) {
-        label = "cursor_page";
+        label = "cursor_page_" + cohort;
         sql = FEED_SQL;
         values = [viewer, new Date(Date.now() - 45 * 24 * 60 * 60 * 1000), cursorId];
       } else {
-        label = "post_insert";
+        label = "post_insert_" + cohort;
         sql = "INSERT INTO content.posts (id, author_id, body) VALUES ($1, $2, $3)";
         values = [randomUUID(), viewer, "Mixed workload concurrent post " + randomUUID()];
       }
@@ -468,17 +469,23 @@ async function indexAndTableStats(database, variant) {
   }
 }
 function balancedOrders(names) {
-  if (names.length === 2) return [
-    [names[0], names[1]],
-    [names[1], names[0]],
-    [names[0], names[1]]
+  const rng = makeRng(seed + names.length * 997);
+  const shuffled = [...names];
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  if (shuffled.length === 2) return [
+    [shuffled[0], shuffled[1]],
+    [shuffled[1], shuffled[0]],
+    [shuffled[0], shuffled[1]]
   ];
-  if (names.length === 3) return [
-    [names[0], names[1], names[2]],
-    [names[2], names[1], names[0]],
-    [names[1], names[0], names[2]]
+  if (shuffled.length === 3) return [
+    shuffled,
+    [...shuffled].reverse(),
+    [shuffled[1], shuffled[2], shuffled[0]]
   ];
-  return [names];
+  return [shuffled];
 }
 function csvEscape(value) {
   const text = value === null || value === undefined ? "" : String(value);
@@ -549,7 +556,7 @@ try {
         }
       }
     }
-    for (const variant of ["feed-baseline", "feed-candidate"]) {
+    for (const variant of feedOrder[0]) {
       const database = feedDatabases[variant];
       const apiOutput = resolve(artifactDir, variant + "-api.json");
       const apiScript = resolve(root, "apps/api/scripts/mixed-workload-api.mts");
