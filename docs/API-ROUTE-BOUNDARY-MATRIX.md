@@ -23,8 +23,9 @@ handler in the identity module.
   unclassified errors become 500. The Problem Details response contains
   `type`, `title`, `status`, optional `detail`, `instance`, and
   `requestId`.
-- Collection limits below are fixed SQL limits or validated query limits;
-  there is no cursor pagination in these handlers.
+- Collection limits below are fixed SQL limits or validated query limits,
+  except `GET /feed`, which supports opaque cursor pagination. Other collection
+  handlers do not yet expose cursor pagination.
 
 ## Identity and session
 
@@ -79,7 +80,7 @@ handler in the identity module.
 
 | Method and path            | Access                                       | Request boundary             | Success response                                            |
 | -------------------------- | -------------------------------------------- | ---------------------------- | ----------------------------------------------------------- |
-| GET `/feed`                | Authenticated                                | None                         | 200: `{ posts: PostRow[] }`; fixed limit 50                 |
+| GET `/feed`                | Authenticated                                | Optional `cursor`: canonical base64url JSON tuple `{ createdAt, id }`, max 512 chars; strict timestamp/UUID validation | 200: `{ posts: PostRow[], nextCursor?: string }`; keyset order `(created_at DESC, id DESC)`, 50 posts/page with 51-row lookahead; mute, block, deleted-post and profile-privacy filters apply |
 | POST `/posts`              | Authenticated                                | body trimmed 1–2000          | 201: `{ post: PostRow }`                                    |
 | DELETE `/posts/:id`        | Authenticated; author-only                   | id UUID                      | 204; 404 when unavailable/not owned                         |
 | POST `/posts/:id/like`     | Authenticated                                | id UUID                      | 200: `{ liked: true }`                                      |
