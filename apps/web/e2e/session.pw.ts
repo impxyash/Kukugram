@@ -2602,3 +2602,104 @@ test("logout invalidates an in-flight feed page before it can update the signed-
   await expect(page.getByText("Post after logout")).toHaveCount(0);
   await expect(page.locator(".auth-card-modern")).toBeVisible();
 });
+
+
+test("the advanced feed cursor survives leaving Home and returning", async ({ page }) => {
+  const makePost = (id: string, body: string) => ({
+    id,
+    authorId: "00000000-0000-4000-8000-000000000401",
+    handle: "creator",
+    displayName: "Creator",
+    avatarUrl: null,
+    body,
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  });
+  const first = makePost("00000000-0000-4000-8000-000000000402", "First feed page");
+  const second = makePost("00000000-0000-4000-8000-000000000403", "Second feed page");
+  const third = makePost("00000000-0000-4000-8000-000000000404", "Third feed page");
+  let feedCalls = 0;
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/me") return reply(route, 200, { user });
+    if (url.pathname === "/v1/feed") {
+      feedCalls += 1;
+      if (feedCalls === 1) {
+        return reply(route, 200, { posts: [first], nextCursor: "cursor-page-two" });
+      }
+      if (feedCalls === 2) {
+        expect(url.searchParams.get("cursor")).toBe("cursor-page-two");
+        return reply(route, 200, { posts: [second], nextCursor: "cursor-page-three" });
+      }
+      expect(url.searchParams.get("cursor")).toBe("cursor-page-three");
+      return reply(route, 200, { posts: [third] });
+    }
+    if (url.pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (url.pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(page.getByText("Second feed page")).toBeVisible();
+
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("button", { name: "Home" }).click();
+  await expect(page.getByText("First feed page")).toBeVisible();
+  await expect(page.getByText("Second feed page")).toBeVisible();
+
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(page.getByText("Third feed page")).toBeVisible();
+  expect(feedCalls).toBe(3);
+});
+
+test("a failed feed page keeps its cursor so Load more can retry", async ({ page }) => {
+  const first = {
+    id: "00000000-0000-4000-8000-000000000411",
+    authorId: "00000000-0000-4000-8000-000000000412",
+    handle: "creator",
+    displayName: "Creator",
+    avatarUrl: null,
+    body: "Retry first page",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  };
+  const second = { ...first, id: "00000000-0000-4000-8000-000000000413", body: "Retry second page" };
+  let feedCalls = 0;
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/me") return reply(route, 200, { user });
+    if (url.pathname === "/v1/feed") {
+      feedCalls += 1;
+      if (feedCalls === 1) {
+        return reply(route, 200, { posts: [first], nextCursor: "cursor-retry" });
+      }
+      expect(url.searchParams.get("cursor")).toBe("cursor-retry");
+      if (feedCalls === 2) return unavailable(route);
+      return reply(route, 200, { posts: [second] });
+    }
+    if (url.pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (url.pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(page.getByRole("alert")).toContainText("Service unavailable");
+  await expect(page.getByRole("button", { name: "Load more" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(page.getByText("Retry second page")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
+  expect(feedCalls).toBe(3);
+});
