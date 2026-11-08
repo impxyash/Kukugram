@@ -704,13 +704,13 @@ describe("social privacy authorization", () => {
     }>();
     expect(body.notifications).toHaveLength(50);
     expect(body.nextCursor).toEqual(expect.any(String));
-    const cursorJson = Buffer.from(body.nextCursor!, "base64url").toString("utf8");
-    const decoded = JSON.parse(cursorJson);
-    const expectedCursor = {
-      createdAt: createdAt.toISOString(),
-      id: notificationRows[49]?.id
-    };
-    expect(decoded).toEqual(expectedCursor);
+    const expectedCursor = Buffer.from(
+      JSON.stringify({
+        createdAt: createdAt.toISOString(),
+        id: notificationRows[49]?.id
+      })
+    ).toString("base64url");
+    expect(body.nextCursor).toBe(expectedCursor);
     await app.close();
   });
 
