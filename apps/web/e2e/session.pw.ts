@@ -125,6 +125,15 @@ test("auth card buttons use a visible high-contrast keyboard focus ring", async 
   });
 });
 
+test("dark search inputs expose a visible control boundary", async ({ page }) => {
+  await installApi(page, { me: async (_call, route) => authenticated(route) });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  const searchInput = page.locator(".search input");
+  await expect(searchInput).toBeVisible();
+  await expect(searchInput).toHaveCSS("border-top-color", "rgba(246, 243, 236, 0.38)");
+});
+
 test("auth input and secondary button boundaries remain visible", async ({ page }) => {
   await installApi(page, { me: async (_call, route) => unavailable(route) });
   await page.goto("/");

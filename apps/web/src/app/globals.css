@@ -324,7 +324,7 @@ label span {
 input,
 textarea {
   background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(246, 243, 236, 0.19);
+  border: 1px solid rgba(246, 243, 236, 0.38);
   border-radius: 10px;
   color: var(--ink);
   outline: none;
