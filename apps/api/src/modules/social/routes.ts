@@ -1075,7 +1075,10 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.get("/feed", async (request) => {
     const current = await requireViewer(request);
-    const query = z\n      .object({ cursor: z.string().min(1).max(512).optional() })\n      .strict()\n      .parse(request.query);
+    const query = z
+      .object({ cursor: z.string().min(1).max(512).optional() })
+      .strict()
+      .parse(request.query);
     const cursor = query.cursor ? decodeFeedCursor(query.cursor) : null;
     const result = await app.pool.query<PostRow>(
       `${postSelect()} WHERE p.deleted_at IS NULL
