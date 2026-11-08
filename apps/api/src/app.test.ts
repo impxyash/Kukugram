@@ -463,6 +463,20 @@ describe("social privacy authorization", () => {
         handle: string | null;
         displayName: string | null;
       }>;
+      searchRows?: Array<{
+        id: string;
+        handle: string;
+        displayName: string;
+        bio: string | null;
+        avatarUrl: string | null;
+        followers: string;
+        following: string;
+        isFollowing: boolean;
+        isRequested: boolean;
+        privacy: "public" | "private" | "restricted_creator";
+        canViewContent: boolean;
+        isBlocked: boolean;
+      }>;
     } = {}
   ) {
     const statements: string[] = [];
@@ -529,6 +543,9 @@ describe("social privacy authorization", () => {
             ],
             rowCount: 1
           };
+        }
+        if (sql.includes("ORDER BY p.handle ASC, u.id ASC")) {
+          return { rows: options.searchRows ?? [], rowCount: options.searchRows?.length ?? 0 };
         }
         if (sql.includes("FROM notifications.notifications n")) {
           return {
@@ -639,6 +656,97 @@ describe("social privacy authorization", () => {
     expect(
       pool.statements.some((sql) => sql.includes("INSERT INTO notifications.notifications"))
     ).toBe(true);
+    await app.close();
+  });
+
+  it("rejects malformed and query-mismatched search cursors before querying profiles", async () => {
+    const malformedPool = makePool();
+    const malformedApp = appWithPool(malformedPool);
+    const malformed = await malformedApp.inject({
+      method: "GET",
+      url: "/v1/users/search?q=target&cursor=not-a-cursor",
+      headers: { cookie }
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformedPool.statements.some((sql) => sql.includes("ORDER BY p.handle ASC"))).toBe(
+      false
+    );
+    await malformedApp.close();
+
+    const cursor = Buffer.from(
+      JSON.stringify({
+        query: "different",
+        handle: "target_020",
+        id: targetId
+      })
+    ).toString("base64url");
+    const mismatchPool = makePool();
+    const mismatchApp = appWithPool(mismatchPool);
+    const mismatch = await mismatchApp.inject({
+      method: "GET",
+      url: `/v1/users/search?q=target&cursor=${encodeURIComponent(cursor)}`,
+      headers: { cookie }
+    });
+    expect(mismatch.statusCode).toBe(400);
+    expect(mismatchPool.statements.some((sql) => sql.includes("ORDER BY p.handle ASC"))).toBe(
+      false
+    );
+    await mismatchApp.close();
+  });
+
+  it("uses recipient-scoped deterministic search keyset pagination", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/users/search?q=Target",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(200);
+    const queryIndex = pool.statements.findIndex((sql) => sql.includes("ORDER BY p.handle ASC"));
+    expect(pool.statements[queryIndex]).toContain("u.id <> $2");
+    expect(pool.statements[queryIndex]).toContain("NOT EXISTS(SELECT 1 FROM social.blocks");
+    expect(pool.statements[queryIndex]).toContain(
+      "($3::varchar IS NULL OR (p.handle, u.id) > ($3::varchar, $4::uuid))"
+    );
+    expect(pool.statements[queryIndex]).toContain("ORDER BY p.handle ASC, u.id ASC LIMIT 21");
+    expect(pool.parameters[queryIndex]).toEqual(["%Target%", viewerId, null, null]);
+    await app.close();
+  });
+
+  it("returns 20 search results and a query-bound cursor when a 21st exists", async () => {
+    const searchRows = Array.from({ length: 21 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      handle: `target_${String(index + 1).padStart(3, "0")}`,
+      displayName: "Target",
+      bio: null,
+      avatarUrl: null,
+      followers: "0",
+      following: "0",
+      isFollowing: false,
+      isRequested: false,
+      privacy: "public" as const,
+      canViewContent: true,
+      isBlocked: false
+    }));
+    const pool = makePool({ searchRows });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/users/search?q=TARGET",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ users: Array<{ id: string; handle: string }>; nextCursor?: string }>();
+    expect(body.users).toHaveLength(20);
+    const expectedCursor = Buffer.from(
+      JSON.stringify({
+        query: "target",
+        handle: searchRows[19]?.handle,
+        id: searchRows[19]?.id
+      })
+    ).toString("base64url");
+    expect(body.nextCursor).toBe(expectedCursor);
     await app.close();
   });
 

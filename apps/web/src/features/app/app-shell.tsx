@@ -900,6 +900,10 @@ function Discover({ onError }: { onError: (message: string) => void }) {
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [activeQuery, setActiveQuery] = useState("");
+  const [nextCursor, setNextCursor] = useState<string | undefined>();
+  const paginationInFlight = useRef(false);
   const mountedRequestScope = useRef(createMountedRequestScope());
   const searchRequestSequence = useRef(createSessionRequestSequence());
   const userActionInFlight = useRef(new Set<string>());
@@ -917,16 +921,21 @@ function Discover({ onError }: { onError: (message: string) => void }) {
 
   async function search(event: FormEvent) {
     event.preventDefault();
-    if (!query.trim()) return;
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) return;
     const scope = mountedRequestScope.current;
     const requestId = searchRequestSequence.current.begin();
+    setActiveQuery(normalizedQuery);
+    setUsers([]);
+    setNextCursor(undefined);
     setLoading(true);
     try {
-      const result = await request<{ users: User[] }>(
-        `/users/search?q=${encodeURIComponent(query)}`
+      const result = await request<{ users: User[]; nextCursor?: string }>(
+        `/users/search?q=${encodeURIComponent(normalizedQuery)}`
       );
       if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
         setUsers(result.users);
+        setNextCursor(result.nextCursor);
       }
     } catch (reason) {
       if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
@@ -936,6 +945,38 @@ function Discover({ onError }: { onError: (message: string) => void }) {
       if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
         setLoading(false);
       }
+    }
+  }
+
+  async function loadMore() {
+    if (!nextCursor || !activeQuery || paginationInFlight.current) return;
+    paginationInFlight.current = true;
+    const scope = mountedRequestScope.current;
+    const requestId = searchRequestSequence.current.begin();
+    setLoadingMore(true);
+    try {
+      const result = await request<{ users: User[]; nextCursor?: string }>(
+        `/users/search?q=${encodeURIComponent(activeQuery)}&cursor=${encodeURIComponent(nextCursor)}`
+      );
+      if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
+        setUsers((current) => {
+          const seen = new Set(current.map((person) => person.id));
+          return [
+            ...current,
+            ...result.users.filter((person) => !seen.has(person.id) && seen.add(person.id))
+          ];
+        });
+        setNextCursor(result.nextCursor);
+      }
+    } catch (reason) {
+      if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
+        onError((reason as Error).message);
+      }
+    } finally {
+      if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
+        setLoadingMore(false);
+      }
+      paginationInFlight.current = false;
     }
   }
 
@@ -1086,11 +1127,21 @@ function Discover({ onError }: { onError: (message: string) => void }) {
           </article>
         ))}
       </div>
-      {query && !loading && !users.length && (
+      {activeQuery && !loading && !users.length && (
         <section className="empty-state">
           <h3>No one surfaced yet.</h3>
           <p>Try another name or username.</p>
         </section>
+      )}
+      {nextCursor && (
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={loadingMore}
+          onClick={() => void loadMore()}
+        >
+          {loadingMore ? "Loading..." : "Load more people"}
+        </button>
       )}
     </>
   );

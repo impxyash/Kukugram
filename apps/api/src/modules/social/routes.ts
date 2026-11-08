@@ -183,6 +183,41 @@ function encodeNotificationCursor(notification: NotificationCursorRow): string {
   ).toString("base64url");
 }
 
+const searchCursorSchema = z
+  .object({
+    query: z.string().min(1).max(60),
+    handle: z.string().min(1).max(30),
+    id: z.string().uuid()
+  })
+  .strict();
+
+function decodeSearchCursor(
+  value: string,
+  query: string
+): { handle: string; id: string } {
+  try {
+    if (value.length > 512) throw new Error("Invalid cursor");
+    const decoded = Buffer.from(value, "base64url").toString("utf8");
+    const parsed = searchCursorSchema.parse(JSON.parse(decoded));
+    if (Buffer.from(decoded).toString("base64url") !== value || parsed.query !== query) {
+      throw new Error("Invalid cursor");
+    }
+    return { handle: parsed.handle, id: parsed.id };
+  } catch {
+    throw Object.assign(new Error("The search cursor is invalid."), { statusCode: 400 });
+  }
+}
+
+function encodeSearchCursor(profile: Pick<ProfileRow, "handle" | "id">, query: string): string {
+  return Buffer.from(
+    JSON.stringify({
+      query,
+      handle: profile.handle,
+      id: profile.id
+    })
+  ).toString("base64url");
+}
+
 function postSelect() {
   return `SELECT p.id, p.body, p.created_at AS "createdAt", pr.handle, pr.display_name AS "displayName", pr.avatar_url AS "avatarUrl",
     (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
@@ -302,7 +337,15 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.get("/users/search", async (request) => {
     const current = await requireViewer(request);
-    const query = z.object({ q: z.string().trim().min(1).max(60) }).parse(request.query).q;
+    const input = z
+      .object({
+        q: z.string().trim().min(1).max(60),
+        cursor: z.string().min(1).max(512).optional()
+      })
+      .strict()
+      .parse(request.query);
+    const normalizedQuery = input.q.toLowerCase();
+    const cursor = input.cursor ? decodeSearchCursor(input.cursor, normalizedQuery) : null;
     const result = await app.pool.query<ProfileRow>(
       `SELECT u.id, p.handle, p.display_name AS "displayName", p.bio, p.avatar_url AS "avatarUrl",
        (SELECT count(*) FROM social.follows f WHERE f.followee_id = u.id AND f.status = 'accepted') AS followers,
@@ -315,10 +358,18 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
        FROM social.profiles p JOIN identity.users u ON u.id = p.user_id
        WHERE (p.handle ILIKE $1 OR p.display_name ILIKE $1) AND u.id <> $2
          AND NOT EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = u.id AND b.blocked_id = $2) OR (b.blocker_id = $2 AND b.blocked_id = u.id))
-       ORDER BY p.handle LIMIT 20`,
-      [`%${query}%`, current.id]
+         AND ($3::varchar IS NULL OR (p.handle, u.id) > ($3::varchar, $4::uuid))
+       ORDER BY p.handle ASC, u.id ASC LIMIT 21`,
+      [`%${input.q}%`, current.id, cursor?.handle ?? null, cursor?.id ?? null]
     );
-    return { users: result.rows };
+    const hasMore = result.rows.length > 20;
+    const users = result.rows.slice(0, 20);
+    return {
+      users,
+      ...(hasMore && users.length
+        ? { nextCursor: encodeSearchCursor(users[users.length - 1]!, normalizedQuery) }
+        : {})
+    };
   });
 
   app.get("/users/:handle", async (request) => {

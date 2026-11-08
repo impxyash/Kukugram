@@ -38,9 +38,12 @@ export const commentCreateRequestSchema = z.object({
   body: z.string().trim().min(1).max(1000)
 });
 
-export const userSearchQuerySchema = z.object({
-  q: z.string().trim().min(1).max(60)
-});
+export const userSearchQuerySchema = z
+  .object({
+    q: z.string().trim().min(1).max(60),
+    cursor: z.string().min(1).max(512).optional()
+  })
+  .strict();
 
 export const moderationReportListQuerySchema = z.object({
   status: z.enum(["open", "reviewing", "resolved", "dismissed"]).optional(),
@@ -173,7 +176,8 @@ export const feedResponseSchema = z.object({
 });
 
 export const userSearchResponseSchema = z.object({
-  users: z.array(profileResponseSchema)
+  users: z.array(profileResponseSchema),
+  nextCursor: z.string().min(1).max(512).optional()
 });
 
 export const commentResponseSchema = z.object({

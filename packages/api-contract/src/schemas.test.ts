@@ -23,6 +23,7 @@ import {
   problemDetailsSchema,
   profileResponseSchema,
   userSearchResponseSchema,
+  userSearchQuerySchema,
   postCreateResponseSchema,
   followRequestListResponseSchema,
   moderationReportDetailResponseSchema,
@@ -108,6 +109,22 @@ describe("API request contracts", () => {
     expect(feedResponseSchema.safeParse({ posts: [], nextCursor: "opaque-cursor" }).success).toBe(
       true
     );
+  });
+
+  it("validates strict search query cursors and paginated response shapes", () => {
+    expect(userSearchQuerySchema.parse({ q: "creator" })).toEqual({ q: "creator" });
+    expect(userSearchQuerySchema.parse({ q: "creator", cursor: "opaque-cursor" }).cursor).toBe(
+      "opaque-cursor"
+    );
+    expect(userSearchQuerySchema.safeParse({ q: "creator", cursor: "" }).success).toBe(false);
+    expect(
+      userSearchQuerySchema.safeParse({ q: "creator", cursor: "x".repeat(513) }).success
+    ).toBe(false);
+    expect(userSearchQuerySchema.safeParse({ q: "creator", extra: true }).success).toBe(false);
+    expect(userSearchResponseSchema.safeParse({ users: [] }).success).toBe(true);
+    expect(
+      userSearchResponseSchema.safeParse({ users: [], nextCursor: "opaque-cursor" }).success
+    ).toBe(true);
   });
 
   it("validates optional strict notification cursors and paginated response shapes", () => {
