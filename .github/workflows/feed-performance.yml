@@ -41,6 +41,13 @@ jobs:
       PGDATABASE: kukugram_bench
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install benchmark database client dependency
+        run: pnpm install --frozen-lockfile --filter @kukugram/api...
       - name: Wait for isolated PostgreSQL
         run: |
           for attempt in {1..30}; do
