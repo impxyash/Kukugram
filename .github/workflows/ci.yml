@@ -47,6 +47,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
+      - name: Temporary Prettier formatting diagnostic
+        if: always()
+        run: pnpm exec prettier apps/api/src/app.test.ts | diff -u apps/api/src/app.test.ts - || true
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm --filter @kukugram/database build
