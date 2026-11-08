@@ -240,10 +240,7 @@ describe("feed cursor bootstrap", () => {
 describe("feed page merging", () => {
   it("deduplicates posts by ID while preserving the existing feed order", () => {
     expect(
-      mergeFeedPosts(
-        [{ id: "post-1" }, { id: "post-2" }],
-        [{ id: "post-2" }, { id: "post-3" }]
-      )
+      mergeFeedPosts([{ id: "post-1" }, { id: "post-2" }], [{ id: "post-2" }, { id: "post-3" }])
     ).toEqual([{ id: "post-1" }, { id: "post-2" }, { id: "post-3" }]);
   });
 });
