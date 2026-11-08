@@ -2710,8 +2710,6 @@ test("a failed feed page keeps its cursor so Load more can retry", async ({ page
 
 
 test("Discover search pagination stops at the final page", async ({ page }) => {
-  page
-}) => {
   const makePerson = (id: string, handle: string, displayName: string) => ({
     id,
     handle,
