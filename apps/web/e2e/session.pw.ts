@@ -1459,7 +1459,11 @@ test("keyboard navigation works in the app", async ({ page }) => {
       outlineWidth: style.outlineWidth
     };
   });
-  expect(focus).toEqual({ visible: true, outlineStyle: "solid", outlineWidth: "2px" });
+  expect(focus).toEqual({
+    visible: true,
+    outlineStyle: "solid",
+    outlineWidth: "2px"
+  });
 });
 
 test("Discover search results are announced", async ({ page }) => {
