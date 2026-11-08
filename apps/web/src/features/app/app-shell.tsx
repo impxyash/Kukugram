@@ -546,9 +546,7 @@ function Home({
                   current.map((item) => (item.id === updated.id ? updated : item))
                 )
               }
-              onDelete={() =>
-                setPosts((current) => current.filter((item) => item.id !== post.id))
-              }
+              onDelete={() => setPosts((current) => current.filter((item) => item.id !== post.id))}
               onError={onError}
             />
           ))}
