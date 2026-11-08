@@ -338,6 +338,132 @@ test("a late Settings response from account A cannot overwrite account B after a
   await expect(page.getByText("Account B private record")).toBeVisible();
 });
 
+test("pending moderation appeal reviews cannot commit or report errors after an identity switch", async ({
+  page
+}) => {
+  const acceptedAppealId = "00000000-0000-4000-8000-000000000041";
+  const rejectedAppealId = "00000000-0000-4000-8000-000000000042";
+  const accountA = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000043",
+    handle: "moderator-appeals",
+    displayName: "Moderator Appeals"
+  };
+  const accountB = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000044",
+    handle: "member-after-appeals",
+    displayName: "Member After Appeals"
+  };
+  let switchToAccountB = false;
+  let meCalls = 0;
+  let feedCalls = 0;
+  let moderatorProbeCalls = 0;
+  let releaseAccepted!: () => void;
+  let releaseRejected!: () => void;
+  let markAcceptedPending!: () => void;
+  let markRejectedPending!: () => void;
+  const acceptedPending = new Promise<void>((resolve) => {
+    releaseAccepted = resolve;
+  });
+  const rejectedPending = new Promise<void>((resolve) => {
+    releaseRejected = resolve;
+  });
+  const acceptedSeen = new Promise<void>((resolve) => {
+    markAcceptedPending = resolve;
+  });
+  const rejectedSeen = new Promise<void>((resolve) => {
+    markRejectedPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    const method = route.request().method();
+    if (pathname === "/v1/me") {
+      meCalls += 1;
+      await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      feedCalls += 1;
+      await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      if (url.searchParams.has("status")) {
+        await reply(route, 200, { reports: [] });
+      } else {
+        moderatorProbeCalls += 1;
+        await reply(route, switchToAccountB ? 403 : 200, { reports: [] });
+      }
+      return;
+    }
+    if (pathname === "/v1/moderation/appeals") {
+      await reply(route, 200, {
+        appeals: [
+          {
+            id: acceptedAppealId,
+            reportId: "00000000-0000-4000-8000-000000000045",
+            status: "open",
+            createdAt: "2026-11-01T00:00:00.000Z"
+          },
+          {
+            id: rejectedAppealId,
+            reportId: "00000000-0000-4000-8000-000000000046",
+            status: "open",
+            createdAt: "2026-11-02T00:00:00.000Z"
+          }
+        ]
+      });
+      return;
+    }
+    if (pathname === `/v1/moderation/appeals/${acceptedAppealId}` && method === "PATCH") {
+      markAcceptedPending();
+      await acceptedPending;
+      await reply(route, 200, {});
+      return;
+    }
+    if (pathname === `/v1/moderation/appeals/${rejectedAppealId}` && method === "PATCH") {
+      markRejectedPending();
+      await rejectedPending;
+      await reply(route, 500, { title: "Service unavailable" });
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Moderation" })).toBeVisible();
+  await page.getByRole("button", { name: "Moderation" }).click();
+
+  await page.getByRole("button", {
+    name: "Accept appeal for case 00000000"
+  }).click();
+  await acceptedSeen;
+  await page.getByRole("button", {
+    name: "Reject appeal for case 00000000"
+  }).click();
+  await rejectedSeen;
+
+  // Switch identities while both moderation mutations are still pending.
+  switchToAccountB = true;
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("button", { name: "Moderation" })).toHaveCount(0);
+  await expect.poll(() => meCalls).toBeGreaterThan(1);
+  await expect.poll(() => moderatorProbeCalls).toBeGreaterThan(1);
+
+  // Complete one old request successfully and fail the other after unmount.
+  releaseAccepted();
+  releaseRejected();
+  await expect(page.getByText("Appeal accepted.")).toHaveCount(0);
+  await expect(page.getByText("Service unavailable")).toHaveCount(0);
+});
+
 test("moderation case work is discarded when switching to a non-moderator account", async ({
   page
 }) => {
