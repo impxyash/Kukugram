@@ -691,7 +691,8 @@ function PostCard({
         {post.authorId !== user.id && (
           <button
             onClick={() => {
-              void reportContent("post", post.id, onError, () => mountedRequestScope.current.isActive());
+              void reportContent("post", post.id, onError, () =>
+                mountedRequestScope.current.isActive());
             }}
           >
             Report
@@ -713,7 +714,8 @@ function PostCard({
               <button
                 className="secondary-button"
                 onClick={() => {
-                  void reportContent("comment", item.id, onError, () => mountedRequestScope.current.isActive());
+                  void reportContent("comment", item.id, onError, () =>
+                    mountedRequestScope.current.isActive());
                 }}
               >
                 Report
@@ -905,7 +907,8 @@ function Discover({ onError }: { onError: (message: string) => void }) {
               <button
                 className="secondary-button"
                 onClick={() => {
-                  void reportContent("profile", person.id, onError, () => mountedRequestScope.current.isActive());
+                  void reportContent("profile", person.id, onError, () =>
+                    mountedRequestScope.current.isActive());
                 }}
               >
                 Report
