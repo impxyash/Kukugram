@@ -1591,3 +1591,87 @@ test("PostCard comments region is accessible", async ({ page }) => {
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await expect(region).toBeHidden();
 });
+
+
+test("concurrent likes on different posts do not overwrite each other", async ({ page }) => {
+  const posts = [
+    {
+      id: "00000000-0000-4000-8000-000000000251",
+      authorId: "00000000-0000-4000-8000-000000000261",
+      handle: "creator-one",
+      displayName: "Creator One",
+      avatarUrl: null,
+      body: "First concurrent post",
+      createdAt: "2026-11-01T00:00:00.000Z",
+      likeCount: "0",
+      commentCount: "0",
+      likedByViewer: false
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000252",
+      authorId: "00000000-0000-4000-8000-000000000262",
+      handle: "creator-two",
+      displayName: "Creator Two",
+      avatarUrl: null,
+      body: "Second concurrent post",
+      createdAt: "2026-11-01T00:00:00.000Z",
+      likeCount: "0",
+      commentCount: "0",
+      likedByViewer: false
+    }
+  ];
+  let releaseFirst!: () => void;
+  let releaseSecond!: () => void;
+  let markFirstPending!: () => void;
+  let markSecondPending!: () => void;
+  const firstGate = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const secondGate = new Promise<void>((resolve) => {
+    releaseSecond = resolve;
+  });
+  const firstSeen = new Promise<void>((resolve) => {
+    markFirstPending = resolve;
+  });
+  const secondSeen = new Promise<void>((resolve) => {
+    markSecondPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts });
+    if (pathname === "/v1/notifications") {
+      return reply(route, 200, { notifications: [] });
+    }
+    if (pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    if (pathname === `/v1/posts/${posts[0].id}/like`) {
+      markFirstPending();
+      await firstGate;
+      return reply(route, 200, {});
+    }
+    if (pathname === `/v1/posts/${posts[1].id}/like`) {
+      markSecondPending();
+      await secondGate;
+      return reply(route, 200, {});
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Like post by Creator One. 0 likes" }).click();
+  await firstSeen;
+  await page.getByRole("button", { name: "Like post by Creator Two. 0 likes" }).click();
+  await secondSeen;
+
+  releaseFirst();
+  const firstUnlike = page.getByRole("button", { name: "Unlike post by Creator One. 1 likes" });
+  await expect(firstUnlike).toHaveAttribute("aria-pressed", "true");
+
+  releaseSecond();
+  const secondUnlike = page.getByRole("button", { name: "Unlike post by Creator Two. 1 likes" });
+  await expect(secondUnlike).toHaveAttribute("aria-pressed", "true");
+  await expect(firstUnlike).toHaveAttribute("aria-pressed", "true");
+});
