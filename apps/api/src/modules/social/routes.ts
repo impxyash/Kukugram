@@ -144,10 +144,12 @@ async function canViewPost(
   return result.rows[0]?.allowed ?? false;
 }
 
-const feedCursorSchema = z.object({
-  createdAt: z.string().datetime({ offset: true }),
-  id: z.string().uuid()
-}).strict();
+const feedCursorSchema = z
+  .object({
+    createdAt: z.string().datetime({ offset: true }),
+    id: z.string().uuid()
+  })
+  .strict();
 
 function decodeFeedCursor(value: string): { createdAt: Date; id: string } {
   try {
@@ -162,10 +164,12 @@ function decodeFeedCursor(value: string): { createdAt: Date; id: string } {
 }
 
 function encodeFeedCursor(post: PostRow): string {
-  return Buffer.from(JSON.stringify({
-    createdAt: post.createdAt.toISOString(),
-    id: post.id
-  })).toString("base64url");
+  return Buffer.from(
+    JSON.stringify({
+      createdAt: post.createdAt.toISOString(),
+      id: post.id
+    })
+  ).toString("base64url");
 }
 
 function postSelect() {
@@ -1071,7 +1075,7 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.get("/feed", async (request) => {
     const current = await requireViewer(request);
-    const query = z.object({ cursor: z.string().min(1).max(512).optional() }).strict().parse(request.query);
+    const query = z\n      .object({ cursor: z.string().min(1).max(512).optional() })\n      .strict()\n      .parse(request.query);
     const cursor = query.cursor ? decodeFeedCursor(query.cursor) : null;
     const result = await app.pool.query<PostRow>(
       `${postSelect()} WHERE p.deleted_at IS NULL
