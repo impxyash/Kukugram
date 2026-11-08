@@ -130,6 +130,7 @@ async function seedDatabase(database) {
   const likes = counts.likes;
   const comments = counts.comments;
   const notifications = counts.notifications;
+  const anchor = new Date(Date.UTC(2026, 10, 9, 0, 0, 0) + (seed % 86_400) * 1_000).toISOString();
   try {
     await client.query("SET synchronous_commit = on");
     await client.query(
@@ -164,8 +165,8 @@ async function seedDatabase(database) {
       [users]
     );
     await client.query(
-      "INSERT INTO content.posts (id, author_id, body, created_at, deleted_at) SELECT md5('kukugram-mwb-post-' || n)::uuid, md5('kukugram-mwb-user-' || (mod(n * 37, $1 - 24) + 25))::uuid, 'Mixed workload synthetic post ' || n, now() - (mod(n, 129600)::text || ' minutes')::interval, CASE WHEN n % 97 = 0 THEN now() ELSE NULL END FROM generate_series(1, $2) AS n",
-      [users, posts]
+      "INSERT INTO content.posts (id, author_id, body, created_at, updated_at, deleted_at) SELECT md5('kukugram-mwb-post-' || n)::uuid, md5('kukugram-mwb-user-' || (mod(n * 37, $1 - 24) + 25))::uuid, 'Mixed workload synthetic post ' || n, $3::timestamptz - (mod(n, 129600)::text || ' minutes')::interval, $3::timestamptz, CASE WHEN n % 97 = 0 THEN $3::timestamptz ELSE NULL END FROM generate_series(1, $2) AS n",
+      [users, posts, anchor]
     );
     await client.query(
       "INSERT INTO content.likes (user_id, post_id) SELECT md5('kukugram-mwb-user-' || (mod(n * 13, $1 - 24) + 25))::uuid, md5('kukugram-mwb-post-' || n)::uuid FROM generate_series(1, $2) AS n",
@@ -176,25 +177,26 @@ async function seedDatabase(database) {
       [users, comments]
     );
     await client.query(
-      "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at, read_at) SELECT md5('kukugram-mwb-notification-' || n)::uuid, md5('kukugram-mwb-user-' || (mod(n * 29, $1 - 24) + 25))::uuid, md5('kukugram-mwb-user-' || (mod(n * 17, $1 - 24) + 25))::uuid, 'follow', now() - (mod(n, 129600)::text || ' minutes')::interval, CASE WHEN n % 5 = 0 THEN NULL ELSE now() END FROM generate_series(1, $2) AS n",
-      [users, notifications]
+      "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at, read_at) SELECT md5('kukugram-mwb-notification-' || n)::uuid, md5('kukugram-mwb-user-' || (mod(n * 29, $1 - 24) + 25))::uuid, md5('kukugram-mwb-user-' || (mod(n * 17, $1 - 24) + 25))::uuid, 'follow', $3::timestamptz - (mod(n, 129600)::text || ' minutes')::interval, CASE WHEN n % 5 = 0 THEN NULL ELSE $3::timestamptz END FROM generate_series(1, $2) AS n",
+      [users, notifications, anchor]
     );
     await client.query(
-      "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at) SELECT md5('kukugram-mwb-page-' || n)::uuid, md5('kukugram-mwb-user-1')::uuid, md5('kukugram-mwb-user-2')::uuid, 'follow', now() - (n::text || ' minutes')::interval FROM generate_series(1, 1000) AS n"
+      "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at) SELECT md5('kukugram-mwb-page-' || n)::uuid, md5('kukugram-mwb-user-1')::uuid, md5('kukugram-mwb-user-2')::uuid, 'follow', $1::timestamptz - (n::text || ' minutes')::interval FROM generate_series(1, 1000) AS n",
+      [anchor]
     );
     const markCounts = [50, 500, 2_000, 10_000];
     for (let i = 0; i < markCounts.length; i += 1) {
       const recipient = deterministicUuid("kukugram-mwb-user-" + (i + 4));
       await client.query(
-        "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at) SELECT md5('kukugram-mwb-mark-' || $1 || '-' || n)::uuid, $2::uuid, md5('kukugram-mwb-user-2')::uuid, 'follow', now() - (n::text || ' seconds')::interval FROM generate_series(1, $3) AS n",
-        [i, recipient, markCounts[i]]
+        "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at) SELECT md5('kukugram-mwb-mark-' || $1 || '-' || n)::uuid, $2::uuid, md5('kukugram-mwb-user-2')::uuid, 'follow', $4::timestamptz - (n::text || ' seconds')::interval FROM generate_series(1, $3) AS n",
+        [i, recipient, markCounts[i], anchor]
       );
     }
     for (let worker = 0; worker < 16; worker += 1) {
       const recipient = deterministicUuid("kukugram-mwb-user-" + (worker + 8));
       await client.query(
-        "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at) SELECT md5('kukugram-mwb-mix-' || $1 || '-' || n)::uuid, $2::uuid, md5('kukugram-mwb-user-2')::uuid, 'follow', now() - (n::text || ' seconds')::interval FROM generate_series(1, 50) AS n",
-        [worker, recipient]
+        "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at) SELECT md5('kukugram-mwb-mix-' || $1 || '-' || n)::uuid, $2::uuid, md5('kukugram-mwb-user-2')::uuid, 'follow', $3::timestamptz - (n::text || ' seconds')::interval FROM generate_series(1, 50) AS n",
+        [worker, recipient, anchor]
       );
     }
     await client.query("ANALYZE");
@@ -493,7 +495,7 @@ function csvEscape(value) {
 }
 
 try {
-  notes.push({ event: "settings", ...settings, counts, suite });
+  notes.push({ event: "settings", ...settings, counts, suite, dataset_epoch: new Date(Date.UTC(2026, 10, 9, 0, 0, 0) + (seed % 86_400) * 1_000).toISOString() });
   await createDatabase(seedDb);
   await applyMigrations(seedDb);
   await seedDatabase(seedDb);
