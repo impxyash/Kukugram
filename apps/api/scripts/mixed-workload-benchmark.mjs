@@ -310,18 +310,21 @@ async function runMarkRead(database, variant) {
     const recipients = [4, 5, 6, 7].map((n) => deterministicUuid("kukugram-mwb-user-" + n));
     for (let i = 0; i < counts.length; i += 1) {
       const recipient = recipients[i];
-      const before = await client.query("SELECT count(*)::int AS count FROM notifications.notifications WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
-      if (before.rows[0].count !== counts[i]) throw new Error("Unread fixture count mismatch for " + counts[i]);
-      const beforeOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
-      const started = performance.now();
-      const updated = await client.query("UPDATE notifications.notifications SET read_at = now() WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
-      const elapsed = performance.now() - started;
-      const after = await client.query("SELECT count(*)::int AS count FROM notifications.notifications WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
-      const idempotent = await client.query("UPDATE notifications.notifications SET read_at = now() WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
-      const afterOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
-      if (updated.rowCount !== counts[i] || after.rows[0].count !== 0 || idempotent.rowCount !== 0) throw new Error("Mark-read correctness gate failed for unread count " + counts[i]);
-      if (JSON.stringify(beforeOthers.rows) !== JSON.stringify(afterOthers.rows)) throw new Error("Recipient isolation gate failed: another recipient unread rows changed.");
-      results.push({ variant, unread_rows: counts[i], updated_rows: updated.rowCount, second_call_rows: idempotent.rowCount, latency_ms: Number(elapsed.toFixed(4)), remaining_unread: after.rows[0].count, other_recipients_unchanged: true });
+      for (let round = 1; round <= settings.rounds; round += 1) {
+        const before = await client.query("SELECT count(*)::int AS count FROM notifications.notifications WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
+        if (before.rows[0].count !== counts[i]) throw new Error("Unread fixture count mismatch for " + counts[i]);
+        const beforeOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
+        const started = performance.now();
+        const updated = await client.query("UPDATE notifications.notifications SET read_at = now() WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
+        const elapsed = performance.now() - started;
+        const after = await client.query("SELECT count(*)::int AS count FROM notifications.notifications WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
+        const idempotent = await client.query("UPDATE notifications.notifications SET read_at = now() WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
+        const afterOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
+        if (updated.rowCount !== counts[i] || after.rows[0].count !== 0 || idempotent.rowCount !== 0) throw new Error("Mark-read correctness gate failed for unread count " + counts[i]);
+        if (JSON.stringify(beforeOthers.rows) !== JSON.stringify(afterOthers.rows)) throw new Error("Recipient isolation gate failed: another recipient unread rows changed.");
+        results.push({ variant, round, unread_rows: counts[i], updated_rows: updated.rowCount, second_call_rows: idempotent.rowCount, latency_ms: Number(elapsed.toFixed(4)), remaining_unread: after.rows[0].count, other_recipients_unchanged: true });
+        if (round < settings.rounds) await client.query("UPDATE notifications.notifications SET read_at = NULL WHERE recipient_id = $1", [recipient]);
+      }
     }
   } finally {
     await client.end();
@@ -337,6 +340,9 @@ async function runTimedSuite(database, suiteName, variant, workerCount, round) {
   let maxPoolWaiting = 0;
   let retries = 0;
   let timeouts = 0;
+  let warmupNotificationInserts = 0;
+  let warmupNotificationUpdates = 0;
+  let warmupFeedInserts = 0;
 
   async function operation(workerIndex, rng, capture) {
     const draw = rng();
@@ -386,6 +392,9 @@ async function runTimedSuite(database, suiteName, variant, workerCount, round) {
       }
     }
     const result = await recordQuery(pool, sql, values, capture, label, suiteName, variant, workerCount, round);
+    if (!capture && suiteName === "notifications" && label === "insert") warmupNotificationInserts += 1;
+    if (!capture && suiteName === "notifications" && label === "mark_read_update") warmupNotificationUpdates += 1;
+    if (!capture && suiteName === "feed" && label.startsWith("post_insert_")) warmupFeedInserts += 1;
     maxPoolWaiting = Math.max(maxPoolWaiting, pool.waitingCount);
     return result;
   }
@@ -431,7 +440,7 @@ async function runTimedSuite(database, suiteName, variant, workerCount, round) {
       retries,
       timeouts
     }));
-    notes.push({ suite: suiteName, variant, worker_count: workerCount, round, elapsed_seconds: Number(elapsedSeconds.toFixed(3)), max_pool_waiting: maxPoolWaiting, pool_max: settings.poolMax });
+    notes.push({ suite: suiteName, variant, worker_count: workerCount, round, elapsed_seconds: Number(elapsedSeconds.toFixed(3)), max_pool_waiting: maxPoolWaiting, pool_max: settings.poolMax, warmup_notification_inserts: warmupNotificationInserts, warmup_notification_updates: warmupNotificationUpdates, warmup_feed_inserts: warmupFeedInserts });
     return summary;
   } finally {
     await pool.end();
@@ -596,9 +605,9 @@ try {
   const reconciliation = {};
   for (const key of selected) {
     const [variant] = variantDefinitions[key];
-    const sqlPostInserts = raw.filter((row) => row.variant === variant && row.suite === "feed" && String(row.operation).startsWith("post_insert_") && !row.error).length;
-    const notificationInserts = raw.filter((row) => row.variant === variant && row.suite === "notifications" && row.operation === "insert" && !row.error).length;
-    const apiPostInserts = apiReports.filter((item) => item.variant === variant).flatMap((item) => item.raw_samples ?? []).filter((row) => row.operation === "post_insert_api" && !row.error).length;
+    const sqlPostInserts = raw.filter((row) => row.variant === variant && row.suite === "feed" && String(row.operation).startsWith("post_insert_") && !row.error).length + notes.filter((row) => row.variant === variant && row.suite === "feed").reduce((total, row) => total + (row.warmup_feed_inserts ?? 0), 0);
+    const notificationInserts = raw.filter((row) => row.variant === variant && row.suite === "notifications" && row.operation === "insert" && !row.error).length + notes.filter((row) => row.variant === variant && row.suite === "notifications").reduce((total, row) => total + (row.warmup_notification_inserts ?? 0), 0);
+    const apiPostInserts = apiReports.filter((item) => item.variant === variant).reduce((total, item) => total + (item.raw_samples ?? []).filter((row) => row.operation === "post_insert_api" && !row.error).length + (item.warmup_post_inserts ?? 0), 0);
     const actual = postChecksums[variant];
     const expectedPosts = seedChecksum.posts.row_count + sqlPostInserts + apiPostInserts;
     const expectedNotifications = seedChecksum.notifications.row_count + notificationInserts;
@@ -638,18 +647,22 @@ try {
       }
     }
   }
-  for (const base of markReadResults.filter((row) => row.variant === "notification-baseline")) {
+  for (const unreadRows of [50, 500, 2_000, 10_000]) {
+    const baselineSamples = markReadResults.filter((row) => row.variant === "notification-baseline" && row.unread_rows === unreadRows).map((row) => row.latency_ms);
+    const baselineP95 = percentile(baselineSamples, 0.95);
     for (const candidateVariant of ["notification-additive", "notification-replacement"]) {
-      const candidate = markReadResults.find((row) => row.variant === candidateVariant && row.unread_rows === base.unread_rows);
-      if (candidate && base.latency_ms > 0) {
-        const regression = Number((((candidate.latency_ms - base.latency_ms) / base.latency_ms) * 100).toFixed(2));
-        comparisons.push({ suite: "mark-read", unread_rows: base.unread_rows, baseline: "notification-baseline", candidate: candidateVariant, baseline_ms: base.latency_ms, candidate_ms: candidate.latency_ms, regression_percent: regression, investigate: regression > 10 });
+      const candidateSamples = markReadResults.filter((row) => row.variant === candidateVariant && row.unread_rows === unreadRows).map((row) => row.latency_ms);
+      const candidateP95 = percentile(candidateSamples, 0.95);
+      if (baselineP95 !== null && candidateP95 !== null && baselineP95 > 0) {
+        const regression = Number((((candidateP95 - baselineP95) / baselineP95) * 100).toFixed(2));
+        comparisons.push({ suite: "mark-read", operation: "mark_read_update", unread_rows: unreadRows, baseline: "notification-baseline", candidate: candidateVariant, baseline_p95_ms: baselineP95, candidate_p95_ms: candidateP95, regression_percent: regression, investigate: regression > 10, requires_justification: regression > 15 });
       }
     }
   }
   const successfulWriteOperations =
     raw.filter((row) => !row.error && (row.operation === "insert" || row.operation === "mark_read_update" || String(row.operation).startsWith("post_insert_"))).length +
-    apiReports.reduce((total, item) => total + (item.raw_samples ?? []).filter((row) => row.operation === "post_insert_api" && !row.error).length, 0) +
+    apiReports.reduce((total, item) => total + (item.raw_samples ?? []).filter((row) => row.operation === "post_insert_api" && !row.error).length + (item.warmup_post_inserts ?? 0), 0) +
+    notes.reduce((total, row) => total + (row.warmup_notification_inserts ?? 0) + (row.warmup_notification_updates ?? 0) + (row.warmup_feed_inserts ?? 0), 0) +
     markReadResults.length;
   const walBytesPerWriteOperation = walDelta !== null && successfulWriteOperations > 0
     ? Number((Number(walDelta) / successfulWriteOperations).toFixed(2))
