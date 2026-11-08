@@ -2217,3 +2217,101 @@ test("rapid repeated mute clicks issue only one mute request", async ({ page }) 
   await expect(page.getByText("Mute Race")).toHaveCount(0);
   expect(muteCalls).toBe(1);
 });
+
+test("rapid profile save submissions issue only one update request", async ({ page }) => {
+  let saveCalls = 0;
+  let releaseSave!: () => void;
+  let markSavePending!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  const saveSeen = new Promise<void>((resolve) => {
+    markSavePending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [] });
+    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === "/v1/me/follow-requests") return reply(route, 200, { requests: [] });
+    if (pathname === "/v1/me/blocked" || pathname === "/v1/me/muted") {
+      return reply(route, 200, { users: [] });
+    }
+    if (pathname === "/v1/me/reports") return reply(route, 200, { reports: [] });
+    if (pathname === "/v1/me/appeals") return reply(route, 200, { appeals: [] });
+    if (pathname === "/v1/me/profile" && method === "PATCH") {
+      saveCalls += 1;
+      markSavePending();
+      await saveGate;
+      return reply(route, 200, { user: { ...user, displayName: "Updated Creator" } });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const save = page.getByRole("button", { name: "Save profile" });
+  await save.click();
+  await saveSeen;
+  await save.click();
+  releaseSave();
+
+  await expect(page.getByText("Profile saved.")).toBeVisible();
+  expect(saveCalls).toBe(1);
+});
+
+test("rapid follow-request decisions send only one mutation", async ({ page }) => {
+  const followRequest = {
+    id: "00000000-0000-4000-8000-000000000331",
+    handle: "pending-creator",
+    displayName: "Pending Creator",
+    avatarUrl: null
+  };
+  let acceptCalls = 0;
+  let releaseAccept!: () => void;
+  let markAcceptPending!: () => void;
+  const acceptGate = new Promise<void>((resolve) => {
+    releaseAccept = resolve;
+  });
+  const acceptSeen = new Promise<void>((resolve) => {
+    markAcceptPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [] });
+    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === "/v1/me/follow-requests") {
+      return reply(route, 200, { requests: [followRequest] });
+    }
+    if (pathname === `/v1/me/follow-requests/${followRequest.handle}/accept`) {
+      acceptCalls += 1;
+      markAcceptPending();
+      await acceptGate;
+      return reply(route, 200, {});
+    }
+    if (pathname === "/v1/me/blocked" || pathname === "/v1/me/muted") {
+      return reply(route, 200, { users: [] });
+    }
+    if (pathname === "/v1/me/reports") return reply(route, 200, { reports: [] });
+    if (pathname === "/v1/me/appeals") return reply(route, 200, { appeals: [] });
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const accept = page.getByRole("button", { name: "Accept" });
+  await expect(accept).toBeVisible();
+  await accept.click();
+  await acceptSeen;
+  await accept.click();
+  releaseAccept();
+
+  await expect(page.getByText("No pending follow requests.")).toBeVisible();
+  expect(acceptCalls).toBe(1);
+});

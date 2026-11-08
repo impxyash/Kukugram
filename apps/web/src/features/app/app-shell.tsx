@@ -1457,6 +1457,7 @@ function Settings({
   const [reportHistory, setReportHistory] = useState<ReportRecord[]>([]);
   const [appealHistory, setAppealHistory] = useState<AppealRecord[]>([]);
   const mountedRequestScope = useRef(createMountedRequestScope());
+  const settingsActionInFlight = useRef(new Set<string>());
 
   useEffect(() => {
     const scope = createMountedRequestScope();
@@ -1515,6 +1516,9 @@ function Settings({
       "Explain why this report decision should be reconsidered (20–2000 characters):"
     );
     if (!details) return;
+    const actionKey = `appeal:${reportId}`;
+    if (settingsActionInFlight.current.has(actionKey)) return;
+    settingsActionInFlight.current.add(actionKey);
     const scope = mountedRequestScope.current;
     try {
       await request(`/reports/${reportId}/appeals`, {
@@ -1526,11 +1530,16 @@ function Settings({
       if (scope.isActive()) setAppealHistory(result.appeals);
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      settingsActionInFlight.current.delete(actionKey);
     }
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const actionKey = "profile";
+    if (settingsActionInFlight.current.has(actionKey)) return;
+    settingsActionInFlight.current.add(actionKey);
     const scope = mountedRequestScope.current;
     try {
       const result = await request<{ user: User }>("/me/profile", {
@@ -1547,6 +1556,51 @@ function Settings({
       setSaved(true);
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      settingsActionInFlight.current.delete(actionKey);
+    }
+  }
+
+  async function updateFollowRequest(item: FollowRequest, action: "accept" | "decline") {
+    const actionKey = `follow-request:${item.id}`;
+    if (settingsActionInFlight.current.has(actionKey)) return;
+    settingsActionInFlight.current.add(actionKey);
+    const scope = mountedRequestScope.current;
+    try {
+      const url =
+        action === "accept"
+          ? `/me/follow-requests/${item.handle}/accept`
+          : `/me/follow-requests/${item.handle}`;
+      await request(url, { method: action === "accept" ? "POST" : "DELETE" });
+      if (scope.isActive()) {
+        setFollowRequests((items) => items.filter((entry) => entry.id !== item.id));
+      }
+    } catch (reason) {
+      if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      settingsActionInFlight.current.delete(actionKey);
+    }
+  }
+
+  async function removeAccountControl(item: AccountControl, kind: "blocked" | "muted") {
+    const actionKey = `${kind}:${item.id}`;
+    if (settingsActionInFlight.current.has(actionKey)) return;
+    settingsActionInFlight.current.add(actionKey);
+    const scope = mountedRequestScope.current;
+    try {
+      await request(`/users/${item.handle}/${kind === "blocked" ? "block" : "mute"}`, {
+        method: "DELETE"
+      });
+      if (!scope.isActive()) return;
+      if (kind === "blocked") {
+        setBlockedUsers((items) => items.filter((entry) => entry.id !== item.id));
+      } else {
+        setMutedUsers((items) => items.filter((entry) => entry.id !== item.id));
+      }
+    } catch (reason) {
+      if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      settingsActionInFlight.current.delete(actionKey);
     }
   }
 
@@ -1605,39 +1659,13 @@ function Settings({
               </div>
               <button
                 className="primary-button"
-                onClick={() => {
-                  const scope = mountedRequestScope.current;
-                  void request(`/me/follow-requests/${item.handle}/accept`, { method: "POST" })
-                    .then(() => {
-                      if (scope.isActive()) {
-                        setFollowRequests((items) => items.filter((entry) => entry.id !== item.id));
-                      }
-                    })
-                    .catch((reason) => {
-                      if (scope.isActive()) {
-                        onError((reason as Error).message);
-                      }
-                    });
-                }}
+                onClick={() => void updateFollowRequest(item, "accept")}
               >
                 Accept
               </button>
               <button
                 className="secondary-button"
-                onClick={() => {
-                  const scope = mountedRequestScope.current;
-                  void request(`/me/follow-requests/${item.handle}`, { method: "DELETE" })
-                    .then(() => {
-                      if (scope.isActive()) {
-                        setFollowRequests((items) => items.filter((entry) => entry.id !== item.id));
-                      }
-                    })
-                    .catch((reason) => {
-                      if (scope.isActive()) {
-                        onError((reason as Error).message);
-                      }
-                    });
-                }}
+                onClick={() => void updateFollowRequest(item, "decline")}
               >
                 Decline
               </button>
@@ -1659,20 +1687,7 @@ function Settings({
               </div>
               <button
                 className="secondary-button"
-                onClick={() => {
-                  const scope = mountedRequestScope.current;
-                  void request(`/users/${item.handle}/block`, { method: "DELETE" })
-                    .then(() => {
-                      if (scope.isActive()) {
-                        setBlockedUsers((items) => items.filter((entry) => entry.id !== item.id));
-                      }
-                    })
-                    .catch((reason) => {
-                      if (scope.isActive()) {
-                        onError((reason as Error).message);
-                      }
-                    });
-                }}
+                onClick={() => void removeAccountControl(item, "blocked")}
               >
                 Unblock
               </button>
@@ -1694,20 +1709,7 @@ function Settings({
               </div>
               <button
                 className="secondary-button"
-                onClick={() => {
-                  const scope = mountedRequestScope.current;
-                  void request(`/users/${item.handle}/mute`, { method: "DELETE" })
-                    .then(() => {
-                      if (scope.isActive()) {
-                        setMutedUsers((items) => items.filter((entry) => entry.id !== item.id));
-                      }
-                    })
-                    .catch((reason) => {
-                      if (scope.isActive()) {
-                        onError((reason as Error).message);
-                      }
-                    });
-                }}
+                onClick={() => void removeAccountControl(item, "muted")}
               >
                 Unmute
               </button>
