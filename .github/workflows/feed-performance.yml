@@ -125,6 +125,30 @@ jobs:
           ANALYZE content.comments;
           SQL
 
+          INSERT INTO social.follows (follower_id, followee_id, status)
+          SELECT md5('kukugram-bench-user-2')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid,
+                 'accepted'
+          FROM generate_series(100, 104) AS n;
+
+          INSERT INTO social.follows (follower_id, followee_id, status)
+          SELECT md5('kukugram-bench-user-3')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid,
+                 'accepted'
+          FROM generate_series(1001, 6000) AS n;
+
+          INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at, read_at)
+          SELECT md5('kukugram-bench-notification-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n * 29, 12000) + 1))::uuid,
+                 NULL,
+                 'follow',
+                 now() - (mod(n, 129600)::text || ' minutes')::interval,
+                 CASE WHEN n % 10 < 7 THEN now() ELSE NULL END
+          FROM generate_series(1, 400000) AS n;
+
+          ANALYZE social.follows;
+          ANALYZE notifications.notifications;
+
       - name: Capture actual feed query plans
         run: |
           set -euo pipefail
@@ -209,11 +233,83 @@ jobs:
           LIMIT 51;
           SQL
 
+      - name: Capture sparse and high-follow baseline plans
+        run: |
+          set -euo pipefail
+          for cohort in sparse high; do
+            if [[ "$cohort" == "sparse" ]]; then viewer="kukugram-bench-user-2"; else viewer="kukugram-bench-user-3"; fi
+            for page in first cursor; do
+              if [[ "$page" == "first" ]]; then cursor_predicate="TRUE"; else cursor_predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"; fi
+              psql -X -q -A -t -v ON_ERROR_STOP=1 > "artifacts/feed-${cohort}-${page}-baseline-plan.json" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          WITH viewer AS (SELECT md5('${viewer}')::uuid AS id)
+          SELECT p.id, p.author_id, p.created_at
+          FROM content.posts p CROSS JOIN viewer
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = viewer.id OR EXISTS (
+              SELECT 1 FROM social.follows f
+              WHERE f.follower_id = viewer.id AND f.followee_id = p.author_id AND f.status = 'accepted'
+            ))
+            AND ${cursor_predicate}
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+            done
+          done
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-first-page-baseline-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.created_at
+          FROM notifications.notifications n
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+          ORDER BY n.created_at DESC, n.id DESC
+          LIMIT 51;
+          SQL
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-cursor-page-baseline-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.created_at
+          FROM notifications.notifications n
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            AND (n.created_at, n.id) <
+                (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)
+          ORDER BY n.created_at DESC, n.id DESC
+          LIMIT 51;
+          SQL
+
+      - name: Measure baseline insert overhead
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 > artifacts/write-overhead-baseline.txt <<'SQL'
+          \\timing on
+          BEGIN;
+          INSERT INTO content.posts (id, author_id, body)
+          SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                 'Disposable baseline write ' || n
+          FROM generate_series(1, 5000) AS n;
+          DELETE FROM content.posts
+          WHERE id IN (SELECT md5('kukugram-write-test-post-' || n)::uuid FROM generate_series(1, 5000) AS n);
+          INSERT INTO notifications.notifications (id, recipient_id, actor_id, type)
+          SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                 NULL, 'follow'
+          FROM generate_series(1, 5000) AS n;
+          DELETE FROM notifications.notifications
+          WHERE id IN (SELECT md5('kukugram-write-test-notice-' || n)::uuid FROM generate_series(1, 5000) AS n);
+          ROLLBACK;
+          SQL
+
       - name: Create disposable global cursor index candidate
         run: |
           set -euo pipefail
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX posts_feed_global_cursor_candidate ON content.posts (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX notifications_recipient_cursor_candidate ON notifications.notifications (recipient_id, created_at DESC, id DESC)"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE content.posts"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE notifications.notifications"
 
       - name: Capture candidate-index query plans
         run: |
@@ -297,6 +393,76 @@ jobs:
                  md5('kukugram-bench-post-200000')::uuid)
           ORDER BY p.created_at DESC, p.id DESC
           LIMIT 51;
+          SQL
+
+      - name: Capture sparse and high-follow candidate plans
+        run: |
+          set -euo pipefail
+          for cohort in sparse high; do
+            if [[ "$cohort" == "sparse" ]]; then viewer="kukugram-bench-user-2"; else viewer="kukugram-bench-user-3"; fi
+            for page in first cursor; do
+              if [[ "$page" == "first" ]]; then cursor_predicate="TRUE"; else cursor_predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"; fi
+              psql -X -q -A -t -v ON_ERROR_STOP=1 > "artifacts/feed-${cohort}-${page}-candidate-plan.json" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          WITH viewer AS (SELECT md5('${viewer}')::uuid AS id)
+          SELECT p.id, p.author_id, p.created_at
+          FROM content.posts p CROSS JOIN viewer
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = viewer.id OR EXISTS (
+              SELECT 1 FROM social.follows f
+              WHERE f.follower_id = viewer.id AND f.followee_id = p.author_id AND f.status = 'accepted'
+            ))
+            AND ${cursor_predicate}
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+            done
+          done
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-first-page-candidate-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.created_at
+          FROM notifications.notifications n
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+          ORDER BY n.created_at DESC, n.id DESC
+          LIMIT 51;
+          SQL
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-cursor-page-candidate-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.created_at
+          FROM notifications.notifications n
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            AND (n.created_at, n.id) <
+                (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)
+          ORDER BY n.created_at DESC, n.id DESC
+          LIMIT 51;
+          SQL
+
+      - name: Measure candidate insert overhead
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 > artifacts/write-overhead-candidate.txt <<'SQL'
+          \\timing on
+          BEGIN;
+          INSERT INTO content.posts (id, author_id, body)
+          SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                 'Disposable candidate write ' || n
+          FROM generate_series(1, 5000) AS n;
+          DELETE FROM content.posts
+          WHERE id IN (SELECT md5('kukugram-write-test-post-' || n)::uuid FROM generate_series(1, 5000) AS n);
+          INSERT INTO notifications.notifications (id, recipient_id, actor_id, type)
+          SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                 NULL, 'follow'
+          FROM generate_series(1, 5000) AS n;
+          DELETE FROM notifications.notifications
+          WHERE id IN (SELECT md5('kukugram-write-test-notice-' || n)::uuid FROM generate_series(1, 5000) AS n);
+          ROLLBACK;
           SQL
 
       - name: Capture dataset and index statistics
