@@ -1064,6 +1064,8 @@ try {
       : null;
   const report = {
     generated_at: new Date().toISOString(),
+    source_commit: process.env.GITHUB_SHA ?? null,
+    workflow_run_id: process.env.GITHUB_RUN_ID ?? null,
     safety: {
       postgres_host: target.host,
       postgres_database: target.database,
