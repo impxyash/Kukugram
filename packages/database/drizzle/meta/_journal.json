@@ -64,6 +64,13 @@
       "when": 1794000006000,
       "tag": "0008_moderation_audit_identity_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794170000000,
+      "tag": "0009_pagination_indexes",
+      "breakpoints": true
     }
   ]
 }

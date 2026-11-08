@@ -58,6 +58,12 @@ jobs:
             psql -X -v ON_ERROR_STOP=1 -f "$migration"
           done
 
+      - name: Reset pagination indexes for disposable baseline
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -c "DROP INDEX IF EXISTS content.posts_feed_global_cursor"
+          psql -X -v ON_ERROR_STOP=1 -c "DROP INDEX IF EXISTS notifications.notifications_recipient_cursor"
+
       - name: Seed disposable benchmark dataset
         run: |
           set -euo pipefail
@@ -313,8 +319,8 @@ jobs:
       - name: Create disposable global cursor index candidate
         run: |
           set -euo pipefail
-          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX posts_feed_global_cursor_candidate ON content.posts (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
-          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX notifications_recipient_cursor_candidate ON notifications.notifications (recipient_id, created_at DESC, id DESC)"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX posts_feed_global_cursor ON content.posts (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX notifications_recipient_cursor ON notifications.notifications (recipient_id, created_at DESC, id DESC)"
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_posts_global_cursor_candidate ON benchmark.posts_candidate (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_notifications_recipient_cursor_candidate ON benchmark.notifications_candidate (recipient_id, created_at DESC, id DESC)"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE content.posts"
@@ -567,6 +573,9 @@ jobs:
             echo
             echo "Table statistics:"
             psql -X -c "SELECT schemaname, relname, n_live_tup, seq_scan, idx_scan, pg_relation_size(relid) AS table_bytes, pg_total_relation_size(relid) AS total_bytes FROM pg_stat_user_tables ORDER BY schemaname, relname;" || true
+            echo
+            echo "Notification actor/profile coverage:"
+            psql -X -c "SELECT count(*) AS notification_rows, count(n.actor_id) AS actor_rows, count(p.user_id) AS matched_profiles FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id;" || true
             echo
             echo "Index statistics:"
             psql -X -c "SELECT schemaname, relname, indexrelname, idx_scan, idx_tup_read, idx_tup_fetch, pg_relation_size(indexrelid) AS index_bytes FROM pg_stat_user_indexes ORDER BY schemaname, relname, indexrelname;" || true
