@@ -292,7 +292,8 @@ export function AppShell() {
             user={user}
             posts={posts}
             setPosts={setPosts}
-            initialCursor={feedCursor}
+            feedCursor={feedCursor}
+            setFeedCursor={setFeedCursor}
             feedGeneration={feedGeneration}
             onError={setError}
           />
@@ -514,20 +515,21 @@ function Home({
   user,
   posts,
   setPosts,
-  initialCursor,
+  feedCursor,
+  setFeedCursor,
   feedGeneration,
   onError
 }: {
   user: User;
   posts: Post[];
   setPosts: Dispatch<SetStateAction<Post[]>>;
-  initialCursor: string | undefined;
+  feedCursor: string | undefined;
+  setFeedCursor: Dispatch<SetStateAction<string | undefined>>;
   feedGeneration: number;
   onError: (message: string | null) => void;
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
-  const [cursor, setCursor] = useState(initialCursor);
   const [loadingMore, setLoadingMore] = useState(false);
   const mountedRequestScope = useRef(createMountedRequestScope());
   const feedGenerationRef = useRef(feedGeneration);
@@ -545,11 +547,10 @@ function Home({
     paginationRequestId.current += 1;
     paginationInFlight.current = false;
     setLoadingMore(false);
-    setCursor(initialCursor);
-  }, [feedGeneration, initialCursor]);
+  }, [feedGeneration]);
 
   async function loadMore() {
-    if (!cursor || paginationInFlight.current) return;
+    if (!feedCursor || paginationInFlight.current) return;
     const scope = mountedRequestScope.current;
     const requestGeneration = feedGenerationRef.current;
     const requestId = ++paginationRequestId.current;
@@ -557,7 +558,7 @@ function Home({
     setLoadingMore(true);
     try {
       const page = await request<{ posts: Post[]; nextCursor?: string }>(
-        `/feed?cursor=${encodeURIComponent(cursor)}`
+        `/feed?cursor=${encodeURIComponent(feedCursor)}`
       );
       if (
         !scope.isActive() ||
@@ -566,7 +567,7 @@ function Home({
       )
         return;
       setPosts((current) => mergeFeedPosts(current, page.posts));
-      setCursor(page.nextCursor);
+      setFeedCursor(page.nextCursor);
       onError(null);
     } catch (reason) {
       if (
@@ -655,7 +656,7 @@ function Home({
           <p>Follow people in Discover, or make the first post in your corner.</p>
         </section>
       )}
-      {cursor && (
+      {feedCursor && (
         <div className="feed-pagination">
           <button
             className="secondary-button"
