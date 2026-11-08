@@ -498,7 +498,7 @@ function Home({
         body: JSON.stringify({ body })
       });
       if (!scope.isActive()) return;
-      setPosts([post, ...posts]);
+      setPosts((current) => [post, ...current]);
       setBody("");
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
@@ -542,9 +542,13 @@ function Home({
               post={post}
               user={user}
               onChange={(updated) =>
-                setPosts(posts.map((item) => (item.id === updated.id ? updated : item)))
+                setPosts((current) =>
+                  current.map((item) => (item.id === updated.id ? updated : item))
+                )
               }
-              onDelete={() => setPosts(posts.filter((item) => item.id !== post.id))}
+              onDelete={() =>
+                setPosts((current) => current.filter((item) => item.id !== post.id))
+              }
               onError={onError}
             />
           ))}
