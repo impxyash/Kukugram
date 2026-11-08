@@ -1,0 +1,232 @@
+name: Feed PostgreSQL Performance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feed-performance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          contains(github.event.pull_request.labels.*.name, 'run-feed-benchmark') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: kukugram_bench
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kukugram_bench"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: kukugram_bench
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for isolated PostgreSQL
+        run: |
+          for attempt in {1..30}; do
+            if pg_isready -d "$PGDATABASE"; then exit 0; fi
+            sleep 2
+          done
+          echo "Disposable benchmark PostgreSQL did not become ready." >&2
+          exit 1
+
+      - name: Apply repository migrations
+        run: |
+          set -euo pipefail
+          for migration in packages/database/drizzle/[0-9]*.sql; do
+            echo "Applying $migration"
+            psql -X -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+      - name: Seed disposable benchmark dataset
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO identity.users (id, email)
+          SELECT md5('kukugram-bench-user-' || n)::uuid,
+                 'bench-user-' || n || '@example.invalid'
+          FROM generate_series(1, 12000) AS n;
+
+          INSERT INTO social.profiles (user_id, handle, display_name, privacy)
+          SELECT md5('kukugram-bench-user-' || n)::uuid,
+                 'bench_' || n,
+                 'Benchmark User ' || n,
+                 CASE WHEN n % 20 = 0 THEN 'private' ELSE 'public' END
+          FROM generate_series(1, 12000) AS n;
+
+          INSERT INTO social.follows (follower_id, followee_id, status)
+          SELECT md5('kukugram-bench-user-1')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid,
+                 CASE WHEN n % 5 = 0 THEN 'pending' ELSE 'accepted' END
+          FROM generate_series(2, 601) AS n;
+
+          INSERT INTO social.mutes (muter_id, muted_id)
+          SELECT md5('kukugram-bench-user-1')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid
+          FROM generate_series(602, 631) AS n;
+
+          INSERT INTO social.blocks (blocker_id, blocked_id)
+          SELECT md5('kukugram-bench-user-1')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid
+          FROM generate_series(632, 646) AS n;
+
+          INSERT INTO social.blocks (blocker_id, blocked_id)
+          SELECT md5('kukugram-bench-user-' || n)::uuid,
+                 md5('kukugram-bench-user-1')::uuid
+          FROM generate_series(647, 661) AS n;
+
+          INSERT INTO content.posts (id, author_id, body, created_at, deleted_at)
+          SELECT md5('kukugram-bench-post-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n * 37, 12000) + 1))::uuid,
+                 'Synthetic feed benchmark post ' || n,
+                 now() - (mod(n, 129600)::text || ' minutes')::interval,
+                 CASE WHEN n % 33 = 0 THEN now() ELSE NULL END
+          FROM generate_series(1, 400000) AS n;
+
+          INSERT INTO content.likes (user_id, post_id)
+          SELECT md5('kukugram-bench-user-' || (mod(n * 13, 12000) + 1))::uuid,
+                 md5('kukugram-bench-post-' || n)::uuid
+          FROM generate_series(1, 120000) AS n;
+
+          INSERT INTO content.comments (id, post_id, author_id, body)
+          SELECT md5('kukugram-bench-comment-' || n)::uuid,
+                 md5('kukugram-bench-post-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid,
+                 'Synthetic benchmark comment ' || n
+          FROM generate_series(1, 80000) AS n;
+
+          ANALYZE identity.users;
+          ANALYZE social.profiles;
+          ANALYZE social.follows;
+          ANALYZE social.mutes;
+          ANALYZE social.blocks;
+          ANALYZE content.posts;
+          ANALYZE content.likes;
+          ANALYZE content.comments;
+          SQL
+
+      - name: Capture actual feed query plans
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          psql -X -A -t -v ON_ERROR_STOP=1 > artifacts/feed-first-page-plan.json <<'SQL'
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('kukugram-bench-user-1')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('kukugram-bench-user-1')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id
+                                  AND b.blocked_id = md5('kukugram-bench-user-1')::uuid)
+                              OR (b.blocker_id = md5('kukugram-bench-user-1')::uuid
+                                  AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND (NULL::timestamptz IS NULL
+                 OR (p.created_at, p.id) <
+                    (NULL::timestamptz, NULL::uuid))
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+
+          psql -X -A -t -v ON_ERROR_STOP=1 > artifacts/feed-cursor-page-plan.json <<'SQL'
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('kukugram-bench-user-1')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('kukugram-bench-user-1')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id
+                                  AND b.blocked_id = md5('kukugram-bench-user-1')::uuid)
+                              OR (b.blocker_id = md5('kukugram-bench-user-1')::uuid
+                                  AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND (p.created_at, p.id) <
+                (now() - interval '45 days',
+                 md5('kukugram-bench-post-200000')::uuid)
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+
+      - name: Capture dataset and index statistics
+        if: always()
+        run: |
+          mkdir -p artifacts
+          {
+            echo "PostgreSQL:"
+            psql -X -Atc "SELECT version();" || true
+            echo
+            echo "Table statistics:"
+            psql -X -c "SELECT schemaname, relname, n_live_tup, seq_scan, idx_scan FROM pg_stat_user_tables ORDER BY schemaname, relname;" || true
+            echo
+            echo "Index statistics:"
+            psql -X -c "SELECT schemaname, relname, indexrelname, idx_scan, idx_tup_read, idx_tup_fetch FROM pg_stat_user_indexes ORDER BY schemaname, relname, indexrelname;" || true
+          } > artifacts/database-statistics.txt 2>&1
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kukugram-feed-postgres-benchmark
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
