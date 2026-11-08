@@ -373,7 +373,26 @@ jobs:
           ORDER BY n.created_at DESC, n.id DESC LIMIT 51;
           SQL
           }
-          for trial in {1..5}; do
+          # Explicit warm-up pass; warm-up plans are excluded from measured summaries.
+          mkdir -p artifacts/warmup/baseline
+          for cohort in dense sparse high; do
+            case "$cohort" in
+              dense) viewer="kukugram-bench-user-1" ;;
+              sparse) viewer="kukugram-bench-user-2" ;;
+              high) viewer="kukugram-bench-user-3" ;;
+            esac
+            for page in first cursor; do
+              predicate="TRUE"
+              if [[ "$page" == "cursor" ]]; then
+                predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"
+              fi
+              capture_feed "$cohort" "$viewer" "$page" "$predicate" "artifacts/warmup/baseline/feed-$cohort-$page.json"
+            done
+          done
+          for page in first cursor; do
+            capture_notifications "$page" "artifacts/warmup/baseline/notifications-$page.json"
+          done
+          for trial in {1..12}; do
             for cohort in dense sparse high; do
               case "$cohort" in
                 dense) viewer="kukugram-bench-user-1" ;;
@@ -669,7 +688,26 @@ jobs:
           ORDER BY n.created_at DESC, n.id DESC LIMIT 51;
           SQL
           }
-          for trial in {1..5}; do
+          # Explicit warm-up pass; warm-up plans are excluded from measured summaries.
+          mkdir -p artifacts/warmup/candidate
+          for cohort in dense sparse high; do
+            case "$cohort" in
+              dense) viewer="kukugram-bench-user-1" ;;
+              sparse) viewer="kukugram-bench-user-2" ;;
+              high) viewer="kukugram-bench-user-3" ;;
+            esac
+            for page in first cursor; do
+              predicate="TRUE"
+              if [[ "$page" == "cursor" ]]; then
+                predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"
+              fi
+              capture_feed "$cohort" "$viewer" "$page" "$predicate" "artifacts/warmup/candidate/feed-$cohort-$page.json"
+            done
+          done
+          for page in first cursor; do
+            capture_notifications "$page" "artifacts/warmup/candidate/notifications-$page.json"
+          done
+          for trial in {1..12}; do
             for cohort in dense sparse high; do
               case "$cohort" in
                 dense) viewer="kukugram-bench-user-1" ;;
@@ -744,157 +782,214 @@ jobs:
             psql -X -c "SELECT c.relname AS table_name, i.relname AS index_name, pg_relation_size(i.oid) AS index_bytes, pg_get_indexdef(i.oid) AS definition FROM pg_class i JOIN pg_index x ON x.indexrelid = i.oid JOIN pg_class c ON c.oid = x.indrelid WHERE c.relnamespace = 'benchmark'::regnamespace AND c.relname IN ('notifications_baseline','notifications_candidate','notifications_replacement') ORDER BY c.relname, i.relname;"
           } > artifacts/notification-index-strategies.txt 2>&1
 
-      - name: Compare repeated isolated index write overhead
+      - name: Measure autocommit index write overhead
         run: |
           set -euo pipefail
-          psql -X -v ON_ERROR_STOP=1 > artifacts/write-overhead-comparison.txt 2>&1 <<'SQL'
-          DO $$
-          DECLARE
-            trial integer;
-            started_at timestamptz;
-            elapsed_ms numeric;
-          BEGIN
-            FOR trial IN 1..6 LOOP
-              IF trial % 2 = 1 THEN
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.posts_baseline (id, author_id, body)
-                SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       'Disposable write ' || n
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'posts baseline trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.posts_baseline WHERE id IN (SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
+          mkdir -p artifacts/write-overhead/plans
+          cd apps/api
+          node --input-type=module <<'JS'
+          import { Client } from "pg";
+          import { performance } from "node:perf_hooks";
+          import { mkdir, writeFile } from "node:fs/promises";
 
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.posts_candidate (id, author_id, body)
-                SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       'Disposable write ' || n
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'posts candidate trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.posts_candidate WHERE id IN (SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
-              ELSE
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.posts_candidate (id, author_id, body)
-                SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       'Disposable write ' || n
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'posts candidate trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.posts_candidate WHERE id IN (SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
+          const client = new Client();
+          const runId = process.env.GITHUB_RUN_ID ?? "local";
+          const warmupTrials = 3;
+          const measuredTrials = 12;
+          const rowCount = 5000;
+          const groups = [
+            {
+              key: "posts",
+              kind: "posts",
+              variants: [
+                { label: "baseline", table: "benchmark.posts_baseline" },
+                { label: "candidate", table: "benchmark.posts_candidate" }
+              ]
+            },
+            {
+              key: "notifications-additive",
+              kind: "notifications",
+              variants: [
+                { label: "baseline", table: "benchmark.notifications_baseline" },
+                { label: "candidate", table: "benchmark.notifications_candidate" }
+              ]
+            },
+            {
+              key: "notifications-replacement",
+              kind: "notifications",
+              variants: [
+                { label: "baseline", table: "benchmark.notifications_baseline" },
+                { label: "replacement", table: "benchmark.notifications_replacement" }
+              ]
+            }
+          ];
+          const results = [];
 
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.posts_baseline (id, author_id, body)
-                SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       'Disposable write ' || n
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'posts baseline trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.posts_baseline WHERE id IN (SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
-              END IF;
+          function insertSql(group, table) {
+            if (group.kind === "posts") {
+              return `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+                INSERT INTO ${table} (id, author_id, body)
+                SELECT md5($1::text || n::text)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1)::text)::uuid,
+                       'Disposable autocommit benchmark write ' || n
+                FROM generate_series(1, ${rowCount}) AS series(n)`;
+            }
+            return `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+              INSERT INTO ${table} (id, recipient_id, actor_id, type)
+              SELECT md5($1::text || n::text)::uuid,
+                     md5('kukugram-bench-user-' || (mod(n, 12000) + 1)::text)::uuid,
+                     md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1)::text)::uuid,
+                     'follow'
+              FROM generate_series(1, ${rowCount}) AS series(n)`;
+          }
 
-              IF trial % 2 = 1 THEN
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
+          function summarize(values) {
+            const sorted = [...values].sort((a, b) => a - b);
+            const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+            const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+            const median = sorted.length % 2
+              ? sorted[(sorted.length - 1) / 2]
+              : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+            const stdev = Math.sqrt(variance);
+            return {
+              median_ms: median,
+              min_ms: sorted[0],
+              max_ms: sorted.at(-1),
+              stdev_ms: stdev,
+              cv_pct: mean === 0 ? 0 : (stdev / mean) * 100
+            };
+          }
 
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.notifications_candidate (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'notifications candidate trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.notifications_candidate WHERE id IN (SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
-              ELSE
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.notifications_candidate (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'notifications candidate trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.notifications_candidate WHERE id IN (SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
+          async function measure(group, variant, phase, trial) {
+            const prefix = `kukugram-${runId}-${group.key}-${phase}-${trial}-`;
+            const startedAt = performance.now();
+            const result = await client.query(insertSql(group, variant.table), [prefix]);
+            const clientRoundTripMs = performance.now() - startedAt;
+            const explainValue = result.rows[0]["QUERY PLAN"] ?? Object.values(result.rows[0])[0];
+            const plan = Array.isArray(explainValue) ? explainValue[0] : JSON.parse(explainValue)[0];
+            const planningMs = Number(plan["Planning Time"] ?? 0);
+            const executionMs = Number(plan["Execution Time"] ?? 0);
+            results.push({
+              group: group.key,
+              variant: variant.label,
+              phase,
+              trial,
+              inserted_rows: rowCount,
+              planning_ms: planningMs,
+              server_execution_ms: executionMs,
+              autocommit_client_round_trip_ms: clientRoundTripMs,
+              client_over_server_ms: clientRoundTripMs - planningMs - executionMs
+            });
+            if (phase === "measured") {
+              const filename = `../artifacts/write-overhead/plans/${group.key}-${variant.label}-trial-${trial}.json`;
+              await writeFile(filename, JSON.stringify(plan, null, 2) + "\n");
+            }
+          }
 
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
-              END IF;
-            END LOOP;
-          END $$;
-          SQL
+          await mkdir("../artifacts/write-overhead/plans", { recursive: true });
+          await client.connect();
+          try {
+            for (const group of groups) {
+              if (group.key === "notifications-replacement") {
+                await client.query("TRUNCATE benchmark.notifications_baseline, benchmark.notifications_replacement");
+              }
+              for (let trial = 1; trial <= warmupTrials; trial += 1) {
+                const order = trial % 2 ? group.variants : [...group.variants].reverse();
+                for (const variant of order) await measure(group, variant, "warmup", trial);
+              }
+              for (let trial = 1; trial <= measuredTrials; trial += 1) {
+                const order = trial % 2 ? group.variants : [...group.variants].reverse();
+                for (const variant of order) await measure(group, variant, "measured", trial);
+              }
+            }
+          } finally {
+            await client.end();
+          }
 
-      - name: Measure notification replacement write overhead
+          const measured = results.filter((row) => row.phase === "measured");
+          const summaries = [];
+          for (const group of groups) {
+            for (const variant of group.variants) {
+              const rows = measured.filter((row) => row.group === group.key && row.variant === variant.label);
+              const summary = { group: group.key, variant: variant.label, trials: rows.length };
+              for (const metric of ["planning_ms", "server_execution_ms", "autocommit_client_round_trip_ms", "client_over_server_ms"]) {
+                Object.assign(summary, Object.fromEntries(
+                  Object.entries(summarize(rows.map((row) => row[metric])))
+                    .map(([key, value]) => [`${metric}_${key}`, Number(value.toFixed(4))])
+                ));
+              }
+              summaries.push(summary);
+            }
+          }
+
+          const csvRows = [
+            ["group", "variant", "trial", "planning_ms", "server_execution_ms", "autocommit_client_round_trip_ms", "client_over_server_ms"],
+            ...measured.map((row) => [
+              row.group, row.variant, row.trial, row.planning_ms.toFixed(4),
+              row.server_execution_ms.toFixed(4), row.autocommit_client_round_trip_ms.toFixed(4),
+              row.client_over_server_ms.toFixed(4)
+            ])
+          ];
+          await writeFile("../artifacts/write-overhead/raw.json", JSON.stringify(results, null, 2) + "\n");
+          await writeFile("../artifacts/write-overhead/summary.json", JSON.stringify(summaries, null, 2) + "\n");
+          await writeFile("../artifacts/write-overhead/raw.csv", csvRows.map((row) => row.join(",")).join("\n") + "\n");
+          const report = [
+            "Autocommit write benchmark",
+            `Warm-up trials per variant: ${warmupTrials}`,
+            `Measured trials per variant: ${measuredTrials}`,
+            `Rows per INSERT: ${rowCount}`,
+            "Each EXPLAIN ANALYZE INSERT is a standalone autocommit statement; no explicit BEGIN is used.",
+            "server_execution_ms is PostgreSQL's EXPLAIN Execution Time.",
+            "autocommit_client_round_trip_ms measures client send-to-response time after the implicit commit.",
+            "client_over_server_ms subtracts server planning and execution; it includes commit plus protocol/network/client overhead and is NOT a pure commit-time measurement.",
+            "",
+            ...summaries.map((summary) => JSON.stringify(summary))
+          ].join("\n");
+          await writeFile("../artifacts/write-overhead/summary.txt", report + "\n");
+          JS
+
+      - name: Document first-touch cache observations
         run: |
           set -euo pipefail
-          psql -X -v ON_ERROR_STOP=1 > artifacts/notification-replacement-write-overhead.txt 2>&1 <<'SQL'
-          DO $replacement$
-          DECLARE
-            trial integer;
-            started_at timestamptz;
-            elapsed_ms numeric;
-          BEGIN
-            FOR trial IN 1..6 LOOP
-              IF trial % 2 = 1 THEN
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.notifications_replacement (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'notifications replacement trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.notifications_replacement WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
-              ELSE
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.notifications_replacement (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'notifications replacement trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.notifications_replacement WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
-                started_at := clock_timestamp();
-                INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid,
-                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
-                FROM generate_series(1, 5000) AS n;
-                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
-                RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
-                DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
-              END IF;
-            END LOOP;
-          END $replacement$;
-          SQL
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          def load_plan(path):
+              with Path(path).open(encoding="utf-8") as handle:
+                  return json.load(handle)[0]
+
+          def find_index(node, index_name):
+              if node.get("Index Name") == index_name:
+                  return node
+              for child in node.get("Plans", []):
+                  found = find_index(child, index_name)
+                  if found:
+                      return found
+              return None
+
+          lines = [
+              "First-touch cache observations",
+              "",
+              "The single-plan baseline and candidate captures occur at different points in the workflow, after different query and index-build histories.",
+              "They are first-touch observations, NOT a controlled cold-cache comparison.",
+              "PostgreSQL Shared Read Blocks count reads into shared buffers; they do not prove physical disk reads because the operating-system page cache may satisfy them.",
+              "Use the repeated summaries after explicit warm-up for warmed-cache comparisons.",
+              ""
+          ]
+          for phase in ("baseline", "candidate"):
+              for page in ("first", "cursor"):
+                  path = f"artifacts/feed-sparse-{page}-{phase}-plan.json"
+                  payload = load_plan(path)
+                  root = payload["Plan"]
+                  index = find_index(root, "posts_feed_global_cursor")
+                  lines.append(
+                      f"{phase} sparse {page}: execution_ms={payload.get('Execution Time')} "
+                      f"root_shared_reads={root.get('Shared Read Blocks', 0)} "
+                      f"feed_index_shared_reads={(index or {}).get('Shared Read Blocks', 0)}"
+                  )
+          Path("artifacts/cache-observation-notes.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
 
       - name: Capture dataset and index statistics
         if: always()
