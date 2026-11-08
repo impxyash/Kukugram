@@ -1459,11 +1459,7 @@ test("keyboard navigation works in the app", async ({ page }) => {
       outlineWidth: style.outlineWidth
     };
   });
-  expect(focus).toEqual({
-    visible: true,
-    outlineStyle: "solid",
-    outlineWidth: "2px"
-  });
+  expect(focus).toEqual({ visible: true, outlineStyle: "solid", outlineWidth: "2px" });
 });
 
 test("Discover search results are announced", async ({ page }) => {
@@ -1493,9 +1489,7 @@ test("Discover search results are announced", async ({ page }) => {
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();
-  await page
-    .getByRole("textbox", { name: "Search people by name or username" })
-    .fill("friend");
+  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("friend");
   await page.getByRole("button", { name: "Search" }).click();
 
   const status = page.getByRole("status");
