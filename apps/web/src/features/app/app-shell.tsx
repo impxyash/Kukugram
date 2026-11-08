@@ -792,6 +792,7 @@ function Discover({ onError }: { onError: (message: string) => void }) {
   const [loading, setLoading] = useState(false);
   const mountedRequestScope = useRef(createMountedRequestScope());
   const searchRequestSequence = useRef(createSessionRequestSequence());
+  const userActionInFlight = useRef(new Set<string>());
 
   useEffect(() => {
     const scope = createMountedRequestScope();
@@ -829,6 +830,9 @@ function Discover({ onError }: { onError: (message: string) => void }) {
   }
 
   async function toggleFollow(person: User) {
+    const actionKey = `follow:${person.id}`;
+    if (userActionInFlight.current.has(actionKey)) return;
+    userActionInFlight.current.add(actionKey);
     const scope = mountedRequestScope.current;
     try {
       if (person.isFollowing || person.isRequested) {
@@ -858,16 +862,23 @@ function Discover({ onError }: { onError: (message: string) => void }) {
       }
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      userActionInFlight.current.delete(actionKey);
     }
   }
 
   async function mutePerson(person: User) {
+    const actionKey = `mute:${person.id}`;
+    if (userActionInFlight.current.has(actionKey)) return;
+    userActionInFlight.current.add(actionKey);
     const scope = mountedRequestScope.current;
     try {
       await request(`/users/${person.handle}/mute`, { method: "POST" });
       if (scope.isActive()) setUsers((current) => current.filter((item) => item.id !== person.id));
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      userActionInFlight.current.delete(actionKey);
     }
   }
 
@@ -878,12 +889,17 @@ function Discover({ onError }: { onError: (message: string) => void }) {
       )
     )
       return;
+    const actionKey = `block:${person.id}`;
+    if (userActionInFlight.current.has(actionKey)) return;
+    userActionInFlight.current.add(actionKey);
     const scope = mountedRequestScope.current;
     try {
       await request(`/users/${person.handle}/block`, { method: "POST" });
       if (scope.isActive()) setUsers((current) => current.filter((item) => item.id !== person.id));
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      userActionInFlight.current.delete(actionKey);
     }
   }
 

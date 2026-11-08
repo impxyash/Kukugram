@@ -2113,3 +2113,107 @@ test("repeated comment expansion clicks issue only one comments request", async 
   await expect(commentsRegion).toBeVisible();
   expect(commentsCalls).toBe(1);
 });
+
+test("rapid repeated follow clicks issue only one follow request", async ({ page }) => {
+  const person = {
+    id: "00000000-0000-4000-8000-000000000311",
+    handle: "follow-race",
+    displayName: "Follow Race",
+    bio: "A test creator",
+    avatarUrl: null,
+    privacy: "public",
+    isFollowing: false,
+    isRequested: false
+  };
+  let followCalls = 0;
+  let releaseFollow!: () => void;
+  let markFollowPending!: () => void;
+  const followGate = new Promise<void>((resolve) => {
+    releaseFollow = resolve;
+  });
+  const followSeen = new Promise<void>((resolve) => {
+    markFollowPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [] });
+    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === "/v1/users/search") return reply(route, 200, { users: [person] });
+    if (pathname === `/v1/users/${person.handle}/follow` && route.request().method() === "POST") {
+      followCalls += 1;
+      markFollowPending();
+      await followGate;
+      return reply(route, 200, { user: { ...person, isFollowing: true } });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("follow");
+  await page.getByRole("button", { name: "Search" }).click();
+  const follow = page.getByRole("button", { name: "Follow" });
+  await expect(follow).toBeVisible();
+  await follow.click();
+  await followSeen;
+  await follow.click();
+  releaseFollow();
+
+  await expect(page.getByRole("button", { name: "Following" })).toBeVisible();
+  expect(followCalls).toBe(1);
+});
+
+test("rapid repeated mute clicks issue only one mute request", async ({ page }) => {
+  const person = {
+    id: "00000000-0000-4000-8000-000000000321",
+    handle: "mute-race",
+    displayName: "Mute Race",
+    bio: "A test creator",
+    avatarUrl: null,
+    privacy: "public",
+    isFollowing: false,
+    isRequested: false
+  };
+  let muteCalls = 0;
+  let releaseMute!: () => void;
+  let markMutePending!: () => void;
+  const muteGate = new Promise<void>((resolve) => {
+    releaseMute = resolve;
+  });
+  const muteSeen = new Promise<void>((resolve) => {
+    markMutePending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [] });
+    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === "/v1/users/search") return reply(route, 200, { users: [person] });
+    if (pathname === `/v1/users/${person.handle}/mute`) {
+      muteCalls += 1;
+      markMutePending();
+      await muteGate;
+      return reply(route, 200, {});
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("mute");
+  await page.getByRole("button", { name: "Search" }).click();
+  const mute = page.getByRole("button", { name: "Mute" });
+  await expect(mute).toBeVisible();
+  await mute.click();
+  await muteSeen;
+  await mute.click();
+  releaseMute();
+
+  await expect(page.getByText("Mute Race")).toHaveCount(0);
+  expect(muteCalls).toBe(1);
+});
