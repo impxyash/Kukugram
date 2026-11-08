@@ -1178,7 +1178,12 @@ integration("PostgreSQL moderation guarantees", () => {
       const handle = `feed_${userId.replaceAll("-", "").slice(0, 12)}`;
       await database().query(
         "INSERT INTO social.profiles (user_id, handle, display_name, privacy) VALUES ($1, $2, $3, $4)",
-        [userId, handle, kind, kind === "acceptedPrivate" || kind === "pendingPrivate" ? "private" : "public"]
+        [
+          userId,
+          handle,
+          kind,
+          kind === "acceptedPrivate" || kind === "pendingPrivate" ? "private" : "public"
+        ]
       );
     }
 
