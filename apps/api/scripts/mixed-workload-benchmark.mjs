@@ -274,7 +274,7 @@ async function recordQuery(pool, sql, values, record, label, group, variant, wor
 }
 const FEED_SQL = "SELECT p.id, p.body, p.created_at AS \\"createdAt\\", pr.handle, pr.display_name AS \\"displayName\\", pr.avatar_url AS \\"avatarUrl\\", (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS \\"likeCount\\", (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS \\"commentCount\\", EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id AND l.user_id = $1) AS \\"likedByViewer\\", p.author_id AS \\"authorId\\" FROM content.posts p JOIN social.profiles pr ON pr.user_id = p.author_id WHERE p.deleted_at IS NULL AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id AND f.status = 'accepted')) AND NOT EXISTS(SELECT 1 FROM social.mutes m WHERE m.muter_id = $1 AND m.muted_id = p.author_id) AND NOT EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = p.author_id AND b.blocked_id = $1) OR (b.blocker_id = $1 AND b.blocked_id = p.author_id)) AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.profiles x WHERE x.user_id = p.author_id AND x.privacy <> 'private') OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id AND f.status = 'accepted')) AND ($2::timestamptz IS NULL OR (p.created_at, p.id) < ($2::timestamptz, $3::uuid)) ORDER BY p.created_at DESC, p.id DESC LIMIT 51";
 const NOTIFICATION_FIRST_SQL = "SELECT n.id, n.type, n.post_id AS \\"postId\\", n.created_at AS \\"createdAt\\", n.read_at AS \\"readAt\\", p.handle, p.display_name AS \\"displayName\\" FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id WHERE n.recipient_id = $1 ORDER BY n.created_at DESC, n.id DESC LIMIT 51";
-const NOTIFICATION_CURSOR_SQL = "SELECT n.id, n.type, n.post_id AS \\"postId\\", n.created_at AS \\"createdAt\\", n.read_at AS \\"readAt\\", p.handle, p.display_name AS \\"displayName\\" FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id WHERE n.recipient_id = $1 AND (n.created_at, n.id) < (now() - interval '45 days', $2::uuid) ORDER BY n.created_at DESC, n.id DESC LIMIT 51";
+const NOTIFICATION_CURSOR_SQL = "SELECT n.id, n.type, n.post_id AS \\"postId\\", n.created_at AS \\"createdAt\\", n.read_at AS \\"readAt\\", p.handle, p.display_name AS \\"displayName\\" FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id WHERE n.recipient_id = $1 AND (n.created_at, n.id) < (now() - interval '500 minutes', $2::uuid) ORDER BY n.created_at DESC, n.id DESC LIMIT 51";
 
 async function configureVariant(database, kind) {
   const client = await connectDb(database, "kukugram-benchmark-index-variant");
@@ -303,24 +303,22 @@ async function runMarkRead(database, variant) {
   const results = [];
   try {
     const counts = [50, 500, 2_000, 10_000];
+    const recipients = [4, 5, 6, 7].map((n) => deterministicUuid("kukugram-mwb-user-" + n));
     for (let i = 0; i < counts.length; i += 1) {
-      const recipient = deterministicUuid("kukugram-mwb-user-" + (i + 4));
+      const recipient = recipients[i];
       const before = await client.query("SELECT count(*)::int AS count FROM notifications.notifications WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
       if (before.rows[0].count !== counts[i]) throw new Error("Unread fixture count mismatch for " + counts[i]);
+      const beforeOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
       const started = performance.now();
       const updated = await client.query("UPDATE notifications.notifications SET read_at = now() WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
       const elapsed = performance.now() - started;
       const after = await client.query("SELECT count(*)::int AS count FROM notifications.notifications WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
       const idempotent = await client.query("UPDATE notifications.notifications SET read_at = now() WHERE recipient_id = $1 AND read_at IS NULL", [recipient]);
-      if (updated.rowCount !== counts[i] || after.rows[0].count !== 0 || idempotent.rowCount !== 0) {
-        throw new Error("Mark-read correctness gate failed for unread count " + counts[i]);
-      }
-      results.push({ variant, unread_rows: counts[i], updated_rows: updated.rowCount, second_call_rows: idempotent.rowCount, latency_ms: Number(elapsed.toFixed(4)), remaining_unread: after.rows[0].count });
+      const afterOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
+      if (updated.rowCount !== counts[i] || after.rows[0].count !== 0 || idempotent.rowCount !== 0) throw new Error("Mark-read correctness gate failed for unread count " + counts[i]);
+      if (JSON.stringify(beforeOthers.rows) !== JSON.stringify(afterOthers.rows)) throw new Error("Recipient isolation gate failed: another recipient unread rows changed.");
+      results.push({ variant, unread_rows: counts[i], updated_rows: updated.rowCount, second_call_rows: idempotent.rowCount, latency_ms: Number(elapsed.toFixed(4)), remaining_unread: after.rows[0].count, other_recipients_unchanged: true });
     }
-    const recipients = [4, 5, 6, 7].map((n) => deterministicUuid("kukugram-mwb-user-" + n));
-    const beforeOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
-    const afterOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
-    if (JSON.stringify(beforeOthers.rows) !== JSON.stringify(afterOthers.rows)) throw new Error("Recipient isolation gate failed: another recipient unread rows changed.");
   } finally {
     await client.end();
   }
