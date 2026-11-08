@@ -210,6 +210,4 @@ integration("PostgreSQL feed pagination", () => {
       await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [userIds]);
     }
   }, 30_000);
-    30_000
-  );
 });
