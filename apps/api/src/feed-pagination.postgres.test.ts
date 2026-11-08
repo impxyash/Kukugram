@@ -329,7 +329,7 @@ integration("PostgreSQL feed pagination", () => {
       ].map((user) => user.id);
       expect(actualSearchIds).toEqual(expectedSearchIds);
       expect(actualSearchIds).toHaveLength(52);
-      expect(new Set(actualSearchIds).size).toBe(51);
+      expect(new Set(actualSearchIds).size).toBe(52);
       expect(actualSearchIds).not.toContain(blockedSearchUserId);
     } finally {
       await app.close();
