@@ -509,12 +509,6 @@ describe("social privacy authorization", () => {
             rowCount: allowed ? 1 : 0
           };
         }
-        if (sql.includes("FROM content.posts p")) {
-          return { rows: options.feedRows ?? [], rowCount: options.feedRows?.length ?? 0 };
-        }
-        if (sql.includes("FROM identity.sessions")) {
-          return { rows: [{ id: viewerId, email: "viewer@example.test" }], rowCount: 1 };
-        }
         if (sql.includes("SELECT (pr.privacy <> 'private'")) {
           return {
             rows: [
@@ -526,6 +520,12 @@ describe("social privacy authorization", () => {
             ],
             rowCount: 1
           };
+        }
+        if (sql.includes("FROM content.posts p")) {
+          return { rows: options.feedRows ?? [], rowCount: options.feedRows?.length ?? 0 };
+        }
+        if (sql.includes("FROM identity.sessions")) {
+          return { rows: [{ id: viewerId, email: "viewer@example.test" }], rowCount: 1 };
         }
         if (sql.includes("FROM social.profiles p JOIN identity.users u")) {
           return {
