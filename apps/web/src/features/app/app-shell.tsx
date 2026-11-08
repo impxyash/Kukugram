@@ -589,7 +589,11 @@ function PostCard({
     return () => scope.invalidate();
   }, []);
 
+  const likeRequestInFlight = useRef(false);
+
   async function toggleLike() {
+    if (likeRequestInFlight.current) return;
+    likeRequestInFlight.current = true;
     const scope = mountedRequestScope.current;
     try {
       await request(`/posts/${post.id}/like`, { method: post.likedByViewer ? "DELETE" : "POST" });
@@ -601,6 +605,8 @@ function PostCard({
       });
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      likeRequestInFlight.current = false;
     }
   }
 

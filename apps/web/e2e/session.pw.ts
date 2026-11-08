@@ -1807,7 +1807,7 @@ test("rapid repeated likes on one post issue only one request", async ({ page })
   await like.click();
   releaseLike();
 
-  await expect(page.getByRole("button", { name: "Unlike post by Single Like. 1 likes" }))
-    .toHaveAttribute("aria-pressed", "true");
+  const unlike = page.getByRole("button", { name: "Unlike post by Single Like. 1 likes" });
+  await expect(unlike).toHaveAttribute("aria-pressed", "true");
   expect(likeCalls).toBe(1);
 });
