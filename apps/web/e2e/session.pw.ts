@@ -76,6 +76,34 @@ const unavailable = (route: Route) => reply(route, 503, { title: "Service unavai
 const unauthenticated = (route: Route) => reply(route, 401, { title: "Authentication required" });
 const authenticated = (route: Route) => reply(route, 200, { user });
 
+test("keyboard navigation exposes a visible focus ring on auth inputs", async ({ page }) => {
+  await installApi(page, { me: async (_call, route) => unauthenticated(route) });
+  await page.goto("/");
+
+  const displayName = page.locator('.auth-card-modern input[name="displayName"]');
+  for (let index = 0; index < 12; index += 1) {
+    if (await displayName.evaluate((element) => element === document.activeElement)) break;
+    await page.keyboard.press("Tab");
+  }
+
+  await expect(displayName).toBeFocused();
+  const focus = await displayName.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      visible: element.matches(":focus-visible"),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      outlineColor: style.outlineColor
+    };
+  });
+  expect(focus).toEqual({
+    visible: true,
+    outlineStyle: "solid",
+    outlineWidth: "2px",
+    outlineColor: "rgb(95, 53, 168)"
+  });
+});
+
 test("starts in the unauthenticated state when the session is missing", async ({ page }) => {
   await installApi(page, { me: async (_call, route) => unauthenticated(route) });
   await page.goto("/");
