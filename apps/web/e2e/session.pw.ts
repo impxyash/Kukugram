@@ -2707,3 +2707,91 @@ test("a failed feed page keeps its cursor so Load more can retry", async ({ page
   await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
   expect(feedCalls).toBe(3);
 });
+
+
+test("Discover Load more requests the query-bound search cursor once and stops at the final page", async ({
+  page
+}) => {
+  const makePerson = (id: string, handle: string, displayName: string) => ({
+    id,
+    handle,
+    displayName,
+    bio: null,
+    avatarUrl: null,
+    followers: "0",
+    following: "0",
+    isFollowing: false,
+    isRequested: false,
+    privacy: "public" as const,
+    canViewContent: true,
+    isBlocked: false
+  });
+  const firstPerson = makePerson(
+    "00000000-0000-4000-8000-000000000501",
+    "first_creator",
+    "First Search Result"
+  );
+  const secondPerson = makePerson(
+    "00000000-0000-4000-8000-000000000502",
+    "second_creator",
+    "Second Search Result"
+  );
+  let searchCalls = 0;
+  let releaseSecondPage!: () => void;
+  let markSecondPagePending!: () => void;
+  const secondPagePending = new Promise<void>((resolve) => {
+    markSecondPagePending = resolve;
+  });
+  const secondPageGate = new Promise<void>((resolve) => {
+    releaseSecondPage = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/me") return reply(route, 200, { user });
+    if (url.pathname === "/v1/feed") return reply(route, 200, { posts: [] });
+    if (url.pathname === "/v1/notifications") {
+      return reply(route, 200, { notifications: [] });
+    }
+    if (url.pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    if (url.pathname === "/v1/users/search") {
+      searchCalls += 1;
+      expect(url.searchParams.get("q")).toBe("creator");
+      if (searchCalls === 1) {
+        expect(url.searchParams.has("cursor")).toBe(false);
+        return reply(route, 200, {
+          users: [firstPerson],
+          nextCursor: "search-page-two"
+        });
+      }
+      expect(url.searchParams.get("cursor")).toBe("search-page-two");
+      markSecondPagePending();
+      await secondPageGate;
+      return reply(route, 200, { users: [secondPerson] });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("creator");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByText("First Search Result")).toBeVisible();
+
+  const loadMore = page.getByRole("button", { name: "Load more people" });
+  await expect(loadMore).toBeVisible();
+  await loadMore.evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await secondPagePending;
+  expect(searchCalls).toBe(2);
+  await expect(page.getByRole("button", { name: "Loading..." })).toBeDisabled();
+
+  releaseSecondPage();
+  await expect(page.getByText("Second Search Result")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load more people" })).toHaveCount(0);
+  expect(searchCalls).toBe(2);
+});
