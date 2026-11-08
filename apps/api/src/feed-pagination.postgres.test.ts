@@ -303,7 +303,6 @@ integration("PostgreSQL feed pagination", () => {
       });
       expect(mismatchedQueryCursor.statusCode).toBe(400);
 
-
       const malformedCursor = await app.inject({
         method: "GET",
         url: "/v1/users/search?q=fixture&cursor=not-a-valid-cursor",
