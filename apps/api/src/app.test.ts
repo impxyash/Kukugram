@@ -651,7 +651,9 @@ describe("social privacy authorization", () => {
       headers: { cookie }
     });
     expect(response.statusCode).toBe(400);
-    expect(pool.statements.some((sql) => sql.includes("FROM notifications.notifications n"))).toBe(false);
+    expect(
+      pool.statements.some((sql) => sql.includes("FROM notifications.notifications n"))
+    ).toBe(false);
     await app.close();
   });
 
