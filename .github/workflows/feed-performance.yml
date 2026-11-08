@@ -291,6 +291,14 @@ jobs:
           CREATE TABLE benchmark.posts_candidate (LIKE content.posts INCLUDING ALL);
           CREATE TABLE benchmark.notifications_baseline (LIKE notifications.notifications INCLUDING ALL);
           CREATE TABLE benchmark.notifications_candidate (LIKE notifications.notifications INCLUDING ALL);
+          INSERT INTO benchmark.posts_baseline SELECT * FROM content.posts;
+          INSERT INTO benchmark.posts_candidate SELECT * FROM content.posts;
+          INSERT INTO benchmark.notifications_baseline SELECT * FROM notifications.notifications;
+          INSERT INTO benchmark.notifications_candidate SELECT * FROM notifications.notifications;
+          ANALYZE benchmark.posts_baseline;
+          ANALYZE benchmark.posts_candidate;
+          ANALYZE benchmark.notifications_baseline;
+          ANALYZE benchmark.notifications_candidate;
           SQL
 
       - name: Create disposable global cursor index candidate
@@ -302,6 +310,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_notifications_recipient_cursor_candidate ON benchmark.notifications_candidate (recipient_id, created_at DESC, id DESC)"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE content.posts"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE notifications.notifications"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE benchmark.posts_candidate"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE benchmark.notifications_candidate"
 
       - name: Capture candidate-index query plans
         run: |
@@ -446,87 +456,87 @@ jobs:
           BEGIN
             FOR trial IN 1..6 LOOP
               IF trial % 2 = 1 THEN
-                TRUNCATE benchmark.posts_baseline;
                 started_at := clock_timestamp();
                 INSERT INTO benchmark.posts_baseline (id, author_id, body)
-                SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
                        'Disposable write ' || n
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'posts baseline trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.posts_baseline WHERE id IN (SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
 
-                TRUNCATE benchmark.posts_candidate;
                 started_at := clock_timestamp();
                 INSERT INTO benchmark.posts_candidate (id, author_id, body)
-                SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
                        'Disposable write ' || n
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'posts candidate trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.posts_candidate WHERE id IN (SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
               ELSE
-                TRUNCATE benchmark.posts_candidate;
                 started_at := clock_timestamp();
                 INSERT INTO benchmark.posts_candidate (id, author_id, body)
-                SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
                        'Disposable write ' || n
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'posts candidate trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.posts_candidate WHERE id IN (SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
 
-                TRUNCATE benchmark.posts_baseline;
                 started_at := clock_timestamp();
                 INSERT INTO benchmark.posts_baseline (id, author_id, body)
-                SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
                        'Disposable write ' || n
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'posts baseline trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.posts_baseline WHERE id IN (SELECT md5('kukugram-write-test-post-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
               END IF;
 
               IF trial % 2 = 1 THEN
-                TRUNCATE benchmark.notifications_baseline;
                 started_at := clock_timestamp();
                 INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
                        NULL, 'follow'
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
 
-                TRUNCATE benchmark.notifications_candidate;
                 started_at := clock_timestamp();
                 INSERT INTO benchmark.notifications_candidate (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
                        NULL, 'follow'
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'notifications candidate trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.notifications_candidate WHERE id IN (SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
               ELSE
-                TRUNCATE benchmark.notifications_candidate;
                 started_at := clock_timestamp();
                 INSERT INTO benchmark.notifications_candidate (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
                        NULL, 'follow'
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'notifications candidate trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.notifications_candidate WHERE id IN (SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
 
-                TRUNCATE benchmark.notifications_baseline;
                 started_at := clock_timestamp();
                 INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
-                SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
                        NULL, 'follow'
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
               END IF;
             END LOOP;
           END $;
