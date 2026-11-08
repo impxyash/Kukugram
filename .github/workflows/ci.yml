@@ -46,6 +46,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/api/src/feed-pagination.postgres.test.ts && git diff -- apps/api/src/feed-pagination.postgres.test.ts
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
