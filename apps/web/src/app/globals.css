@@ -1065,3 +1065,14 @@ textarea:focus {
     font-size: 29px;
   }
 }
+
+/* Keep keyboard focus visible even where form controls reset their outline. */
+:is(input, textarea, select):focus-visible {
+  outline: 2px solid #d5ff58;
+  outline-offset: 3px;
+}
+
+.auth-card-modern input:focus-visible {
+  outline: 2px solid #5f35a8;
+  outline-offset: 3px;
+}
