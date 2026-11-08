@@ -199,3 +199,40 @@ describe("mounted request scope", () => {
     expect(committed).toEqual(["account-b-data"]);
   });
 });
+
+
+describe("feed cursor bootstrap", () => {
+  it("preserves the initial feed cursor for the authenticated session", async () => {
+    const requester = vi.fn(<T>(path: string): Promise<T> => {
+      const values = {
+        "/me": { user: { id: "user-1" } },
+        "/feed": { posts: [{ id: "post-1" }], nextCursor: "cursor-user-1-page-2" },
+        "/notifications": { notifications: [] }
+      };
+      return Promise.resolve(values[path as keyof typeof values] as T);
+    });
+
+    await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toMatchObject({
+      status: "authenticated",
+      posts: [{ id: "post-1" }],
+      nextCursor: "cursor-user-1-page-2"
+    });
+  });
+
+  it("leaves the initial cursor undefined when the feed has no next page", async () => {
+    const requester = vi.fn(<T>(path: string): Promise<T> => {
+      const values = {
+        "/me": { user: { id: "user-1" } },
+        "/feed": { posts: [{ id: "post-1" }] },
+        "/notifications": { notifications: [] }
+      };
+      return Promise.resolve(values[path as keyof typeof values] as T);
+    });
+
+    await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toMatchObject({
+      status: "authenticated",
+      posts: [{ id: "post-1" }],
+      nextCursor: undefined
+    });
+  });
+});
