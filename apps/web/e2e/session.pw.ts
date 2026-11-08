@@ -2535,6 +2535,7 @@ test("a pending feed page from account A cannot append after switching to accoun
   await page.getByRole("button", { name: "Retry" }).click();
 
   await expect(page.getByText("Account B feed item")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
   await expect(page.getByText("Account A feed item")).toHaveCount(0);
   releaseStalePage();
   await expect(page.getByText("Account A stale page")).toHaveCount(0);
