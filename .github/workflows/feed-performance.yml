@@ -448,13 +448,16 @@ jobs:
           CREATE TABLE benchmark.notifications_baseline (LIKE notifications.notifications INCLUDING ALL);
           CREATE TABLE benchmark.notifications_candidate (LIKE notifications.notifications INCLUDING ALL);
           CREATE TABLE benchmark.notifications_replacement (LIKE notifications.notifications INCLUDING ALL);
+          CREATE TABLE benchmark.notifications_replacement_baseline (LIKE notifications.notifications INCLUDING ALL);
           INSERT INTO benchmark.posts_baseline SELECT * FROM content.posts;
           INSERT INTO benchmark.posts_candidate SELECT * FROM content.posts;
           INSERT INTO benchmark.notifications_baseline SELECT * FROM notifications.notifications;
           INSERT INTO benchmark.notifications_candidate SELECT * FROM notifications.notifications;
           INSERT INTO benchmark.notifications_replacement SELECT * FROM notifications.notifications;
+          INSERT INTO benchmark.notifications_replacement_baseline SELECT * FROM notifications.notifications;
           DROP INDEX benchmark.notifications_replacement_recipient_id_created_at_idx;
           ANALYZE benchmark.notifications_replacement;
+          ANALYZE benchmark.notifications_replacement_baseline;
           ANALYZE benchmark.posts_baseline;
           ANALYZE benchmark.posts_candidate;
           ANALYZE benchmark.notifications_baseline;
@@ -818,7 +821,7 @@ jobs:
               key: "notifications-replacement",
               kind: "notifications",
               variants: [
-                { label: "baseline", table: "benchmark.notifications_baseline" },
+                { label: "baseline", table: "benchmark.notifications_replacement_baseline" },
                 { label: "replacement", table: "benchmark.notifications_replacement" }
               ]
             }
@@ -890,9 +893,6 @@ jobs:
           await client.connect();
           try {
             for (const group of groups) {
-              if (group.key === "notifications-replacement") {
-                await client.query("TRUNCATE benchmark.notifications_baseline, benchmark.notifications_replacement");
-              }
               for (let trial = 1; trial <= warmupTrials; trial += 1) {
                 const order = trial % 2 ? group.variants : [...group.variants].reverse();
                 for (const variant of order) await measure(group, variant, "warmup", trial);
