@@ -845,7 +845,7 @@ jobs:
         run: |
           set -euo pipefail
           psql -X -v ON_ERROR_STOP=1 > artifacts/notification-replacement-write-overhead.txt 2>&1 <<'SQL'
-          DO $
+          DO $replacement$
           DECLARE
             trial integer;
             started_at timestamptz;
@@ -892,7 +892,7 @@ jobs:
                 DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
               END IF;
             END LOOP;
-          END $;
+          END $replacement$;
           SQL
 
       - name: Capture dataset and index statistics
