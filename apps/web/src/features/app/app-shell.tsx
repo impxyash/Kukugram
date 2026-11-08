@@ -470,6 +470,7 @@ function AuthScreen({
               {mode === "signup" ? "Already have an account?" : "Don't have an account?"}
               <button
                 className="auth-switch-button"
+                disabled={busy}
                 onClick={() => {
                   setError(null);
                   setMode(mode === "signup" ? "login" : "signup");

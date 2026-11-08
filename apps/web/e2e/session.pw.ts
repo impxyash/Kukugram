@@ -1841,12 +1841,12 @@ test("late authentication errors do not leak across login and signup modes", asy
   await page.getByRole("button", { name: "Create account" }).click();
   await signupSeen;
 
-  await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  const switchMode = page.getByRole("button", { name: "Log in" });
+  await expect(switchMode).toBeDisabled();
   releaseSignup();
 
-  await expect(page.locator(".form-error")).toHaveCount(0);
-  await expect(page.getByLabel("Email address")).toBeVisible();
+  await expect(page.getByText("Stale signup failure")).toBeVisible();
+  await expect(switchMode).toBeEnabled();
 });
 
 test("logout prevents a competing session retry until the request settles", async ({ page }) => {
