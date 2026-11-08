@@ -105,7 +105,8 @@ integration("PostgreSQL feed pagination", () => {
       deletedPublic: randomUUID()
     };
     const authorEntries = Object.entries(authors) as [keyof typeof authors, string][];
-    const userIds = [viewerId, ...authorEntries.map(([, id]) => id)];
+    const searchUserIds: string[] = [];
+    const userIds = [viewerId, ...authorEntries.map(([, id]) => id), ...searchUserIds];
 
     for (const [kind, userId] of [["viewer", viewerId] as const, ...authorEntries]) {
       await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
@@ -254,6 +255,82 @@ integration("PostgreSQL feed pagination", () => {
       expect(actualNotificationIds).toEqual([...expectedNotificationIds].reverse());
       expect(new Set(actualNotificationIds).size).toBe(53);
       expect(actualNotificationIds).not.toContain(otherRecipientNotificationId);
+
+      const expectedSearchIds: string[] = [];
+      let privateSearchUserId: string | undefined;
+      let blockedSearchUserId: string | undefined;
+      for (let index = 1; index <= 53; index += 1) {
+        const searchUserId = randomUUID();
+        const handle = `fixture_${String(index).padStart(3, "0")}`;
+        searchUserIds.push(searchUserId);
+        await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+          searchUserId,
+          `search-${searchUserId}@feed-pagination.integration.test`
+        ]);
+        await database().query(
+          "INSERT INTO social.profiles (user_id, handle, display_name, privacy) VALUES ($1, $2, $3, $4)",
+          [searchUserId, handle, `Fixture ${index}`, index === 1 ? "private" : "public"]
+        );
+        if (index === 1) privateSearchUserId = searchUserId;
+        else if (index === 2) blockedSearchUserId = searchUserId;
+        else expectedSearchIds.push(searchUserId);
+      }
+      await database().query("INSERT INTO social.blocks (blocker_id, blocked_id) VALUES ($1, $2)", [
+        viewerId,
+        blockedSearchUserId
+      ]);
+
+      const firstSearchPage = await app.inject({
+        method: "GET",
+        url: "/v1/users/search?q=fixture",
+        headers
+      });
+      expect(firstSearchPage.statusCode).toBe(200);
+      const firstSearchBody = firstSearchPage.json<{
+        users: Array<{ id: string; handle: string; canViewContent: boolean }>;
+        nextCursor?: string;
+      }>();
+      expect(firstSearchBody.users).toHaveLength(20);
+      expect(firstSearchBody.nextCursor).toEqual(expect.any(String));
+      expect(firstSearchBody.users[0]?.handle).toBe("fixture_001");
+      expect(firstSearchBody.users[0]?.id).toBe(privateSearchUserId);
+      expect(firstSearchBody.users[0]?.canViewContent).toBe(false);
+
+      const secondSearchPage = await app.inject({
+        method: "GET",
+        url: `/v1/users/search?q=FIXTURE&cursor=${encodeURIComponent(firstSearchBody.nextCursor!)}`,
+        headers
+      });
+      expect(secondSearchPage.statusCode).toBe(200);
+      const secondSearchBody = secondSearchPage.json<{
+        users: Array<{ id: string; handle: string }>;
+        nextCursor?: string;
+      }>();
+      expect(secondSearchBody.users).toHaveLength(20);
+      expect(secondSearchBody.nextCursor).toEqual(expect.any(String));
+
+      const thirdSearchPage = await app.inject({
+        method: "GET",
+        url: `/v1/users/search?q=fixture&cursor=${encodeURIComponent(secondSearchBody.nextCursor!)}`,
+        headers
+      });
+      expect(thirdSearchPage.statusCode).toBe(200);
+      const thirdSearchBody = thirdSearchPage.json<{
+        users: Array<{ id: string; handle: string }>;
+        nextCursor?: string;
+      }>();
+      expect(thirdSearchBody.users).toHaveLength(11);
+      expect(thirdSearchBody.nextCursor).toBeUndefined();
+
+      const actualSearchIds = [
+        ...firstSearchBody.users,
+        ...secondSearchBody.users,
+        ...thirdSearchBody.users
+      ].map((user) => user.id);
+      expect(actualSearchIds).toEqual(expectedSearchIds);
+      expect(actualSearchIds).toHaveLength(51);
+      expect(new Set(actualSearchIds).size).toBe(51);
+      expect(actualSearchIds).not.toContain(blockedSearchUserId);
     } finally {
       await app.close();
       await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [userIds]);

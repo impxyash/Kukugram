@@ -282,27 +282,15 @@ jobs:
           LIMIT 51;
           SQL
 
-      - name: Measure baseline insert overhead
+      - name: Prepare isolated write-overhead tables
         run: |
           set -euo pipefail
-          psql -X -v ON_ERROR_STOP=1 > artifacts/write-overhead-baseline.txt <<'SQL'
-          \timing on
-          BEGIN;
-          INSERT INTO content.posts (id, author_id, body)
-          SELECT md5('kukugram-write-test-post-' || n)::uuid,
-                 md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                 'Disposable baseline write ' || n
-          FROM generate_series(1, 5000) AS n;
-          DELETE FROM content.posts
-          WHERE id IN (SELECT md5('kukugram-write-test-post-' || n)::uuid FROM generate_series(1, 5000) AS n);
-          INSERT INTO notifications.notifications (id, recipient_id, actor_id, type)
-          SELECT md5('kukugram-write-test-notice-' || n)::uuid,
-                 md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                 NULL, 'follow'
-          FROM generate_series(1, 5000) AS n;
-          DELETE FROM notifications.notifications
-          WHERE id IN (SELECT md5('kukugram-write-test-notice-' || n)::uuid FROM generate_series(1, 5000) AS n);
-          ROLLBACK;
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA benchmark;
+          CREATE TABLE benchmark.posts_baseline (LIKE content.posts INCLUDING ALL);
+          CREATE TABLE benchmark.posts_candidate (LIKE content.posts INCLUDING ALL);
+          CREATE TABLE benchmark.notifications_baseline (LIKE notifications.notifications INCLUDING ALL);
+          CREATE TABLE benchmark.notifications_candidate (LIKE notifications.notifications INCLUDING ALL);
           SQL
 
       - name: Create disposable global cursor index candidate
@@ -310,6 +298,8 @@ jobs:
           set -euo pipefail
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX posts_feed_global_cursor_candidate ON content.posts (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX notifications_recipient_cursor_candidate ON notifications.notifications (recipient_id, created_at DESC, id DESC)"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_posts_global_cursor_candidate ON benchmark.posts_candidate (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_notifications_recipient_cursor_candidate ON benchmark.notifications_candidate (recipient_id, created_at DESC, id DESC)"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE content.posts"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE notifications.notifications"
 
@@ -444,27 +434,102 @@ jobs:
           LIMIT 51;
           SQL
 
-      - name: Measure candidate insert overhead
+      - name: Compare repeated isolated index write overhead
         run: |
           set -euo pipefail
-          psql -X -v ON_ERROR_STOP=1 > artifacts/write-overhead-candidate.txt <<'SQL'
-          \timing on
-          BEGIN;
-          INSERT INTO content.posts (id, author_id, body)
-          SELECT md5('kukugram-write-test-post-' || n)::uuid,
-                 md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                 'Disposable candidate write ' || n
-          FROM generate_series(1, 5000) AS n;
-          DELETE FROM content.posts
-          WHERE id IN (SELECT md5('kukugram-write-test-post-' || n)::uuid FROM generate_series(1, 5000) AS n);
-          INSERT INTO notifications.notifications (id, recipient_id, actor_id, type)
-          SELECT md5('kukugram-write-test-notice-' || n)::uuid,
-                 md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                 NULL, 'follow'
-          FROM generate_series(1, 5000) AS n;
-          DELETE FROM notifications.notifications
-          WHERE id IN (SELECT md5('kukugram-write-test-notice-' || n)::uuid FROM generate_series(1, 5000) AS n);
-          ROLLBACK;
+          psql -X -v ON_ERROR_STOP=1 > artifacts/write-overhead-comparison.txt 2>&1 <<'SQL'
+          DO $
+          DECLARE
+            trial integer;
+            started_at timestamptz;
+            elapsed_ms numeric;
+          BEGIN
+            FOR trial IN 1..6 LOOP
+              IF trial % 2 = 1 THEN
+                TRUNCATE benchmark.posts_baseline;
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.posts_baseline (id, author_id, body)
+                SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       'Disposable write ' || n
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'posts baseline trial %: % ms', trial, round(elapsed_ms, 3);
+
+                TRUNCATE benchmark.posts_candidate;
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.posts_candidate (id, author_id, body)
+                SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       'Disposable write ' || n
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'posts candidate trial %: % ms', trial, round(elapsed_ms, 3);
+              ELSE
+                TRUNCATE benchmark.posts_candidate;
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.posts_candidate (id, author_id, body)
+                SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       'Disposable write ' || n
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'posts candidate trial %: % ms', trial, round(elapsed_ms, 3);
+
+                TRUNCATE benchmark.posts_baseline;
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.posts_baseline (id, author_id, body)
+                SELECT md5('kukugram-write-test-post-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       'Disposable write ' || n
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'posts baseline trial %: % ms', trial, round(elapsed_ms, 3);
+              END IF;
+
+              IF trial % 2 = 1 THEN
+                TRUNCATE benchmark.notifications_baseline;
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
+                SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       NULL, 'follow'
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
+
+                TRUNCATE benchmark.notifications_candidate;
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.notifications_candidate (id, recipient_id, actor_id, type)
+                SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       NULL, 'follow'
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'notifications candidate trial %: % ms', trial, round(elapsed_ms, 3);
+              ELSE
+                TRUNCATE benchmark.notifications_candidate;
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.notifications_candidate (id, recipient_id, actor_id, type)
+                SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       NULL, 'follow'
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'notifications candidate trial %: % ms', trial, round(elapsed_ms, 3);
+
+                TRUNCATE benchmark.notifications_baseline;
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
+                SELECT md5('kukugram-write-test-notice-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       NULL, 'follow'
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
+              END IF;
+            END LOOP;
+          END $;
           SQL
 
       - name: Capture dataset and index statistics
@@ -476,7 +541,7 @@ jobs:
             psql -X -Atc "SELECT version();" || true
             echo
             echo "Table statistics:"
-            psql -X -c "SELECT schemaname, relname, n_live_tup, seq_scan, idx_scan FROM pg_stat_user_tables ORDER BY schemaname, relname;" || true
+            psql -X -c "SELECT schemaname, relname, n_live_tup, seq_scan, idx_scan, pg_relation_size(relid) AS table_bytes, pg_total_relation_size(relid) AS total_bytes FROM pg_stat_user_tables ORDER BY schemaname, relname;" || true
             echo
             echo "Index statistics:"
             psql -X -c "SELECT schemaname, relname, indexrelname, idx_scan, idx_tup_read, idx_tup_fetch, pg_relation_size(indexrelid) AS index_bytes FROM pg_stat_user_indexes ORDER BY schemaname, relname, indexrelname;" || true
