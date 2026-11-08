@@ -1126,7 +1126,10 @@ integration("PostgreSQL moderation guarantees", () => {
       const headers = { cookie: `session=${token}` };
       const firstPage = await app.inject({ method: "GET", url: "/v1/feed", headers });
       expect(firstPage.statusCode).toBe(200);
-      const firstBody = firstPage.json<{ posts: Array<{ id: string }>; nextCursor?: string }>();
+      const firstBody = firstPage.json<{
+        posts: Array<{ id: string }>;
+        nextCursor?: string;
+      }>();
       expect(firstBody.posts).toHaveLength(50);
       expect(firstBody.nextCursor).toEqual(expect.any(String));
 
@@ -1136,7 +1139,10 @@ integration("PostgreSQL moderation guarantees", () => {
         headers
       });
       expect(secondPage.statusCode).toBe(200);
-      const secondBody = secondPage.json<{ posts: Array<{ id: string }>; nextCursor?: string }>();
+      const secondBody = secondPage.json<{
+        posts: Array<{ id: string }>;
+        nextCursor?: string;
+      }>();
       expect(secondBody.posts).toHaveLength(3);
       expect(secondBody.nextCursor).toBeUndefined();
 
