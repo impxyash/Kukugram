@@ -1855,7 +1855,10 @@ test("rapid repeated likes on one post issue only one request", async ({ page })
   const like = page.getByRole("button", { name: "Like post by Single Like. 0 likes" });
   await like.click();
   await likeSeen;
-  await like.click();
+  await expect(like).toBeDisabled();
+  await like.evaluate((button) => {
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
   releaseLike();
 
   const unlike = page.getByRole("button", { name: "Unlike post by Single Like. 1 likes" });
