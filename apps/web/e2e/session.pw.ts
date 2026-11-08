@@ -2603,7 +2603,6 @@ test("logout invalidates an in-flight feed page before it can update the signed-
   await expect(page.locator(".auth-card-modern")).toBeVisible();
 });
 
-
 test("the advanced feed cursor survives leaving Home and returning", async ({ page }) => {
   const makePost = (id: string, body: string) => ({
     id,
@@ -2695,7 +2694,7 @@ test("a failed feed page keeps its cursor so Load more can retry", async ({ page
 
   await page.goto("/");
   await page.getByRole("button", { name: "Load more" }).click();
-  await expect(page.getByRole("alert")).toContainText("Service unavailable");
+  await expect(page.locator(".banner.error")).toContainText("Service unavailable");
   await expect(page.getByRole("button", { name: "Load more" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Load more" }).click();
