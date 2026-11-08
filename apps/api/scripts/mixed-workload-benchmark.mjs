@@ -33,6 +33,7 @@ const settings = {
 const counts = full
   ? { users: 12_000, posts: 400_000, likes: 120_000, comments: 80_000, notifications: 1_200_000 }
   : { users: 1_024, posts: 8_000, likes: 1_200, comments: 800, notifications: 12_000 };
+const datasetEpoch = new Date(Date.UTC(2026, 10, 9, 0, 0, 0)).toISOString();
 const artifactDir = resolve(root, "artifacts/mixed-workload");
 await mkdir(artifactDir, { recursive: true });
 
