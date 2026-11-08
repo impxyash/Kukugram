@@ -161,9 +161,11 @@ export const authUserResponseSchema = z.object({
   user: profileResponseSchema
 });
 
-export const feedQuerySchema = z.object({
-  cursor: z.string().min(1).max(512).optional()
-}).strict();
+export const feedQuerySchema = z
+  .object({
+    cursor: z.string().min(1).max(512).optional()
+  })
+  .strict();
 
 export const feedResponseSchema = z.object({
   posts: z.array(postResponseSchema),
