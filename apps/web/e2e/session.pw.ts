@@ -1434,7 +1434,7 @@ test("PostCard like response is discarded after an identity switch", async ({ pa
   await expect(page.locator(".post-actions button.liked")).toHaveCount(0);
 });
 
-test("keyboard navigation works in authenticated primary navigation", async ({ page }) => {
+test("keyboard navigation works in the app", async ({ page }) => {
   await installApi(page, { me: async (_call, route) => authenticated(route) });
   await page.goto("/");
   const home = page.getByRole("button", { name: "Home" });
@@ -1462,13 +1462,17 @@ test("keyboard navigation works in authenticated primary navigation", async ({ p
   expect(focus).toEqual({ visible: true, outlineStyle: "solid", outlineWidth: "2px" });
 });
 
-test("Discover announces search results in its live region", async ({ page }) => {
+test("Discover search results are announced", async ({ page }) => {
   await page.route("**/v1/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname === "/v1/me") return authenticated(route);
     if (pathname === "/v1/feed") return reply(route, 200, { posts: [] });
-    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
-    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === "/v1/notifications") {
+      return reply(route, 200, { notifications: [] });
+    }
+    if (pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
     if (pathname === "/v1/users/search") {
       return reply(route, 200, {
         users: [
