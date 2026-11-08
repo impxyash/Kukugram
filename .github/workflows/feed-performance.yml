@@ -78,7 +78,7 @@ jobs:
           SELECT md5('kukugram-bench-user-1')::uuid,
                  md5('kukugram-bench-user-' || n)::uuid,
                  CASE WHEN n % 5 = 0 THEN 'pending' ELSE 'accepted' END
-          FROM generate_series(2, 601) AS n;
+          FROM generate_series(2, 661) AS n;
 
           INSERT INTO social.mutes (muter_id, muted_id)
           SELECT md5('kukugram-bench-user-1')::uuid,
