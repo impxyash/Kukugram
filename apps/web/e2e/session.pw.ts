@@ -1583,9 +1583,7 @@ test("PostCard comments region is accessible", async ({ page }) => {
 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
-  await expect(
-    page.getByRole("region", { name: "Comments on Creator's post" })
-  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Comments on Creator's post" })).toBeVisible();
   await expect(region).toHaveAttribute("aria-live", "polite");
   await expect(region).toContainText("A readable comment");
 
