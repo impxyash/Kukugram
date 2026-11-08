@@ -408,13 +408,13 @@ test("pending moderation appeal reviews cannot commit or report errors after an 
         appeals: [
           {
             id: acceptedAppealId,
-            reportId: "00000000-0000-4000-8000-000000000045",
+            reportId: "10000000-0000-4000-8000-000000000045",
             status: "open",
             createdAt: "2026-11-01T00:00:00.000Z"
           },
           {
             id: rejectedAppealId,
-            reportId: "00000000-0000-4000-8000-000000000046",
+            reportId: "20000000-0000-4000-8000-000000000046",
             status: "open",
             createdAt: "2026-11-02T00:00:00.000Z"
           }
@@ -442,11 +442,11 @@ test("pending moderation appeal reviews cannot commit or report errors after an 
   await page.getByRole("button", { name: "Moderation" }).click();
 
   await page.getByRole("button", {
-    name: "Accept appeal for case 00000000"
+    name: "Accept appeal for case 10000000"
   }).click();
   await acceptedSeen;
   await page.getByRole("button", {
-    name: "Reject appeal for case 00000000"
+    name: "Reject appeal for case 20000000"
   }).click();
   await rejectedSeen;
 
