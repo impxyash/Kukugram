@@ -92,126 +92,124 @@ integration("PostgreSQL feed pagination", () => {
     }
   }, 30_000);
 
-  it(
-    "keeps filtered equal-timestamp posts in exact keyset order across page boundaries",
-    async () => {
-      const viewerId = randomUUID();
-      const viewerToken = randomUUID();
-      const authors = {
-        acceptedPublic: randomUUID(),
-        acceptedPrivate: randomUUID(),
-        pendingPrivate: randomUUID(),
-        mutedPublic: randomUUID(),
-        blockedByViewer: randomUUID(),
-        blockedViewer: randomUUID(),
-        deletedPublic: randomUUID()
-      };
-      const authorEntries = Object.entries(authors) as [keyof typeof authors, string][];
-      const userIds = [viewerId, ...authorEntries.map(([, id]) => id)];
-  
-      for (const [kind, userId] of [["viewer", viewerId] as const, ...authorEntries]) {
-        await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
-          userId,
-          `${kind}-${userId}@feed-pagination.integration.test`
-        ]);
-        await database().query(
-          "INSERT INTO social.profiles (user_id, handle, display_name, privacy) VALUES ($1, $2, $3, $4)",
-          [
-            userId,
-            `feed_${userId.replaceAll("-", "").slice(0, 12)}`,
-            kind,
-            kind === "acceptedPrivate" || kind === "pendingPrivate" ? "private" : "public"
-          ]
-        );
-      }
-  
-      await database().query(
-        "INSERT INTO identity.sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '10 minutes')",
-        [randomUUID(), viewerId, hashSessionToken(viewerToken, pepper)]
-      );
-  
-      for (const [kind, authorId] of authorEntries) {
-        await database().query(
-          "INSERT INTO social.follows (follower_id, followee_id, status) VALUES ($1, $2, $3)",
-          [viewerId, authorId, kind === "pendingPrivate" ? "pending" : "accepted"]
-        );
-      }
-      await database().query("INSERT INTO social.mutes (muter_id, muted_id) VALUES ($1, $2)", [
-        viewerId,
-        authors.mutedPublic
+  it("keeps filtered equal-timestamp posts in exact keyset order across page boundaries", async () => {
+    const viewerId = randomUUID();
+    const viewerToken = randomUUID();
+    const authors = {
+      acceptedPublic: randomUUID(),
+      acceptedPrivate: randomUUID(),
+      pendingPrivate: randomUUID(),
+      mutedPublic: randomUUID(),
+      blockedByViewer: randomUUID(),
+      blockedViewer: randomUUID(),
+      deletedPublic: randomUUID()
+    };
+    const authorEntries = Object.entries(authors) as [keyof typeof authors, string][];
+    const userIds = [viewerId, ...authorEntries.map(([, id]) => id)];
+
+    for (const [kind, userId] of [["viewer", viewerId] as const, ...authorEntries]) {
+      await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+        userId,
+        `${kind}-${userId}@feed-pagination.integration.test`
       ]);
       await database().query(
-        "INSERT INTO social.blocks (blocker_id, blocked_id) VALUES ($1, $2), ($3, $1)",
-        [viewerId, authors.blockedByViewer, authors.blockedViewer]
+        "INSERT INTO social.profiles (user_id, handle, display_name, privacy) VALUES ($1, $2, $3, $4)",
+        [
+          userId,
+          `feed_${userId.replaceAll("-", "").slice(0, 12)}`,
+          kind,
+          kind === "acceptedPrivate" || kind === "pendingPrivate" ? "private" : "public"
+        ]
       );
-  
-      const createdAt = new Date("2026-11-08T10:00:00.000Z");
-      const excludedAuthors: Array<keyof typeof authors> = [
-        "pendingPrivate",
-        "mutedPublic",
-        "blockedByViewer",
-        "blockedViewer",
-        "deletedPublic"
-      ];
-      const visibleAuthors = [viewerId, authors.acceptedPublic, authors.acceptedPrivate];
-      const expectedVisibleIds: string[] = [];
-      const excludedIds: string[] = [];
-  
-      for (let index = 1; index <= 72; index += 1) {
-        const isExcluded = index % 4 === 0;
-        const excludedKind = excludedAuthors[(index / 4 - 1) % excludedAuthors.length]!;
-        const authorId = isExcluded
-          ? authors[excludedKind]
-          : visibleAuthors[(index - 1) % visibleAuthors.length]!;
-        const postId = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
-        const deleted = isExcluded && excludedKind === "deletedPublic";
-  
-        await database().query(
-          "INSERT INTO content.posts (id, author_id, body, created_at, deleted_at) VALUES ($1, $2, $3, $4, CASE WHEN $5 THEN $4 ELSE NULL END)",
-          [postId, authorId, `Feed pagination fixture ${index}`, createdAt, deleted]
-        );
-  
-        if (isExcluded) excludedIds.push(postId);
-        else expectedVisibleIds.push(postId);
-      }
-  
-      const appPool = new Pool({ connectionString: isolatedDatabaseUrl, max: 4 });
-      const app = buildApp(appConfig(), appPool);
-      try {
-        const headers = { cookie: `session=${viewerToken}` };
-        const firstPage = await app.inject({ method: "GET", url: "/v1/feed", headers });
-        expect(firstPage.statusCode).toBe(200);
-        const firstBody = firstPage.json<{
-          posts: Array<{ id: string }>;
-          nextCursor?: string;
-        }>();
-        expect(firstBody.posts).toHaveLength(50);
-        expect(firstBody.nextCursor).toEqual(expect.any(String));
-  
-        const secondPage = await app.inject({
-          method: "GET",
-          url: `/v1/feed?cursor=${encodeURIComponent(firstBody.nextCursor!)}`,
-          headers
-        });
-        expect(secondPage.statusCode).toBe(200);
-        const secondBody = secondPage.json<{
-          posts: Array<{ id: string }>;
-          nextCursor?: string;
-        }>();
-        expect(secondBody.posts).toHaveLength(4);
-        expect(secondBody.nextCursor).toBeUndefined();
-  
-        const actualIds = [...firstBody.posts, ...secondBody.posts].map((post) => post.id);
-        const expectedIds = [...expectedVisibleIds].reverse();
-        expect(actualIds).toEqual(expectedIds);
-        expect(actualIds).toHaveLength(54);
-        expect(new Set(actualIds).size).toBe(54);
-        expect(actualIds.some((id) => excludedIds.includes(id))).toBe(false);
-      } finally {
-        await app.close();
-        await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [userIds]);
-      }
-    },
+    }
+
+    await database().query(
+      "INSERT INTO identity.sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '10 minutes')",
+      [randomUUID(), viewerId, hashSessionToken(viewerToken, pepper)]
+    );
+
+    for (const [kind, authorId] of authorEntries) {
+      await database().query(
+        "INSERT INTO social.follows (follower_id, followee_id, status) VALUES ($1, $2, $3)",
+        [viewerId, authorId, kind === "pendingPrivate" ? "pending" : "accepted"]
+      );
+    }
+    await database().query("INSERT INTO social.mutes (muter_id, muted_id) VALUES ($1, $2)", [
+      viewerId,
+      authors.mutedPublic
+    ]);
+    await database().query(
+      "INSERT INTO social.blocks (blocker_id, blocked_id) VALUES ($1, $2), ($3, $1)",
+      [viewerId, authors.blockedByViewer, authors.blockedViewer]
+    );
+
+    const createdAt = new Date("2026-11-08T10:00:00.000Z");
+    const excludedAuthors: Array<keyof typeof authors> = [
+      "pendingPrivate",
+      "mutedPublic",
+      "blockedByViewer",
+      "blockedViewer",
+      "deletedPublic"
+    ];
+    const visibleAuthors = [viewerId, authors.acceptedPublic, authors.acceptedPrivate];
+    const expectedVisibleIds: string[] = [];
+    const excludedIds: string[] = [];
+
+    for (let index = 1; index <= 72; index += 1) {
+      const isExcluded = index % 4 === 0;
+      const excludedKind = excludedAuthors[(index / 4 - 1) % excludedAuthors.length]!;
+      const authorId = isExcluded
+        ? authors[excludedKind]
+        : visibleAuthors[(index - 1) % visibleAuthors.length]!;
+      const postId = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+      const deleted = isExcluded && excludedKind === "deletedPublic";
+
+      await database().query(
+        "INSERT INTO content.posts (id, author_id, body, created_at, deleted_at) VALUES ($1, $2, $3, $4, CASE WHEN $5 THEN now() ELSE NULL END)",
+        [postId, authorId, `Feed pagination fixture ${index}`, createdAt, deleted]
+      );
+
+      if (isExcluded) excludedIds.push(postId);
+      else expectedVisibleIds.push(postId);
+    }
+
+    const appPool = new Pool({ connectionString: isolatedDatabaseUrl, max: 4 });
+    const app = buildApp(appConfig(), appPool);
+    try {
+      const headers = { cookie: `session=${viewerToken}` };
+      const firstPage = await app.inject({ method: "GET", url: "/v1/feed", headers });
+      expect(firstPage.statusCode).toBe(200);
+      const firstBody = firstPage.json<{
+        posts: Array<{ id: string }>;
+        nextCursor?: string;
+      }>();
+      expect(firstBody.posts).toHaveLength(50);
+      expect(firstBody.nextCursor).toEqual(expect.any(String));
+
+      const secondPage = await app.inject({
+        method: "GET",
+        url: `/v1/feed?cursor=${encodeURIComponent(firstBody.nextCursor!)}`,
+        headers
+      });
+      expect(secondPage.statusCode).toBe(200);
+      const secondBody = secondPage.json<{
+        posts: Array<{ id: string }>;
+        nextCursor?: string;
+      }>();
+      expect(secondBody.posts).toHaveLength(4);
+      expect(secondBody.nextCursor).toBeUndefined();
+
+      const actualIds = [...firstBody.posts, ...secondBody.posts].map((post) => post.id);
+      const expectedIds = [...expectedVisibleIds].reverse();
+      expect(actualIds).toEqual(expectedIds);
+      expect(actualIds).toHaveLength(54);
+      expect(new Set(actualIds).size).toBe(54);
+      expect(actualIds.some((id) => excludedIds.includes(id))).toBe(false);
+    } finally {
+      await app.close();
+      await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [userIds]);
+    }
+  }, 30_000);
     30_000
   );
 });
