@@ -454,6 +454,15 @@ describe("social privacy authorization", () => {
         likedByViewer: boolean;
         authorId: string;
       }>;
+      notificationRows?: Array<{
+        id: string;
+        type: "follow" | "follow_request" | "like" | "comment";
+        postId: string | null;
+        createdAt: Date;
+        readAt: Date | null;
+        handle: string | null;
+        displayName: string | null;
+      }>;
     } = {}
   ) {
     const statements: string[] = [];
@@ -519,6 +528,12 @@ describe("social privacy authorization", () => {
               }
             ],
             rowCount: 1
+          };
+        }
+        if (sql.includes("FROM notifications.notifications n")) {
+          return {
+            rows: options.notificationRows ?? [],
+            rowCount: options.notificationRows?.length ?? 0
           };
         }
         if (sql.includes("FROM content.posts p")) {
@@ -624,6 +639,70 @@ describe("social privacy authorization", () => {
     expect(
       pool.statements.some((sql) => sql.includes("INSERT INTO notifications.notifications"))
     ).toBe(true);
+    await app.close();
+  });
+
+  it("rejects malformed notification cursors before querying notifications", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/notifications?cursor=not-a-valid-base64-json",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(pool.statements.some((sql) => sql.includes("FROM notifications.notifications n"))).toBe(false);
+    await app.close();
+  });
+
+  it("uses recipient-scoped timestamp-and-id keyset pagination for notifications", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/notifications",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(200);
+    const queryIndex = pool.statements.findIndex((sql) =>
+      sql.includes("FROM notifications.notifications n")
+    );
+    expect(pool.statements[queryIndex]).toContain("n.recipient_id = $1");
+    expect(pool.statements[queryIndex]).toContain(
+      "(n.created_at, n.id) < ($2::timestamptz, $3::uuid)"
+    );
+    expect(pool.statements[queryIndex]).toContain(
+      "ORDER BY n.created_at DESC, n.id DESC"
+    );
+    expect(pool.statements[queryIndex]).toContain("LIMIT 51");
+    expect(pool.parameters[queryIndex]).toEqual([viewerId, null, null]);
+    await app.close();
+  });
+
+  it("returns 50 notifications and a cursor when a 51st row exists", async () => {
+    const createdAt = new Date("2026-11-08T10:00:00.000Z");
+    const notificationRows = Array.from({ length: 51 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      type: "follow" as const,
+      postId: null,
+      createdAt,
+      readAt: null,
+      handle: null,
+      displayName: null
+    }));
+    const pool = makePool({ notificationRows });
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/notifications",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{ notifications: Array<{ id: string }>; nextCursor?: string }>();
+    expect(body.notifications).toHaveLength(50);
+    expect(body.nextCursor).toEqual(expect.any(String));
+    const decoded = JSON.parse(Buffer.from(body.nextCursor!, "base64url").toString("utf8"));
+    expect(decoded).toEqual({ createdAt: createdAt.toISOString(), id: notificationRows[49]?.id });
     await app.close();
   });
 

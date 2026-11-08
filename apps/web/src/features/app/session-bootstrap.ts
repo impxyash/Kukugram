@@ -4,7 +4,7 @@ type Requester = (path: string) => Promise<unknown>;
 
 type SessionUser = { user: unknown };
 type Feed = { posts: unknown[]; nextCursor?: string };
-type Activity = { notifications: unknown[] };
+type Activity = { notifications: unknown[]; nextCursor?: string };
 
 export type SessionBootstrapResult<TUser, TPost, TNotification> =
   | { status: "unauthenticated"; error: string | null }
@@ -14,6 +14,7 @@ export type SessionBootstrapResult<TUser, TPost, TNotification> =
       posts: TPost[] | undefined;
       nextCursor?: string;
       notifications: TNotification[] | undefined;
+      notificationCursor?: string;
       activityError: boolean;
     };
 
@@ -46,6 +47,9 @@ export async function loadSession<TUser, TPost, TNotification>(
         : undefined,
     ...(feedResult.status === "fulfilled" && feedResult.value.nextCursor
       ? { nextCursor: feedResult.value.nextCursor }
+      : {}),
+    ...(activityResult.status === "fulfilled" && activityResult.value.nextCursor
+      ? { notificationCursor: activityResult.value.nextCursor }
       : {}),
     activityError: feedResult.status === "rejected" || activityResult.status === "rejected"
   };
@@ -106,3 +110,5 @@ export function mergeFeedPosts<TPost extends { id: string }>(
   const seen = new Set(current.map((post) => post.id));
   return [...current, ...incoming.filter((post) => !seen.has(post.id) && seen.add(post.id))];
 }
+
+export const mergeNotifications = mergeFeedPosts;

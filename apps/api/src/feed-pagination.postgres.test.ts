@@ -205,6 +205,55 @@ integration("PostgreSQL feed pagination", () => {
       expect(actualIds).toHaveLength(54);
       expect(new Set(actualIds).size).toBe(54);
       expect(actualIds.some((id) => excludedIds.includes(id))).toBe(false);
+
+      const notificationTimestamp = new Date("2026-11-08T11:00:00.000Z");
+      const expectedNotificationIds: string[] = [];
+      for (let index = 1; index <= 53; index += 1) {
+        const notificationId = `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+        expectedNotificationIds.push(notificationId);
+        await database().query(
+          "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at) VALUES ($1, $2, NULL, 'follow', $3)",
+          [notificationId, viewerId, notificationTimestamp]
+        );
+      }
+      const otherRecipientNotificationId = "20000000-0000-4000-8000-000000000001";
+      await database().query(
+        "INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at) VALUES ($1, $2, NULL, 'follow', $3)",
+        [otherRecipientNotificationId, authors.acceptedPublic, notificationTimestamp]
+      );
+
+      const firstNotificationPage = await app.inject({
+        method: "GET",
+        url: "/v1/notifications",
+        headers
+      });
+      expect(firstNotificationPage.statusCode).toBe(200);
+      const firstNotificationBody = firstNotificationPage.json<{
+        notifications: Array<{ id: string }>;
+        nextCursor?: string;
+      }>();
+      expect(firstNotificationBody.notifications).toHaveLength(50);
+      expect(firstNotificationBody.nextCursor).toEqual(expect.any(String));
+
+      const secondNotificationPage = await app.inject({
+        method: "GET",
+        url: `/v1/notifications?cursor=${encodeURIComponent(firstNotificationBody.nextCursor!)}`,
+        headers
+      });
+      expect(secondNotificationPage.statusCode).toBe(200);
+      const secondNotificationBody = secondNotificationPage.json<{
+        notifications: Array<{ id: string }>;
+        nextCursor?: string;
+      }>();
+      expect(secondNotificationBody.notifications).toHaveLength(3);
+      expect(secondNotificationBody.nextCursor).toBeUndefined();
+      const actualNotificationIds = [
+        ...firstNotificationBody.notifications,
+        ...secondNotificationBody.notifications
+      ].map((notification) => notification.id);
+      expect(actualNotificationIds).toEqual([...expectedNotificationIds].reverse());
+      expect(new Set(actualNotificationIds).size).toBe(53);
+      expect(actualNotificationIds).not.toContain(otherRecipientNotificationId);
     } finally {
       await app.close();
       await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [userIds]);

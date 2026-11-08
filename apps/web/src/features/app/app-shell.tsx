@@ -8,7 +8,8 @@ import {
   createSessionRequestSequence,
   runIfRequestScopeActive,
   loadSession,
-  mergeFeedPosts
+  mergeFeedPosts,
+  mergeNotifications
 } from "./session-bootstrap";
 import type {
   AccountControlResponse,
@@ -96,6 +97,7 @@ export function AppShell() {
   const [feedCursor, setFeedCursor] = useState<string | undefined>();
   const [feedGeneration, setFeedGeneration] = useState(0);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [notificationCursor, setNotificationCursor] = useState<string | undefined>();
   const activeUserId = useRef<string | null>(null);
   const sessionRequestSequence = useRef(createSessionRequestSequence());
   const [tab, setTab] = useState<
@@ -128,6 +130,7 @@ export function AppShell() {
         setFeedCursor(undefined);
         setFeedGeneration((generation) => generation + 1);
         setNotices([]);
+        setNotificationCursor(undefined);
         setError(result.error);
         return;
       }
@@ -152,6 +155,9 @@ export function AppShell() {
         setFeedGeneration((generation) => generation + 1);
       }
       setNotices(activity.notices);
+      if (result.notifications !== undefined || !sameUser) {
+        setNotificationCursor(result.notificationCursor);
+      }
       if (result.activityError) {
         setError("Some of your latest activity could not be loaded. Please refresh and try again.");
       } else {
@@ -257,6 +263,7 @@ export function AppShell() {
                 setFeedCursor(undefined);
                 setFeedGeneration((generation) => generation + 1);
                 setNotices([]);
+                setNotificationCursor(undefined);
                 setError(null);
                 setLoading(false);
               } catch (reason) {
@@ -300,7 +307,15 @@ export function AppShell() {
         )}
         {tab === "discover" && <Discover key={user.id} onError={setError} />}
         {tab === "activity" && (
-          <Activity userId={user.id} notices={notices} setNotices={setNotices} onError={setError} />
+          <Activity
+            key={user.id}
+            userId={user.id}
+            notices={notices}
+            setNotices={setNotices}
+            notificationCursor={notificationCursor}
+            setNotificationCursor={setNotificationCursor}
+            onError={setError}
+          />
         )}
         {tab === "profile" && (
           <Profile
@@ -1081,14 +1096,40 @@ function Activity({
   userId,
   notices,
   setNotices,
+  notificationCursor,
+  setNotificationCursor,
   onError
 }: {
   userId: string;
   notices: Notice[];
   setNotices: Dispatch<SetStateAction<Notice[]>>;
+  notificationCursor: string | undefined;
+  setNotificationCursor: Dispatch<SetStateAction<string | undefined>>;
   onError: (message: string) => void;
 }) {
   const mountedRequestScope = useRef(createMountedRequestScope());
+  const paginationInFlight = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  async function loadMoreNotifications() {
+    if (!notificationCursor || paginationInFlight.current) return;
+    paginationInFlight.current = true;
+    setLoadingMore(true);
+    const scope = mountedRequestScope.current;
+    try {
+      const page = await request<{ notifications: Notice[]; nextCursor?: string }>(
+        `/notifications?cursor=${encodeURIComponent(notificationCursor)}`
+      );
+      if (!scope.isActive()) return;
+      setNotices((current) => mergeNotifications(current, page.notifications));
+      setNotificationCursor(page.nextCursor);
+    } catch (reason) {
+      if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      if (scope.isActive()) setLoadingMore(false);
+      paginationInFlight.current = false;
+    }
+  }
 
   useEffect(() => {
     const scope = createMountedRequestScope();
@@ -1148,6 +1189,16 @@ function Activity({
           <h3>Quiet, for now.</h3>
           <p>Your follows and conversations will collect here.</p>
         </section>
+      )}
+      {notificationCursor && (
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={loadingMore}
+          onClick={() => void loadMoreNotifications()}
+        >
+          {loadingMore ? "Loading..." : "Load more activity"}
+        </button>
       )}
     </>
   );

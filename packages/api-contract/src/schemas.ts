@@ -257,8 +257,15 @@ export const accountControlListResponseSchema = z.object({
   users: z.array(accountControlResponseSchema)
 });
 
+export const notificationQuerySchema = z
+  .object({
+    cursor: z.string().min(1).max(512).optional()
+  })
+  .strict();
+
 export const notificationListResponseSchema = z.object({
-  notifications: z.array(notificationResponseSchema)
+  notifications: z.array(notificationResponseSchema),
+  nextCursor: z.string().min(1).max(512).optional()
 });
 
 export const postCreateResponseSchema = z.object({

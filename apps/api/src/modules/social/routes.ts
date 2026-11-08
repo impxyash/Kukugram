@@ -172,6 +172,17 @@ function encodeFeedCursor(post: PostRow): string {
   ).toString("base64url");
 }
 
+type NotificationCursorRow = { id: string; createdAt: Date };
+
+function encodeNotificationCursor(notification: NotificationCursorRow): string {
+  return Buffer.from(
+    JSON.stringify({
+      createdAt: notification.createdAt.toISOString(),
+      id: notification.id
+    })
+  ).toString("base64url");
+}
+
 function postSelect() {
   return `SELECT p.id, p.body, p.created_at AS "createdAt", pr.handle, pr.display_name AS "displayName", pr.avatar_url AS "avatarUrl",
     (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
@@ -1198,11 +1209,37 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.get("/notifications", async (request) => {
     const current = await requireViewer(request);
-    const result = await app.pool.query(
-      `SELECT n.id, n.type, n.post_id AS "postId", n.created_at AS "createdAt", n.read_at AS "readAt", p.handle, p.display_name AS "displayName" FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id WHERE n.recipient_id = $1 ORDER BY n.created_at DESC LIMIT 50`,
-      [current.id]
+    const query = z
+      .object({ cursor: z.string().min(1).max(512).optional() })
+      .strict()
+      .parse(request.query);
+    const cursor = query.cursor ? decodeFeedCursor(query.cursor) : null;
+    const result = await app.pool.query<{
+      id: string;
+      type: "follow" | "follow_request" | "like" | "comment";
+      postId: string | null;
+      createdAt: Date;
+      readAt: Date | null;
+      handle: string | null;
+      displayName: string | null;
+    }>(
+      `SELECT n.id, n.type, n.post_id AS "postId", n.created_at AS "createdAt", n.read_at AS "readAt", p.handle, p.display_name AS "displayName"
+       FROM notifications.notifications n
+       LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+       WHERE n.recipient_id = $1
+         AND ($2::timestamptz IS NULL OR (n.created_at, n.id) < ($2::timestamptz, $3::uuid))
+       ORDER BY n.created_at DESC, n.id DESC
+       LIMIT 51`,
+      [current.id, cursor?.createdAt ?? null, cursor?.id ?? null]
     );
-    return { notifications: result.rows };
+    const hasMore = result.rows.length > 50;
+    const notifications = result.rows.slice(0, 50);
+    return {
+      notifications,
+      ...(hasMore && notifications.length
+        ? { nextCursor: encodeNotificationCursor(notifications[notifications.length - 1]!) }
+        : {})
+    };
   });
 
   app.post("/notifications/read", async (request) => {

@@ -5,6 +5,7 @@ import {
   createSessionRequestSequence,
   loadSession,
   mergeFeedPosts,
+  mergeNotifications,
   runIfRequestScopeActive
 } from "./session-bootstrap.js";
 import { reconcileSessionActivity } from "./app-shell.js";
@@ -234,6 +235,38 @@ describe("feed cursor bootstrap", () => {
     const result = await loadSession<TestUser, TestPost, TestNotification>(requester);
     expect(result).toMatchObject({ status: "authenticated", posts: [{ id: "post-1" }] });
     expect(result).not.toHaveProperty("nextCursor");
+  });
+});
+
+describe("notification pagination bootstrap", () => {
+  it("preserves the first notification cursor from session bootstrap", async () => {
+    const requester = vi.fn(<T>(path: string): Promise<T> => {
+      const values = {
+        "/me": { user: { id: "user-1" } },
+        "/feed": { posts: [] },
+        "/notifications": {
+          notifications: [{ id: "notice-1" }],
+          nextCursor: "notification-cursor-user-1"
+        }
+      };
+      return Promise.resolve(values[path as keyof typeof values] as T);
+    });
+    await expect(
+      loadSession<TestUser, TestPost, TestNotification>(requester)
+    ).resolves.toMatchObject({
+      status: "authenticated",
+      notifications: [{ id: "notice-1" }],
+      notificationCursor: "notification-cursor-user-1"
+    });
+  });
+
+  it("deduplicates notification pages without changing existing order", () => {
+    expect(
+      mergeNotifications(
+        [{ id: "notice-1" }, { id: "notice-2" }],
+        [{ id: "notice-2" }, { id: "notice-3" }]
+      )
+    ).toEqual([{ id: "notice-1" }, { id: "notice-2" }, { id: "notice-3" }]);
   });
 });
 

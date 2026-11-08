@@ -7,6 +7,7 @@ import {
   commentCreateResponseSchema,
   commentListResponseSchema,
   notificationListResponseSchema,
+  notificationQuerySchema,
   reportCreateResponseSchema,
   appealCreateResponseSchema,
   reportSummaryListResponseSchema,
@@ -107,6 +108,19 @@ describe("API request contracts", () => {
     expect(feedResponseSchema.safeParse({ posts: [], nextCursor: "opaque-cursor" }).success).toBe(
       true
     );
+  });
+
+  it("validates optional strict notification cursors and paginated response shapes", () => {
+    expect(notificationQuerySchema.parse({})).toEqual({});
+    expect(notificationQuerySchema.parse({ cursor: "opaque-cursor" }).cursor).toBe("opaque-cursor");
+    expect(notificationQuerySchema.safeParse({ cursor: "" }).success).toBe(false);
+    expect(notificationQuerySchema.safeParse({ cursor: "x".repeat(513) }).success).toBe(false);
+    expect(notificationQuerySchema.safeParse({ cursor: "x", extra: true }).success).toBe(false);
+    expect(notificationListResponseSchema.safeParse({ notifications: [] }).success).toBe(true);
+    expect(
+      notificationListResponseSchema.safeParse({ notifications: [], nextCursor: "opaque-cursor" })
+        .success
+    ).toBe(true);
   });
 
   it("validates documented feed response shapes", () => {
