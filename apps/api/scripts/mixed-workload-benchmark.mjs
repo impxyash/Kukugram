@@ -317,9 +317,10 @@ async function runMarkRead(database, variant) {
       }
       results.push({ variant, unread_rows: counts[i], updated_rows: updated.rowCount, second_call_rows: idempotent.rowCount, latency_ms: Number(elapsed.toFixed(4)), remaining_unread: after.rows[0].count });
     }
-    const otherRecipient = deterministicUuid("kukugram-mwb-user-5");
-    const otherCount = await client.query("SELECT count(*)::int AS count FROM notifications.notifications WHERE recipient_id = $1 AND read_at IS NULL", [otherRecipient]);
-    if (otherCount.rows[0].count !== 500) throw new Error("Recipient isolation gate failed: another recipient unread rows changed.");
+    const recipients = [4, 5, 6, 7].map((n) => deterministicUuid("kukugram-mwb-user-" + n));
+    const beforeOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
+    const afterOthers = await client.query("SELECT recipient_id, count(*)::int AS count FROM notifications.notifications WHERE recipient_id = ANY($1::uuid[]) AND recipient_id <> $2 AND read_at IS NULL GROUP BY recipient_id ORDER BY recipient_id", [recipients, recipient]);
+    if (JSON.stringify(beforeOthers.rows) !== JSON.stringify(afterOthers.rows)) throw new Error("Recipient isolation gate failed: another recipient unread rows changed.");
   } finally {
     await client.end();
   }
@@ -537,7 +538,7 @@ try {
       }
       const apiOutput = resolve(artifactDir, variant + "-api.json");
       const apiScript = resolve(root, "apps/api/scripts/mixed-workload-api.mts");
-      const child = spawnSync(process.execPath, ["--import", "tsx", apiScript], {
+      const child = spawnSync("pnpm", ["--filter", "@kukugram/api", "exec", "tsx", apiScript], {
         cwd: root,
         encoding: "utf8",
         env: {
