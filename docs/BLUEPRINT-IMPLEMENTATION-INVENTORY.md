@@ -15,7 +15,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 ## Phase 0 — Foundation and product validation
 
 | Requirement                             | Status                               | Evidence / gap                                                                             |
-| ---                                     | ---                                  | ---                                                                                        |
+| --------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------ |
 | TypeScript pnpm monorepo                | Implemented and tested               | Workspace, shared packages, CI                                                             |
 | Next.js consumer web app                | In progress                          | Web shell and landing surface exist; complete primary surfaces are not present             |
 | Fastify modular API                     | In progress                          | Identity/social modules exist; several blueprint modules are absent                        |
@@ -35,7 +35,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 ## Phase 1 — Private MVP social core
 
 | Requirement                                       | Status                               | Evidence / gap                                                                                           |
-| ---                                               | ---                                  | ---                                                                                                      |
+| ------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------- |
 | Email/password signup and login                   | Implemented and tested               | API routes, session tests                                                                                |
 | OAuth sign-in                                     | Not started / not found              | Config placeholders exist; provider flows not implemented                                                |
 | Session lifecycle/logout                          | Implemented and tested               | Opaque hashed sessions, revoke/logout, session E2E                                                       |
@@ -77,7 +77,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 ## Phase 2 — Engagement and realtime beta
 
 | Requirement                                      | Status                  | Evidence / gap                             |
-| ---                                              | ---                     | ---                                        |
+| ------------------------------------------------ | ----------------------- | ------------------------------------------ |
 | Loops short-form video                           | Not started / not found | No implementation found                    |
 | For You ranking v1                               | Not started / not found | No ranker found                            |
 | Recommendation controls / explanations           | Not started / not found | No implementation found                    |
@@ -92,7 +92,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 ## Phase 3 — Public MVP launch
 
 | Requirement                                         | Status                  | Evidence / gap                                                                         |
-| ---                                                 | ---                     | ---                                                                                    |
+| --------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
 | Production scaling and capacity planning            | Not started / not found | No measured load baselines                                                             |
 | Incident response and operational runbooks          | In progress             | Migration rollback and moderation operations docs exist; full incident runbooks absent |
 | CDN/media cost controls                             | Not started / not found | Media/CDN pipeline absent                                                              |
@@ -106,7 +106,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 ## Phase 4 — Creator economy and discovery scale
 
 | Requirement                             | Status                  | Evidence / gap                 |
-| ---                                     | ---                     | ---                            |
+| --------------------------------------- | ----------------------- | ------------------------------ |
 | Creator Studio                          | Not started / not found | No implementation found        |
 | Verification and creator scheduling     | Not started / not found | No implementation found        |
 | Collaborations and branded content      | Not started / not found | No implementation found        |
@@ -116,7 +116,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 ## Phase 5 — Platform expansion
 
 | Requirement                                      | Status                  | Evidence / gap                                        |
-| ---                                              | ---                     | ---                                                   |
+| ------------------------------------------------ | ----------------------- | ----------------------------------------------------- |
 | Native mobile clients                            | Not started / not found | No mobile app found                                   |
 | Advanced recommendation/search infrastructure    | Not started / not found | No implementation found                               |
 | Circles/community features                       | Not started / not found | Product concept only; no implementation found         |
