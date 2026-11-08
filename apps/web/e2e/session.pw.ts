@@ -1174,9 +1174,7 @@ test("changing moderation filters resets expanded report and appeal details", as
   expect(appealDetailCalls).toBe(2);
 });
 
-test(
-  "a pending Discover search from account A cannot update account B after an identity switch",
-  async ({ page }) => {
+test("Discover search response is discarded after an identity switch", async ({ page }) => {
   const accountA = {
     ...user,
     id: "00000000-0000-4000-8000-000000000101",
@@ -1253,7 +1251,7 @@ test(
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
 
-test("a pending Profile edit from account A cannot overwrite account B", async ({ page }) => {
+test("Profile edit response is discarded after an identity switch", async ({ page }) => {
   const accountA = {
     ...user,
     id: "00000000-0000-4000-8000-000000000111",
@@ -1325,9 +1323,7 @@ test("a pending Profile edit from account A cannot overwrite account B", async (
   await expect(page.getByRole("heading", { name: "Account A stale edit" })).toHaveCount(0);
 });
 
-test(
-  "a pending PostCard like response cannot mutate a replacement account feed",
-  async ({ page }) => {
+test("PostCard like response is discarded after an identity switch", async ({ page }) => {
   const accountA = {
     ...user,
     id: "00000000-0000-4000-8000-000000000121",
