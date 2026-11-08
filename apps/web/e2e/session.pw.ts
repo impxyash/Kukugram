@@ -2708,7 +2708,9 @@ test("a failed feed page keeps its cursor so Load more can retry", async ({ page
   expect(feedCalls).toBe(3);
 });
 
-test("a pending Discover pagination response is discarded after the component unmounts", async ({ page }) => {
+test("a pending Discover pagination response is discarded after the component unmounts", async ({
+  page
+}) => {
   const firstPerson = {
     id: "00000000-0000-4000-8000-000000000601",
     handle: "lifecycle_creator",
