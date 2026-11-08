@@ -428,12 +428,13 @@ jobs:
           CREATE TABLE benchmark.posts_candidate (LIKE content.posts INCLUDING ALL);
           CREATE TABLE benchmark.notifications_baseline (LIKE notifications.notifications INCLUDING ALL);
           CREATE TABLE benchmark.notifications_candidate (LIKE notifications.notifications INCLUDING ALL);
-          CREATE TABLE benchmark.notifications_replacement AS SELECT * FROM notifications.notifications;
-          ALTER TABLE benchmark.notifications_replacement ADD PRIMARY KEY (id);
+          CREATE TABLE benchmark.notifications_replacement (LIKE notifications.notifications INCLUDING ALL);
           INSERT INTO benchmark.posts_baseline SELECT * FROM content.posts;
           INSERT INTO benchmark.posts_candidate SELECT * FROM content.posts;
           INSERT INTO benchmark.notifications_baseline SELECT * FROM notifications.notifications;
           INSERT INTO benchmark.notifications_candidate SELECT * FROM notifications.notifications;
+          INSERT INTO benchmark.notifications_replacement SELECT * FROM notifications.notifications;
+          DROP INDEX benchmark.notifications_replacement_recipient_id_created_at_idx;
           ANALYZE benchmark.notifications_replacement;
           ANALYZE benchmark.posts_baseline;
           ANALYZE benchmark.posts_candidate;
