@@ -1433,3 +1433,56 @@ test("PostCard like response is discarded after an identity switch", async ({ pa
   releaseLike();
   await expect(page.locator(".post-actions button.liked")).toHaveCount(0);
 });
+
+test("authenticated primary navigation is keyboard reachable in visual order", async ({ page }) => {
+  await installApi(page, { me: async (_call, route) => authenticated(route) });
+  await page.goto("/");
+  const home = page.getByRole("button", { name: "Home" });
+  const discover = page.getByRole("button", { name: "Discover" });
+  const activity = page.getByRole("button", { name: "Activity" });
+  const profile = page.getByRole("button", { name: "Profile" });
+
+  await home.focus();
+  await expect(home).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(discover).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(activity).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(profile).toBeFocused();
+
+  const focus = await profile.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      visible: element.matches(":focus-visible"),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth
+    };
+  });
+  expect(focus).toEqual({ visible: true, outlineStyle: "solid", outlineWidth: "2px" });
+});
+
+test("Discover announces completed search results through its live status region", async ({ page }) => {
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [] });
+    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === "/v1/users/search") {
+      return reply(route, 200, {
+        users: [{ ...user, id: "00000000-0000-4000-8000-000000000077", handle: "discover-friend", displayName: "Discover Friend" }]
+      });
+    }
+    return reply(route, 200, {});
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("friend");
+  await page.getByRole("button", { name: "Search" }).click();
+
+  const status = page.getByRole("status");
+  await expect(status).toHaveText("1 people found.");
+  await expect(page.getByText("Discover Friend")).toBeVisible();
+  await expect(page.locator(".results")).toHaveAttribute("aria-busy", "false");
+});
