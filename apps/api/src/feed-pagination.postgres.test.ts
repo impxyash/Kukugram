@@ -296,6 +296,28 @@ integration("PostgreSQL feed pagination", () => {
       expect(firstSearchBody.users[0]?.id).toBe(privateSearchUserId);
       expect(firstSearchBody.users[0]?.canViewContent).toBe(false);
 
+      const mismatchedQueryCursor = await app.inject({
+        method: "GET",
+        url: `/v1/users/search?q=another-query&cursor=${encodeURIComponent(firstSearchBody.nextCursor!)}`,
+        headers
+      });
+      expect(mismatchedQueryCursor.statusCode).toBe(400);
+      expect(mismatchedQueryCursor.json<{ message: string }>().message).toContain("cursor is invalid");
+
+      const malformedCursor = await app.inject({
+        method: "GET",
+        url: "/v1/users/search?q=fixture&cursor=not-a-valid-cursor",
+        headers
+      });
+      expect(malformedCursor.statusCode).toBe(400);
+
+      const noncanonicalCursor = await app.inject({
+        method: "GET",
+        url: `/v1/users/search?q=fixture&cursor=${encodeURIComponent(`${firstSearchBody.nextCursor!}=`)}`,
+        headers
+      });
+      expect(noncanonicalCursor.statusCode).toBe(400);
+
       const secondSearchPage = await app.inject({
         method: "GET",
         url: `/v1/users/search?q=FIXTURE&cursor=${encodeURIComponent(firstSearchBody.nextCursor!)}`,
