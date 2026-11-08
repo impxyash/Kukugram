@@ -1397,6 +1397,9 @@ test("PostCard like response is discarded after an identity switch", async ({ pa
 
   switchToAccountB = true;
   await page.getByRole("button", { name: "Retry" }).click();
+  await page.getByRole("button", { name: "Profile" }).click();
+  await expect(page.getByRole("heading", { name: "Post Account B" })).toBeVisible();
+  await page.getByRole("button", { name: "Home" }).click();
   await expect(page.getByText("Shared feed post")).toBeVisible();
 
   releaseLike();
