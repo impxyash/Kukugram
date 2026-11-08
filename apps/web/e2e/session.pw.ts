@@ -2371,3 +2371,235 @@ test("feed Load more requests the next cursor once and stops at the final page",
   await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
   expect(feedCalls).toBe(2);
 });
+
+
+test("refresh invalidates an in-flight page and advances from the refreshed cursor", async ({
+  page
+}) => {
+  const initialPost = {
+    id: "00000000-0000-4000-8000-000000000301",
+    authorId: "00000000-0000-4000-8000-000000000311",
+    handle: "creator",
+    displayName: "Creator",
+    avatarUrl: null,
+    body: "Initial feed item",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  };
+  const refreshedPost = {
+    ...initialPost,
+    id: "00000000-0000-4000-8000-000000000302",
+    body: "Refreshed feed item"
+  };
+  const stalePost = {
+    ...initialPost,
+    id: "00000000-0000-4000-8000-000000000303",
+    body: "Stale pagination item"
+  };
+  let feedCalls = 0;
+  let notificationCalls = 0;
+  let releaseStalePage!: () => void;
+  let markStalePagePending!: () => void;
+  const stalePagePending = new Promise<void>((resolve) => {
+    markStalePagePending = resolve;
+  });
+  const stalePageGate = new Promise<void>((resolve) => {
+    releaseStalePage = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/me") return reply(route, 200, { user });
+    if (url.pathname === "/v1/feed") {
+      feedCalls += 1;
+      if (feedCalls === 1) {
+        return reply(route, 200, { posts: [initialPost], nextCursor: "cursor-initial" });
+      }
+      if (feedCalls === 2) {
+        expect(url.searchParams.get("cursor")).toBe("cursor-initial");
+        markStalePagePending();
+        await stalePageGate;
+        return reply(route, 200, { posts: [stalePost] });
+      }
+      if (feedCalls === 3) {
+        return reply(route, 200, { posts: [refreshedPost], nextCursor: "cursor-refreshed" });
+      }
+      expect(url.searchParams.get("cursor")).toBe("cursor-refreshed");
+      return reply(route, 200, { posts: [] });
+    }
+    if (url.pathname === "/v1/notifications") {
+      notificationCalls += 1;
+      return notificationCalls === 1
+        ? unavailable(route)
+        : reply(route, 200, { notifications: [] });
+    }
+    if (url.pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("Initial feed item")).toBeVisible();
+  await page.getByRole("button", { name: "Load more" }).click();
+  await stalePagePending;
+  await page.getByRole("button", { name: "Retry" }).click();
+
+  await expect(page.getByText("Refreshed feed item")).toBeVisible();
+  await expect(page.getByText("Initial feed item")).toHaveCount(0);
+  releaseStalePage();
+  await expect(page.getByText("Stale pagination item")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
+  expect(feedCalls).toBe(4);
+});
+
+test("a pending feed page from account A cannot append after switching to account B", async ({
+  page
+}) => {
+  const accountA = { ...user, id: "00000000-0000-4000-8000-000000000321", handle: "feed-a" };
+  const accountB = { ...user, id: "00000000-0000-4000-8000-000000000322", handle: "feed-b" };
+  const accountAPost = {
+    id: "00000000-0000-4000-8000-000000000323",
+    authorId: accountA.id,
+    handle: accountA.handle,
+    displayName: "Account A post",
+    avatarUrl: null,
+    body: "Account A feed item",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  };
+  const accountBPost = {
+    ...accountAPost,
+    id: "00000000-0000-4000-8000-000000000324",
+    authorId: accountB.id,
+    handle: accountB.handle,
+    displayName: "Account B post",
+    body: "Account B feed item"
+  };
+  const stalePost = {
+    ...accountAPost,
+    id: "00000000-0000-4000-8000-000000000325",
+    body: "Account A stale page"
+  };
+  let meCalls = 0;
+  let feedCalls = 0;
+  let notificationCalls = 0;
+  let releaseStalePage!: () => void;
+  let markStalePagePending!: () => void;
+  const stalePagePending = new Promise<void>((resolve) => {
+    markStalePagePending = resolve;
+  });
+  const stalePageGate = new Promise<void>((resolve) => {
+    releaseStalePage = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/me") {
+      meCalls += 1;
+      return reply(route, 200, { user: meCalls === 1 ? accountA : accountB });
+    }
+    if (url.pathname === "/v1/feed") {
+      feedCalls += 1;
+      if (feedCalls === 1) {
+        return reply(route, 200, { posts: [accountAPost], nextCursor: "account-a-cursor" });
+      }
+      if (feedCalls === 2) {
+        markStalePagePending();
+        await stalePageGate;
+        return reply(route, 200, { posts: [stalePost] });
+      }
+      return reply(route, 200, { posts: [accountBPost] });
+    }
+    if (url.pathname === "/v1/notifications") {
+      notificationCalls += 1;
+      return notificationCalls === 1
+        ? unavailable(route)
+        : reply(route, 200, { notifications: [] });
+    }
+    if (url.pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("Account A feed item")).toBeVisible();
+  await page.getByRole("button", { name: "Load more" }).click();
+  await stalePagePending;
+  await page.getByRole("button", { name: "Retry" }).click();
+
+  await expect(page.getByText("Account B feed item")).toBeVisible();
+  await expect(page.getByText("Account A feed item")).toHaveCount(0);
+  releaseStalePage();
+  await expect(page.getByText("Account A stale page")).toHaveCount(0);
+  await expect(page.getByText("Account B feed item")).toBeVisible();
+  expect(meCalls).toBe(2);
+});
+
+test("logout invalidates an in-flight feed page before it can update the signed-out view", async ({
+  page
+}) => {
+  const firstPagePost = {
+    id: "00000000-0000-4000-8000-000000000331",
+    authorId: "00000000-0000-4000-8000-000000000332",
+    handle: "creator",
+    displayName: "Creator",
+    avatarUrl: null,
+    body: "Signed-in feed item",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  };
+  const stalePost = {
+    ...firstPagePost,
+    id: "00000000-0000-4000-8000-000000000333",
+    body: "Post after logout"
+  };
+  let feedCalls = 0;
+  let releasePage!: () => void;
+  let markPagePending!: () => void;
+  const pagePending = new Promise<void>((resolve) => {
+    markPagePending = resolve;
+  });
+  const pageGate = new Promise<void>((resolve) => {
+    releasePage = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/me") return reply(route, 200, { user });
+    if (url.pathname === "/v1/feed") {
+      feedCalls += 1;
+      if (feedCalls === 1) {
+        return reply(route, 200, { posts: [firstPagePost], nextCursor: "logout-cursor" });
+      }
+      markPagePending();
+      await pageGate;
+      return reply(route, 200, { posts: [stalePost] });
+    }
+    if (url.pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (url.pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    if (url.pathname === "/v1/auth/logout") return reply(route, 200, { ok: true });
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByText("Signed-in feed item")).toBeVisible();
+  await page.getByRole("button", { name: "Load more" }).click();
+  await pagePending;
+  await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page.locator(".auth-card-modern")).toBeVisible();
+  releasePage();
+  await expect(page.getByText("Post after logout")).toHaveCount(0);
+  await expect(page.locator(".auth-card-modern")).toBeVisible();
+});
