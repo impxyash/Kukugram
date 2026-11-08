@@ -1592,7 +1592,6 @@ test("PostCard comments region is accessible", async ({ page }) => {
   await expect(region).toBeHidden();
 });
 
-
 test("concurrent likes on different posts do not overwrite each other", async ({ page }) => {
   const posts = [
     {
