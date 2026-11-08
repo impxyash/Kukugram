@@ -212,8 +212,7 @@ jobs:
       - name: Create disposable global cursor index candidate
         run: |
           set -euo pipefail
-          psql -X -v ON_ERROR_STOP=1 -c \\
-            "CREATE INDEX posts_feed_global_cursor_candidate ON content.posts (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX posts_feed_global_cursor_candidate ON content.posts (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE content.posts"
 
       - name: Capture candidate-index query plans
