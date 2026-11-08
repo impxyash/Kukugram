@@ -1038,6 +1038,7 @@ textarea:focus {
 .auth-card-modern .auth-submit:disabled {
   background: #6540ae;
   opacity: 1;
+  transition: none;
 }
 @media (max-width: 800px) {
   .auth-page {
