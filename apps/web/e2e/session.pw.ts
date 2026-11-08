@@ -1173,3 +1173,235 @@ test("changing moderation filters resets expanded report and appeal details", as
   expect(reportDetailCalls).toBe(2);
   expect(appealDetailCalls).toBe(2);
 });
+
+
+test("a pending Discover search from account A cannot update account B after an identity switch", async ({
+  page
+}) => {
+  const accountA = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000101",
+    handle: "discover-a",
+    displayName: "Discover Account A"
+  };
+  const accountB = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000102",
+    handle: "discover-b",
+    displayName: "Discover Account B"
+  };
+  let switchToAccountB = false;
+  let feedCalls = 0;
+  let releaseSearch!: () => void;
+  let markSearchPending!: () => void;
+  const searchGate = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
+  const searchSeen = new Promise<void>((resolve) => {
+    markSearchPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") {
+      await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      feedCalls += 1;
+      await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      await reply(route, 403, { title: "Forbidden" });
+      return;
+    }
+    if (pathname === "/v1/users/search") {
+      markSearchPending();
+      await searchGate;
+      await reply(route, 200, {
+        users: [
+          {
+            ...user,
+            id: "00000000-0000-4000-8000-000000000103",
+            handle: "stale-discover-result",
+            displayName: "Account A stale search result"
+          }
+        ]
+      });
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByLabel("Search people by name or username").fill("stale");
+  await page.getByRole("button", { name: "Search" }).click();
+  await searchSeen;
+
+  switchToAccountB = true;
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("button", { name: "Discover" })).toBeVisible();
+
+  releaseSearch();
+  await expect(page.getByText("Account A stale search result")).toHaveCount(0);
+  await expect(page.locator(".banner.error")).toHaveCount(0);
+});
+
+test("a pending Profile edit from account A cannot overwrite account B", async ({ page }) => {
+  const accountA = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000111",
+    handle: "profile-a",
+    displayName: "Profile Account A"
+  };
+  const accountB = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000112",
+    handle: "profile-b",
+    displayName: "Profile Account B"
+  };
+  let switchToAccountB = false;
+  let feedCalls = 0;
+  let releaseEdit!: () => void;
+  let markEditPending!: () => void;
+  const editGate = new Promise<void>((resolve) => {
+    releaseEdit = resolve;
+  });
+  const editSeen = new Promise<void>((resolve) => {
+    markEditPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (pathname === "/v1/me") {
+      await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      feedCalls += 1;
+      await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      await reply(route, 403, { title: "Forbidden" });
+      return;
+    }
+    if (pathname === "/v1/me/profile" && method === "PATCH") {
+      markEditPending();
+      await editGate;
+      await reply(route, 200, { user: { ...accountA, displayName: "Account A stale edit" } });
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  page.on("dialog", async (dialog) => {
+    await dialog.accept("Account A edited");
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await page.getByRole("button", { name: "Profile" }).click();
+  await page.getByRole("button", { name: "Edit profile" }).click();
+  await editSeen;
+
+  switchToAccountB = true;
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("heading", { name: "Profile Account B" })).toBeVisible();
+
+  releaseEdit();
+  await expect(page.getByRole("heading", { name: "Profile Account B" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Account A stale edit" })).toHaveCount(0);
+});
+
+test("a pending PostCard like response cannot mutate a replacement account feed", async ({ page }) => {
+  const accountA = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000121",
+    handle: "post-a",
+    displayName: "Post Account A"
+  };
+  const accountB = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000122",
+    handle: "post-b",
+    displayName: "Post Account B"
+  };
+  const post = {
+    id: "00000000-0000-4000-8000-000000000123",
+    authorId: "00000000-0000-4000-8000-000000000124",
+    handle: "creator",
+    displayName: "Creator",
+    avatarUrl: null,
+    body: "Shared feed post",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  };
+  let switchToAccountB = false;
+  let feedCalls = 0;
+  let releaseLike!: () => void;
+  let markLikePending!: () => void;
+  const likeGate = new Promise<void>((resolve) => {
+    releaseLike = resolve;
+  });
+  const likeSeen = new Promise<void>((resolve) => {
+    markLikePending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (pathname === "/v1/me") {
+      await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      feedCalls += 1;
+      await (feedCalls === 1
+        ? unavailable(route)
+        : reply(route, 200, { posts: [post] }));
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      await reply(route, 403, { title: "Forbidden" });
+      return;
+    }
+    if (pathname === `/v1/posts/${post.id}/like` && method === "POST") {
+      markLikePending();
+      await likeGate;
+      await reply(route, 200, {});
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await page.locator(".post-actions button").first().click();
+  await likeSeen;
+
+  switchToAccountB = true;
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByText("Shared feed post")).toBeVisible();
+
+  releaseLike();
+  await expect(page.locator(".post-actions button.liked")).toHaveCount(0);
+});
