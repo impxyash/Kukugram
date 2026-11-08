@@ -144,6 +144,30 @@ async function canViewPost(
   return result.rows[0]?.allowed ?? false;
 }
 
+const feedCursorSchema = z.object({
+  createdAt: z.string().datetime({ offset: true }),
+  id: z.string().uuid()
+}).strict();
+
+function decodeFeedCursor(value: string): { createdAt: Date; id: string } {
+  try {
+    if (value.length > 512) throw new Error("Invalid cursor");
+    const decoded = Buffer.from(value, "base64url").toString("utf8");
+    const parsed = feedCursorSchema.parse(JSON.parse(decoded));
+    if (Buffer.from(decoded).toString("base64url") !== value) throw new Error("Invalid cursor");
+    return { createdAt: new Date(parsed.createdAt), id: parsed.id };
+  } catch {
+    throw Object.assign(new Error("The feed cursor is invalid."), { statusCode: 400 });
+  }
+}
+
+function encodeFeedCursor(post: PostRow): string {
+  return Buffer.from(JSON.stringify({
+    createdAt: post.createdAt.toISOString(),
+    id: post.id
+  })).toString("base64url");
+}
+
 function postSelect() {
   return `SELECT p.id, p.body, p.created_at AS "createdAt", pr.handle, pr.display_name AS "displayName", pr.avatar_url AS "avatarUrl",
     (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
@@ -1047,6 +1071,8 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
   app.get("/feed", async (request) => {
     const current = await requireViewer(request);
+    const query = z.object({ cursor: z.string().min(1).max(512).optional() }).strict().parse(request.query);
+    const cursor = query.cursor ? decodeFeedCursor(query.cursor) : null;
     const result = await app.pool.query<PostRow>(
       `${postSelect()} WHERE p.deleted_at IS NULL
       AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id AND f.status = 'accepted'))
@@ -1054,10 +1080,16 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
       AND NOT EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = p.author_id AND b.blocked_id = $1) OR (b.blocker_id = $1 AND b.blocked_id = p.author_id))
       AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.profiles pr WHERE pr.user_id = p.author_id AND pr.privacy <> 'private')
         OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id AND f.status = 'accepted'))
-      ORDER BY p.created_at DESC LIMIT 50`,
-      [current.id]
+      AND ($2::timestamptz IS NULL OR (p.created_at, p.id) < ($2::timestamptz, $3::uuid))
+      ORDER BY p.created_at DESC, p.id DESC LIMIT 51`,
+      [current.id, cursor?.createdAt ?? null, cursor?.id ?? null]
     );
-    return { posts: result.rows };
+    const hasMore = result.rows.length > 50;
+    const posts = hasMore ? result.rows.slice(0, 50) : result.rows;
+    return {
+      posts,
+      ...(hasMore && posts.length ? { nextCursor: encodeFeedCursor(posts[posts.length - 1]!) } : {})
+    };
   });
 
   app.post("/posts", async (request, reply) => {
