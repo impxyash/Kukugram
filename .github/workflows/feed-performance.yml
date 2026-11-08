@@ -145,7 +145,7 @@ jobs:
                  'follow',
                  now() - (mod(n, 129600)::text || ' minutes')::interval,
                  CASE WHEN n % 10 < 7 THEN now() ELSE NULL END
-          FROM generate_series(1, 400000) AS n;
+          FROM generate_series(1, 1200000) AS n;
 
           ANALYZE social.follows;
           ANALYZE notifications.notifications;
