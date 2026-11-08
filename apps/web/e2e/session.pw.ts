@@ -1499,7 +1499,7 @@ test("Discover search results are announced", async ({ page }) => {
 });
 
 
-test("PostCard like state is announced with an accessible name and pressed state", async ({ page }) => {
+test("PostCard like state exposes its accessible name and pressed state", async ({ page }) => {
   const post = {
     id: "00000000-0000-4000-8000-000000000231",
     authorId: "00000000-0000-4000-8000-000000000232",
