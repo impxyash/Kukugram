@@ -141,7 +141,10 @@ jobs:
           INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at, read_at)
           SELECT md5('kukugram-bench-notification-' || n)::uuid,
                  md5('kukugram-bench-user-' || (mod(n * 29, 12000) + 1))::uuid,
-                 NULL,
+                 CASE
+                   WHEN n % 10 = 0 THEN NULL
+                   ELSE md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid
+                 END,
                  'follow',
                  now() - (mod(n, 129600)::text || ' minutes')::interval,
                  CASE WHEN n % 10 < 7 THEN now() ELSE NULL END
@@ -514,7 +517,7 @@ jobs:
                 INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
                 SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       NULL, 'follow'
+                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
@@ -524,7 +527,7 @@ jobs:
                 INSERT INTO benchmark.notifications_candidate (id, recipient_id, actor_id, type)
                 SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       NULL, 'follow'
+                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'notifications candidate trial %: % ms', trial, round(elapsed_ms, 3);
@@ -534,7 +537,7 @@ jobs:
                 INSERT INTO benchmark.notifications_candidate (id, recipient_id, actor_id, type)
                 SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       NULL, 'follow'
+                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'notifications candidate trial %: % ms', trial, round(elapsed_ms, 3);
@@ -544,7 +547,7 @@ jobs:
                 INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
                 SELECT md5('kukugram-write-test-notice-' || trial || '-' || n)::uuid,
                        md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
-                       NULL, 'follow'
+                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
                 FROM generate_series(1, 5000) AS n;
                 elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
                 RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
