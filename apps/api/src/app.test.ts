@@ -442,6 +442,11 @@ describe("social privacy authorization", () => {
       reportStatus?: "open" | "reviewing" | "resolved" | "dismissed";
       reportOwnerId?: string;
       duplicateReport?: boolean;
+      feedRows?: Array<{
+        id: string; body: string; createdAt: Date; handle: string; displayName: string;
+        avatarUrl: string | null; likeCount: string; commentCount: string;
+        likedByViewer: boolean; authorId: string;
+      }>;
     } = {}
   ) {
     const statements: string[] = [];
@@ -496,6 +501,9 @@ describe("social privacy authorization", () => {
             rows: allowed ? [{ role: options.moderatorRole }] : [],
             rowCount: allowed ? 1 : 0
           };
+        }
+        if (sql.includes("FROM content.posts p")) {
+          return { rows: options.feedRows ?? [], rowCount: options.feedRows?.length ?? 0 };
         }
         if (sql.includes("FROM identity.sessions")) {
           return { rows: [{ id: viewerId, email: "viewer@example.test" }], rowCount: 1 };
@@ -634,6 +642,41 @@ describe("social privacy authorization", () => {
     expect(feedQuery).toContain("(p.created_at, p.id) < ($2::timestamptz, $3::uuid)");
     expect(feedQuery).toContain("ORDER BY p.created_at DESC, p.id DESC LIMIT 51");
     expect(pool.parameters.at(-1)).toEqual([viewerId, null, null]);
+    await app.close();
+  });
+
+  it("returns a next cursor and resumes strictly after the last returned post", async () => {
+    const createdAt = new Date("2026-11-08T10:00:00.000Z");
+    const feedRows = Array.from({ length: 51 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      body: `Post ${index + 1}`,
+      createdAt,
+      handle: "creator",
+      displayName: "Creator",
+      avatarUrl: null,
+      likeCount: "0",
+      commentCount: "0",
+      likedByViewer: false,
+      authorId: targetId
+    }));
+    const pool = makePool({ feedRows });
+    const app = appWithPool(pool);
+    const firstPage = await app.inject({ method: "GET", url: "/v1/feed", headers: { cookie } });
+    expect(firstPage.statusCode).toBe(200);
+    const firstBody = firstPage.json<{ posts: unknown[]; nextCursor: string }>();
+    expect(firstBody.posts).toHaveLength(50);
+    expect(firstBody.nextCursor).toBeTruthy();
+
+    await app.inject({
+      method: "GET",
+      url: `/v1/feed?cursor=${encodeURIComponent(firstBody.nextCursor)}`,
+      headers: { cookie }
+    });
+    const feedQueries = pool.statements
+      .map((sql, index) => ({ sql, values: pool.parameters[index] }))
+      .filter((entry) => entry.sql.includes("FROM content.posts p"));
+    expect(feedQueries[1]?.values?.[1]).toEqual(createdAt);
+    expect(feedQueries[1]?.values?.[2]).toBe(feedRows[49]?.id);
     await app.close();
   });
 
