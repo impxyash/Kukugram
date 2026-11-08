@@ -1,0 +1,112 @@
+name: Mixed Workload PostgreSQL Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Smoke validates the harness quickly; full runs the 2m warm-up, 5m measurement and 3 rounds."
+        required: true
+        type: choice
+        default: full
+        options:
+          - smoke
+          - full
+      seed:
+        description: "Deterministic dataset and workload seed."
+        required: true
+        type: string
+        default: "20261109"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixed-workload-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: "Mixed workload — ${{ matrix.suite }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - mark-read
+          - notifications
+          - feed
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: kukugram_bench
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kukugram_bench"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: kukugram_bench
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install API workspace dependencies
+        run: pnpm install --frozen-lockfile --filter @kukugram/api...
+
+      - name: Build database workspace package
+        run: pnpm --filter @kukugram/database build
+
+      - name: Validate benchmark scripts and workflow YAML
+        run: |
+          set -euo pipefail
+          node --check apps/api/scripts/mixed-workload-benchmark.mjs
+          pnpm --filter @kukugram/api exec tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --strict scripts/mixed-workload-api.mts
+          ruby -e 'require "yaml"; YAML.load_file(".github/workflows/mixed-workload-benchmark.yml"); puts "Workflow YAML parsed."'
+
+      - name: Wait for disposable PostgreSQL
+        run: |
+          set -euo pipefail
+          for attempt in {1..60}; do
+            if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Disposable PostgreSQL did not become ready." >&2
+          exit 1
+
+      - name: Run isolated mixed-workload benchmark
+        run: |
+          set -euo pipefail
+          node apps/api/scripts/mixed-workload-benchmark.mjs \
+            --suite "${{ matrix.suite }}" \
+            --profile "${{ inputs.profile }}" \
+            --seed "${{ inputs.seed }}"
+
+      - name: Upload mixed-workload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kukugram-mixed-workload-${{ matrix.suite }}-${{ github.run_id }}
+          path: artifacts/mixed-workload/
+          if-no-files-found: warn
+          retention-days: 14
