@@ -46,19 +46,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Export exact Prettier package for temporary formatting diagnosis
-        run: |
-          PRETTIER_PACKAGE="$(node -p "require.resolve('prettier/package.json')")"
-          test "$(node -p "require(require.resolve('prettier/package.json')).version")" = "3.5.3"
-          tar -czf /tmp/prettier-3.5.3.tgz -C "$(dirname "$PRETTIER_PACKAGE")" .
-          cp packages/api-contract/src/schemas.test.ts /tmp/schemas.test.ts
-      - uses: actions/upload-artifact@v4
-        with:
-          name: temporary-prettier-3.5.3-package
-          path: |
-            /tmp/prettier-3.5.3.tgz
-            /tmp/schemas.test.ts
-          if-no-files-found: error
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
