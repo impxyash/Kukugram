@@ -98,7 +98,6 @@ export async function runIfRequestScopeActive(
   if (scope.isActive()) await action();
 }
 
-
 /** Merge a page into the current feed without duplicating posts across boundaries. */
 export function mergeFeedPosts<TPost extends { id: string }>(
   current: TPost[],
