@@ -66,6 +66,7 @@ const dbNames = {
 };
 const createdDatabases = [];
 const raw = [];
+const apiReports = [];
 const notes = [];
 const errors = [];
 let walBefore = null;
@@ -289,7 +290,7 @@ async function configureVariant(database, kind) {
       await client.query("CREATE INDEX IF NOT EXISTS notifications_unread_by_recipient ON notifications.notifications (recipient_id, created_at DESC) WHERE read_at IS NULL");
       await client.query("CREATE INDEX IF NOT EXISTS notifications_recipient_cursor ON notifications.notifications (recipient_id, created_at DESC, id DESC)");
     } else if (kind === "notification-replacement") {
-      await client.query("DROP INDEX IF EXISTS notifications_unread_by_recipient");
+      await client.query("DROP INDEX IF EXISTS notifications.notifications_unread_by_recipient");
       await client.query("CREATE INDEX IF NOT EXISTS notifications_recipient_cursor ON notifications.notifications (recipient_id, created_at DESC, id DESC)");
     } else if (kind === "feed-baseline") {
       await client.query("DROP INDEX IF EXISTS content.posts_feed_global_cursor");
@@ -574,6 +575,7 @@ try {
         maxBuffer: 20 * 1024 * 1024
       });
       if (child.status !== 0) throw new Error("API benchmark helper failed: " + (child.stderr || child.stdout).slice(-4000));
+      apiReports.push(JSON.parse(await readFile(apiOutput, "utf8")));
       notes.push({ event: "api-helper", variant, stdout: child.stdout.slice(-1000) });
     }
   }
@@ -591,6 +593,56 @@ try {
     postChecksums[variantDefinitions[key][0]] = await checksumDatabase(database);
   }
 
+  const reconciliation = {};
+  for (const key of selected) {
+    const [variant] = variantDefinitions[key];
+    const sqlPostInserts = raw.filter((row) => row.variant === variant && row.suite === "feed" && String(row.operation).startsWith("post_insert_") && !row.error).length;
+    const notificationInserts = raw.filter((row) => row.variant === variant && row.suite === "notifications" && row.operation === "insert" && !row.error).length;
+    const apiPostInserts = apiReports.filter((item) => item.variant === variant).flatMap((item) => item.raw_samples ?? []).filter((row) => row.operation === "post_insert_api" && !row.error).length;
+    const actual = postChecksums[variant];
+    const expectedPosts = seedChecksum.posts.row_count + sqlPostInserts + apiPostInserts;
+    const expectedNotifications = seedChecksum.notifications.row_count + notificationInserts;
+    const valid = actual.posts.row_count === expectedPosts && actual.notifications.row_count === expectedNotifications;
+    reconciliation[variant] = {
+      expected_posts: expectedPosts, actual_posts: actual.posts.row_count,
+      expected_notifications: expectedNotifications, actual_notifications: actual.notifications.row_count,
+      sql_post_inserts: sqlPostInserts, api_post_inserts: apiPostInserts,
+      notification_inserts: notificationInserts, row_count_reconciled: valid
+    };
+    if (!valid) errors.push({ variant, message: "Post/notification row-count reconciliation failed." });
+  }
+  const comparisons = [];
+  const compareGroups = [
+    ["feed", "feed-baseline", "feed-candidate"],
+    ["notifications", "notification-baseline", "notification-additive"],
+    ["notifications", "notification-baseline", "notification-replacement"]
+  ];
+  for (const [group, baselineVariant, candidateVariant] of compareGroups) {
+    const baselines = summaries.filter((row) => row.suite === group && row.variant === baselineVariant);
+    for (const baseline of baselines) {
+      const candidate = summaries.find((row) => row.suite === group && row.variant === candidateVariant && row.worker_count === baseline.worker_count && row.round === baseline.round && row.operation === baseline.operation);
+      if (candidate && baseline.p95_ms !== null && candidate.p95_ms !== null && baseline.p95_ms > 0) {
+        const regression = Number((((candidate.p95_ms - baseline.p95_ms) / baseline.p95_ms) * 100).toFixed(2));
+        comparisons.push({ suite: group, operation: baseline.operation, worker_count: baseline.worker_count, round: baseline.round, baseline: baselineVariant, candidate: candidateVariant, baseline_p95_ms: baseline.p95_ms, candidate_p95_ms: candidate.p95_ms, regression_percent: regression, investigate: regression > 10, requires_justification: regression > 15 });
+      }
+    }
+  }
+  for (const base of markReadResults.filter((row) => row.variant === "notification-baseline")) {
+    for (const candidateVariant of ["notification-additive", "notification-replacement"]) {
+      const candidate = markReadResults.find((row) => row.variant === candidateVariant && row.unread_rows === base.unread_rows);
+      if (candidate && base.latency_ms > 0) {
+        const regression = Number((((candidate.latency_ms - base.latency_ms) / base.latency_ms) * 100).toFixed(2));
+        comparisons.push({ suite: "mark-read", unread_rows: base.unread_rows, baseline: "notification-baseline", candidate: candidateVariant, baseline_ms: base.latency_ms, candidate_ms: candidate.latency_ms, regression_percent: regression, investigate: regression > 10 });
+      }
+    }
+  }
+  const successfulWriteOperations =
+    raw.filter((row) => !row.error && (row.operation === "insert" || row.operation === "mark_read_update" || String(row.operation).startsWith("post_insert_"))).length +
+    apiReports.reduce((total, item) => total + (item.raw_samples ?? []).filter((row) => row.operation === "post_insert_api" && !row.error).length, 0) +
+    markReadResults.length;
+  const walBytesPerWriteOperation = walDelta !== null && successfulWriteOperations > 0
+    ? Number((Number(walDelta) / successfulWriteOperations).toFixed(2))
+    : null;
   const report = {
     generated_at: new Date().toISOString(),
     safety: { postgres_host: target.host, postgres_database: target.database, disposable_database_prefix: "kg_mwb_", production_connections: false },
@@ -599,10 +651,13 @@ try {
     suite,
     seed_checksum: seedChecksum,
     post_checksums: postChecksums,
+    reconciliation,
+    regression_analysis: comparisons,
+    api_reports: apiReports.map((item) => ({ variant: item.variant, summaries: item.summaries, errors: item.errors.length })),
     mark_read_correctness: markReadResults,
     summaries,
     storage,
-    wal: { cluster_wal_bytes_before: walBefore, cluster_wal_bytes_after: walAfter, cluster_wal_bytes_delta: walDelta, note: "Cluster-wide WAL delta from an isolated disposable PostgreSQL service; includes benchmark fixture resets and all variant writes, not a pure per-query measurement." },
+    wal: { cluster_wal_bytes_before: walBefore, cluster_wal_bytes_after: walAfter, cluster_wal_bytes_delta: walDelta, successful_write_operations: successfulWriteOperations, wal_bytes_per_successful_write_operation: walBytesPerWriteOperation, note: "Cluster-wide WAL delta from an isolated disposable PostgreSQL service; includes benchmark fixture resets and all variant writes, not a pure per-query measurement." },
     balanced_order: {
       notification_variants: balancedOrders(["notification-baseline", "notification-additive", "notification-replacement"]),
       feed_variants: balancedOrders(["feed-baseline", "feed-candidate"]),
@@ -612,7 +667,7 @@ try {
     runtime_notes: notes,
     errors,
     acceptance: {
-      correctness_gate: errors.length === 0 && markReadResults.every((row) => row.updated_rows === row.unread_rows && row.second_call_rows === 0 && row.remaining_unread === 0),
+      correctness_gate: errors.length === 0 && Object.values(reconciliation).every((row) => row.row_count_reconciled) && markReadResults.every((row) => row.updated_rows === row.unread_rows && row.second_call_rows === 0 && row.remaining_unread === 0),
       p95_regressions_over_10_percent_require_investigation: true,
       post_insert_p95_target_regression_percent: 10,
       post_insert_p95_over_15_percent_requires_justification: true,
