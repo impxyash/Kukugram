@@ -42,10 +42,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Diagnose Prettier output
-        run: |
-          pnpm exec prettier apps/web/e2e/session.pw.ts > /tmp/session.pw.formatted.ts
-          diff -u apps/web/e2e/session.pw.ts /tmp/session.pw.formatted.ts || true
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
