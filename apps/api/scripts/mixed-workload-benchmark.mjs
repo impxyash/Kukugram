@@ -627,6 +627,17 @@ try {
       }
     }
   }
+  const apiBaseline = apiReports.find((item) => item.variant === "feed-baseline");
+  const apiCandidate = apiReports.find((item) => item.variant === "feed-candidate");
+  if (apiBaseline && apiCandidate) {
+    for (const baseline of apiBaseline.summaries) {
+      const candidate = apiCandidate.summaries.find((row) => row.worker_count === baseline.worker_count && row.round === baseline.round && row.operation === baseline.operation);
+      if (candidate && baseline.p95_ms !== null && candidate.p95_ms !== null && baseline.p95_ms > 0) {
+        const regression = Number((((candidate.p95_ms - baseline.p95_ms) / baseline.p95_ms) * 100).toFixed(2));
+        comparisons.push({ suite: "api", operation: baseline.operation, worker_count: baseline.worker_count, round: baseline.round, baseline: "feed-baseline", candidate: "feed-candidate", baseline_p95_ms: baseline.p95_ms, candidate_p95_ms: candidate.p95_ms, regression_percent: regression, investigate: regression > 10, requires_justification: regression > 15 });
+      }
+    }
+  }
   for (const base of markReadResults.filter((row) => row.variant === "notification-baseline")) {
     for (const candidateVariant of ["notification-additive", "notification-replacement"]) {
       const candidate = markReadResults.find((row) => row.variant === candidateVariant && row.unread_rows === base.unread_rows);
@@ -658,6 +669,7 @@ try {
     summaries,
     storage,
     wal: { cluster_wal_bytes_before: walBefore, cluster_wal_bytes_after: walAfter, cluster_wal_bytes_delta: walDelta, successful_write_operations: successfulWriteOperations, wal_bytes_per_successful_write_operation: walBytesPerWriteOperation, note: "Cluster-wide WAL delta from an isolated disposable PostgreSQL service; includes benchmark fixture resets and all variant writes, not a pure per-query measurement." },
+    index_decisions: { notification_additive: "NOT_APPROVED", notification_replacement: "DEFERRED", feed_global_cursor: "PROVISIONAL_FEATURE_BRANCH_ONLY", production_migration_approval: false },
     balanced_order: {
       notification_variants: balancedOrders(["notification-baseline", "notification-additive", "notification-replacement"]),
       feed_variants: balancedOrders(["feed-baseline", "feed-candidate"]),
@@ -668,10 +680,11 @@ try {
     errors,
     acceptance: {
       correctness_gate: errors.length === 0 && Object.values(reconciliation).every((row) => row.row_count_reconciled) && markReadResults.every((row) => row.updated_rows === row.unread_rows && row.second_call_rows === 0 && row.remaining_unread === 0),
-      p95_regressions_over_10_percent_require_investigation: true,
+      p95_regressions_over_10_percent: comparisons.filter((row) => row.investigate),
       post_insert_p95_target_regression_percent: 10,
-      post_insert_p95_over_15_percent_requires_justification: true,
+      post_insert_p95_over_15_percent: comparisons.filter((row) => String(row.operation).startsWith("post_insert") && row.regression_percent > 15),
       notification_update_p95_target_regression_percent: 10,
+      notification_update_p95_over_10_percent: comparisons.filter((row) => (row.suite === "mark-read" || row.operation === "mark_read_update") && row.regression_percent > 10),
       p99_review_required: true,
       production_index_approval: false
     }
