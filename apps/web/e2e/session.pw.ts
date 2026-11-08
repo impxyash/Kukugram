@@ -338,11 +338,12 @@ test("a late Settings response from account A cannot overwrite account B after a
   await expect(page.getByText("Account B private record")).toBeVisible();
 });
 
-test("pending appeal reviews cannot update a new identity or surface stale errors", async ({
-  page
-}) => {
-  const acceptedAppealId = "00000000-0000-4000-8000-000000000041";
-  const rejectedAppealId = "00000000-0000-4000-8000-000000000042";
+async function verifyPendingAppealReviewAfterIdentitySwitch(
+  page: Page,
+  responseStatus: 200 | 500
+) {
+  const appealId = "00000000-0000-4000-8000-000000000041";
+  const reportId = "10000000-0000-4000-8000-000000000045";
   const accountA = {
     ...user,
     id: "00000000-0000-4000-8000-000000000043",
@@ -359,27 +360,18 @@ test("pending appeal reviews cannot update a new identity or surface stale error
   let meCalls = 0;
   let feedCalls = 0;
   let moderatorProbeCalls = 0;
-  let releaseAccepted!: () => void;
-  let releaseRejected!: () => void;
-  let markAcceptedPending!: () => void;
-  let markRejectedPending!: () => void;
-  const acceptedPending = new Promise<void>((resolve) => {
-    releaseAccepted = resolve;
+  let releaseAction!: () => void;
+  let markActionPending!: () => void;
+  const actionPending = new Promise<void>((resolve) => {
+    releaseAction = resolve;
   });
-  const rejectedPending = new Promise<void>((resolve) => {
-    releaseRejected = resolve;
-  });
-  const acceptedSeen = new Promise<void>((resolve) => {
-    markAcceptedPending = resolve;
-  });
-  const rejectedSeen = new Promise<void>((resolve) => {
-    markRejectedPending = resolve;
+  const actionSeen = new Promise<void>((resolve) => {
+    markActionPending = resolve;
   });
 
   await page.route("**/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const pathname = url.pathname;
-    const method = route.request().method();
     if (pathname === "/v1/me") {
       meCalls += 1;
       await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
@@ -407,31 +399,23 @@ test("pending appeal reviews cannot update a new identity or surface stale error
       await reply(route, 200, {
         appeals: [
           {
-            id: acceptedAppealId,
-            reportId: "10000000-0000-4000-8000-000000000045",
+            id: appealId,
+            reportId,
             status: "open",
             createdAt: "2026-11-01T00:00:00.000Z"
-          },
-          {
-            id: rejectedAppealId,
-            reportId: "20000000-0000-4000-8000-000000000046",
-            status: "open",
-            createdAt: "2026-11-02T00:00:00.000Z"
           }
         ]
       });
       return;
     }
-    if (pathname === `/v1/moderation/appeals/${acceptedAppealId}` && method === "PATCH") {
-      markAcceptedPending();
-      await acceptedPending;
-      await reply(route, 200, {});
-      return;
-    }
-    if (pathname === `/v1/moderation/appeals/${rejectedAppealId}` && method === "PATCH") {
-      markRejectedPending();
-      await rejectedPending;
-      await reply(route, 500, { title: "Service unavailable" });
+    if (pathname === `/v1/moderation/appeals/${appealId}`) {
+      markActionPending();
+      await actionPending;
+      await reply(
+        route,
+        responseStatus,
+        responseStatus === 200 ? {} : { title: "Service unavailable" }
+      );
       return;
     }
     await reply(route, 200, {});
@@ -440,28 +424,33 @@ test("pending appeal reviews cannot update a new identity or surface stale error
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Moderation" })).toBeVisible();
   await page.getByRole("button", { name: "Moderation" }).click();
+  const actionName =
+    responseStatus === 200
+      ? `Accept appeal for case ${reportId.slice(0, 8)}`
+      : `Reject appeal for case ${reportId.slice(0, 8)}`;
+  await page.getByRole("button", { name: actionName }).click();
+  await actionSeen;
 
-  await page.getByRole("button", {
-    name: "Accept appeal for case 10000000"
-  }).click();
-  await acceptedSeen;
-  await page.getByRole("button", {
-    name: "Reject appeal for case 20000000"
-  }).click();
-  await rejectedSeen;
-
-  // Switch identities while both moderation mutations are still pending.
+  // Switch identities while the moderation mutation is still pending.
   switchToAccountB = true;
   await page.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("button", { name: "Moderation" })).toHaveCount(0);
   await expect.poll(() => meCalls).toBeGreaterThan(1);
   await expect.poll(() => moderatorProbeCalls).toBeGreaterThan(1);
 
-  // Complete one old request successfully and fail the other after unmount.
-  releaseAccepted();
-  releaseRejected();
-  await expect(page.getByText("Appeal accepted.")).toHaveCount(0);
-  await expect(page.getByText("Service unavailable")).toHaveCount(0);
+  // Complete the old-account request only after the moderation panel unmounts.
+  releaseAction();
+  await expect(
+    page.getByText(responseStatus === 200 ? "Appeal accepted." : "Service unavailable")
+  ).toHaveCount(0);
+}
+
+test("a pending appeal acceptance cannot update a different identity", async ({ page }) => {
+  await verifyPendingAppealReviewAfterIdentitySwitch(page, 200);
+});
+
+test("a pending appeal rejection cannot report errors to a different identity", async ({ page }) => {
+  await verifyPendingAppealReviewAfterIdentitySwitch(page, 500);
 });
 
 test("moderation case work is discarded when switching to a non-moderator account", async ({
