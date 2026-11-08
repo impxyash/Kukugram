@@ -32,7 +32,7 @@ const settings = {
 };
 const counts = full
   ? { users: 12_000, posts: 400_000, likes: 120_000, comments: 80_000, notifications: 1_200_000 }
-  : { users: 128, posts: 8_000, likes: 1_200, comments: 800, notifications: 12_000 };
+  : { users: 1_024, posts: 8_000, likes: 1_200, comments: 800, notifications: 12_000 };
 const artifactDir = resolve(root, "artifacts/mixed-workload");
 await mkdir(artifactDir, { recursive: true });
 
@@ -130,7 +130,7 @@ async function seedDatabase(database) {
   const likes = counts.likes;
   const comments = counts.comments;
   const notifications = counts.notifications;
-  const anchor = new Date(Date.UTC(2026, 10, 9, 0, 0, 0) + (seed % 86_400) * 1_000).toISOString();
+  const anchor = datasetEpoch;
   try {
     await client.query("SET synchronous_commit = on");
     await client.query(
@@ -276,7 +276,7 @@ async function recordQuery(pool, sql, values, record, label, group, variant, wor
 }
 const FEED_SQL = "SELECT p.id, p.body, p.created_at AS \\"createdAt\\", pr.handle, pr.display_name AS \\"displayName\\", pr.avatar_url AS \\"avatarUrl\\", (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS \\"likeCount\\", (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS \\"commentCount\\", EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id AND l.user_id = $1) AS \\"likedByViewer\\", p.author_id AS \\"authorId\\" FROM content.posts p JOIN social.profiles pr ON pr.user_id = p.author_id WHERE p.deleted_at IS NULL AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id AND f.status = 'accepted')) AND NOT EXISTS(SELECT 1 FROM social.mutes m WHERE m.muter_id = $1 AND m.muted_id = p.author_id) AND NOT EXISTS(SELECT 1 FROM social.blocks b WHERE (b.blocker_id = p.author_id AND b.blocked_id = $1) OR (b.blocker_id = $1 AND b.blocked_id = p.author_id)) AND (p.author_id = $1 OR EXISTS(SELECT 1 FROM social.profiles x WHERE x.user_id = p.author_id AND x.privacy <> 'private') OR EXISTS(SELECT 1 FROM social.follows f WHERE f.follower_id = $1 AND f.followee_id = p.author_id AND f.status = 'accepted')) AND ($2::timestamptz IS NULL OR (p.created_at, p.id) < ($2::timestamptz, $3::uuid)) ORDER BY p.created_at DESC, p.id DESC LIMIT 51";
 const NOTIFICATION_FIRST_SQL = "SELECT n.id, n.type, n.post_id AS \\"postId\\", n.created_at AS \\"createdAt\\", n.read_at AS \\"readAt\\", p.handle, p.display_name AS \\"displayName\\" FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id WHERE n.recipient_id = $1 ORDER BY n.created_at DESC, n.id DESC LIMIT 51";
-const NOTIFICATION_CURSOR_SQL = "SELECT n.id, n.type, n.post_id AS \\"postId\\", n.created_at AS \\"createdAt\\", n.read_at AS \\"readAt\\", p.handle, p.display_name AS \\"displayName\\" FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id WHERE n.recipient_id = $1 AND (n.created_at, n.id) < (now() - interval '500 minutes', $2::uuid) ORDER BY n.created_at DESC, n.id DESC LIMIT 51";
+const NOTIFICATION_CURSOR_SQL = "SELECT n.id, n.type, n.post_id AS \\"postId\\", n.created_at AS \\"createdAt\\", n.read_at AS \\"readAt\\", p.handle, p.display_name AS \\"displayName\\" FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id WHERE n.recipient_id = $1 AND (n.created_at, n.id) < ($2::timestamptz, $3::uuid) ORDER BY n.created_at DESC, n.id DESC LIMIT 51";
 
 async function configureVariant(database, kind) {
   const client = await connectDb(database, "kukugram-benchmark-index-variant");
@@ -364,7 +364,7 @@ async function runTimedSuite(database, suiteName, variant, workerCount, round) {
       } else {
         label = "cursor_page";
         sql = NOTIFICATION_CURSOR_SQL;
-        values = [viewers[0], notificationCursorId];
+        values = [viewers[0], new Date(new Date(datasetEpoch).getTime() - 500 * 60 * 1000), notificationCursorId];
       }
     } else {
       const cohort = ["dense", "sparse", "high"][workerIndex % 3];
@@ -446,7 +446,7 @@ async function queryPlans(database, variant, suiteName) {
       }
     }
     if (suiteName === "notifications" || suiteName === "mark-read" || suiteName === "all") {
-      for (const [name, sql, values] of [["first", NOTIFICATION_FIRST_SQL, [deterministicUuid("kukugram-mwb-user-1")]], ["cursor", NOTIFICATION_CURSOR_SQL, [deterministicUuid("kukugram-mwb-user-1"), deterministicUuid("kukugram-mwb-page-500")]]]) {
+      for (const [name, sql, values] of [["first", NOTIFICATION_FIRST_SQL, [deterministicUuid("kukugram-mwb-user-1")]], ["cursor", NOTIFICATION_CURSOR_SQL, [deterministicUuid("kukugram-mwb-user-1"), new Date(new Date(datasetEpoch).getTime() - 500 * 60 * 1000), deterministicUuid("kukugram-mwb-page-500")]]]) {
         const result = await client.query("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + sql, values);
         plans["notifications_" + name] = result.rows[0]["QUERY PLAN"];
       }
@@ -495,7 +495,7 @@ function csvEscape(value) {
 }
 
 try {
-  notes.push({ event: "settings", ...settings, counts, suite, dataset_epoch: new Date(Date.UTC(2026, 10, 9, 0, 0, 0) + (seed % 86_400) * 1_000).toISOString() });
+  notes.push({ event: "settings", ...settings, counts, suite, dataset_epoch: datasetEpoch });
   await createDatabase(seedDb);
   await applyMigrations(seedDb);
   await seedDatabase(seedDb);
