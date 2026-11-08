@@ -49,7 +49,7 @@ jobs:
       - name: Export exact Prettier package for temporary formatting diagnosis
         run: |
           PRETTIER_PACKAGE="$(node -p "require.resolve('prettier/package.json')")"
-          test "$(node -p "require('./' + require.resolve('prettier/package.json').replace(/package.json$/, 'package.json')).version")" = "3.5.3"
+          test "$(node -p "require(require.resolve('prettier/package.json')).version")" = "3.5.3"
           tar -czf /tmp/prettier-3.5.3.tgz -C "$(dirname "$PRETTIER_PACKAGE")" .
       - uses: actions/upload-artifact@v4
         with:
