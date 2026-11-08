@@ -144,6 +144,10 @@ export function AppShell() {
         result.posts,
         result.notifications
       );
+      const reconciledNotices =
+        sameUser && result.notifications !== undefined
+          ? mergeNotifications(result.notifications, notices)
+          : activity.notices;
       if (activeUserId.current !== result.user.id) {
         setModeratorUserId(null);
       }
@@ -154,10 +158,10 @@ export function AppShell() {
         setFeedCursor(result.nextCursor);
         setFeedGeneration((generation) => generation + 1);
       }
-      setNotices(activity.notices);
-      if (result.notifications !== undefined || !sameUser) {
-        setNotificationCursor(result.notificationCursor);
-      }
+      setNotices(reconciledNotices);
+      // Keep the cursor for already-loaded pages during same-account refreshes.
+      // A new account starts with the first-page cursor from its own bootstrap.
+      if (!sameUser) setNotificationCursor(result.notificationCursor);
       if (result.activityError) {
         setError("Some of your latest activity could not be loaded. Please refresh and try again.");
       } else {
