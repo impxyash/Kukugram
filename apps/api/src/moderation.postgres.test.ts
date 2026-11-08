@@ -1093,4 +1093,59 @@ integration("PostgreSQL moderation guarantees", () => {
       await app.close();
     }
   });
+
+  it("paginates equal-timestamp feed rows in PostgreSQL without duplicates or skips", async () => {
+    const userId = randomUUID();
+    const token = randomUUID();
+    const createdAt = new Date("2026-11-08T10:00:00.000Z");
+    const postIds = Array.from({ length: 53 }, (_, index) =>
+      `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`
+    );
+    await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+      userId,
+      `feed-pagination-${userId}@integration.test`
+    ]);
+    await database().query(
+      "INSERT INTO social.profiles (user_id, handle, display_name) VALUES ($1, $2, 'Feed Pagination')",
+      [userId, `feed_${userId.replaceAll("-", "").slice(0, 12)}`]
+    );
+    await database().query(
+      "INSERT INTO identity.sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '10 minutes')",
+      [randomUUID(), userId, hashSessionToken(token, pepper)]
+    );
+    for (const [index, postId] of postIds.entries()) {
+      await database().query(
+        "INSERT INTO content.posts (id, author_id, body, created_at) VALUES ($1, $2, $3, $4)",
+        [postId, userId, `Pagination post ${index + 1}`, createdAt]
+      );
+    }
+
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+    try {
+      const headers = { cookie: `session=${token}` };
+      const firstPage = await app.inject({ method: "GET", url: "/v1/feed", headers });
+      expect(firstPage.statusCode).toBe(200);
+      const firstBody = firstPage.json<{ posts: Array<{ id: string }>; nextCursor?: string }>();
+      expect(firstBody.posts).toHaveLength(50);
+      expect(firstBody.nextCursor).toEqual(expect.any(String));
+
+      const secondPage = await app.inject({
+        method: "GET",
+        url: `/v1/feed?cursor=${encodeURIComponent(firstBody.nextCursor!)}`,
+        headers
+      });
+      expect(secondPage.statusCode).toBe(200);
+      const secondBody = secondPage.json<{ posts: Array<{ id: string }>; nextCursor?: string }>();
+      expect(secondBody.posts).toHaveLength(3);
+      expect(secondBody.nextCursor).toBeUndefined();
+
+      const actualIds = [...firstBody.posts, ...secondBody.posts].map((post) => post.id);
+      expect(actualIds).toEqual([...postIds].reverse());
+      expect(new Set(actualIds).size).toBe(53);
+    } finally {
+      await app.close();
+      await database().query("DELETE FROM identity.users WHERE id = $1", [userId]);
+    }
+  });
 });
