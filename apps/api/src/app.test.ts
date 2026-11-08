@@ -651,9 +651,9 @@ describe("social privacy authorization", () => {
       headers: { cookie }
     });
     expect(response.statusCode).toBe(400);
-    expect(
-      pool.statements.some((sql) => sql.includes("FROM notifications.notifications n"))
-    ).toBe(false);
+    expect(pool.statements.some((sql) => sql.includes("FROM notifications.notifications n"))).toBe(
+      false
+    );
     await app.close();
   });
 
@@ -673,9 +673,7 @@ describe("social privacy authorization", () => {
     expect(pool.statements[queryIndex]).toContain(
       "(n.created_at, n.id) < ($2::timestamptz, $3::uuid)"
     );
-    expect(pool.statements[queryIndex]).toContain(
-      "ORDER BY n.created_at DESC, n.id DESC"
-    );
+    expect(pool.statements[queryIndex]).toContain("ORDER BY n.created_at DESC, n.id DESC");
     expect(pool.statements[queryIndex]).toContain("LIMIT 51");
     expect(pool.parameters[queryIndex]).toEqual([viewerId, null, null]);
     await app.close();
