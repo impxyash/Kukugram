@@ -46,10 +46,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Temporary Prettier correction diagnostic
-        run: |
-          pnpm exec prettier --write apps/api/src/feed-pagination.postgres.test.ts apps/web/e2e/session.pw.ts
-          git diff -- apps/api/src/feed-pagination.postgres.test.ts apps/web/e2e/session.pw.ts
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
