@@ -612,6 +612,31 @@ describe("social privacy authorization", () => {
     await app.close();
   });
 
+  it("rejects malformed feed cursors before querying posts", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/feed?cursor=not-a-valid-base64-json",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(pool.statements.some((sql) => sql.includes("FROM content.posts p"))).toBe(false);
+    await app.close();
+  });
+
+  it("uses a stable timestamp-and-id keyset for feed pagination", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({ method: "GET", url: "/v1/feed", headers: { cookie } });
+    expect(response.statusCode).toBe(200);
+    const feedQuery = pool.statements.find((sql) => sql.includes("FROM content.posts p"));
+    expect(feedQuery).toContain("(p.created_at, p.id) < ($2::timestamptz, $3::uuid)");
+    expect(feedQuery).toContain("ORDER BY p.created_at DESC, p.id DESC LIMIT 51");
+    expect(pool.parameters.at(-1)).toEqual([viewerId, null, null]);
+    await app.close();
+  });
+
   it("applies mute and block exclusions to the authenticated feed query", async () => {
     const pool = makePool();
     const app = appWithPool(pool);
