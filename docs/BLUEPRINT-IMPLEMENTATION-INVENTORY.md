@@ -57,7 +57,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 | Threaded comments                                 | In progress                          | Comments exist; current API does not implement threaded replies                                          |
 | Saves and collections                             | Not started / not found              | No implementation found                                                                                  |
 | Share links / internal share                      | Not started / not found              | No implementation found                                                                                  |
-| Following chronological feed                      | Implemented and tested               | 50-row keyset pagination tested; Circle filters and For You ranking remain separate        |
+| Following chronological feed                      | Implemented and tested               | 50-row keyset pagination tested; Circle filters and For You ranking remain separate                      |
 | For You personalized feed                         | Not started / not found              | No ranker found                                                                                          |
 | Explore and search                                | In progress                          | Account search exists; Explore/content search/typed results absent                                       |
 | Hashtag pages                                     | Not started / not found              | No implementation found                                                                                  |
