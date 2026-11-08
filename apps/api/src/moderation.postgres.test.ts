@@ -1155,4 +1155,88 @@ integration("PostgreSQL moderation guarantees", () => {
       await database().query("DELETE FROM identity.users WHERE id = $1", [userId]);
     }
   });
+  it("filters PostgreSQL feed pages by privacy, follow, mute, block, and deletion state", async () => {
+    const viewerId = randomUUID();
+    const viewerToken = randomUUID();
+    const authors = {
+      acceptedPublic: randomUUID(),
+      acceptedPrivate: randomUUID(),
+      pendingPrivate: randomUUID(),
+      mutedPublic: randomUUID(),
+      blockedByViewer: randomUUID(),
+      blockedViewer: randomUUID(),
+      deletedPublic: randomUUID()
+    };
+    const authorEntries = Object.entries(authors) as [keyof typeof authors, string][];
+    const userIds = [viewerId, ...authorEntries.map(([, id]) => id)];
+
+    for (const [kind, userId] of [["viewer", viewerId] as const, ...authorEntries]) {
+      await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
+        userId,
+        `${kind}-${userId}@feed-privacy.integration.test`
+      ]);
+      const handle = `feed_${userId.replaceAll("-", "").slice(0, 12)}`;
+      await database().query(
+        "INSERT INTO social.profiles (user_id, handle, display_name, privacy) VALUES ($1, $2, $3, $4)",
+        [userId, handle, kind, kind === "acceptedPrivate" || kind === "pendingPrivate" ? "private" : "public"]
+      );
+    }
+
+    await database().query(
+      "INSERT INTO identity.sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, now() + interval '10 minutes')",
+      [randomUUID(), viewerId, hashSessionToken(viewerToken, pepper)]
+    );
+
+    for (const [kind, authorId] of authorEntries) {
+      await database().query(
+        "INSERT INTO social.follows (follower_id, followee_id, status) VALUES ($1, $2, $3)",
+        [viewerId, authorId, kind === "pendingPrivate" ? "pending" : "accepted"]
+      );
+    }
+    await database().query("INSERT INTO social.mutes (muter_id, muted_id) VALUES ($1, $2)", [
+      viewerId,
+      authors.mutedPublic
+    ]);
+    await database().query(
+      "INSERT INTO social.blocks (blocker_id, blocked_id) VALUES ($1, $2), ($3, $1)",
+      [viewerId, authors.blockedByViewer, authors.blockedViewer]
+    );
+
+    const postIds = new Map<string, string>();
+    const fixtures = [
+      ["viewer", viewerId, false],
+      ...authorEntries.map(([kind, authorId]) => [kind, authorId, kind === "deletedPublic"] as const)
+    ] as const;
+    for (const [kind, authorId, deleted] of fixtures) {
+      const postId = randomUUID();
+      postIds.set(kind, postId);
+      await database().query(
+        "INSERT INTO content.posts (id, author_id, body, deleted_at) VALUES ($1, $2, $3, CASE WHEN $4 THEN now() ELSE NULL END)",
+        [postId, authorId, `Feed privacy fixture ${kind}`, deleted]
+      );
+    }
+
+    const appPool = new Pool({ connectionString: databaseUrl, max: 4 });
+    const app = buildApp(config, appPool);
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/v1/feed",
+        headers: { cookie: `session=${viewerToken}` }
+      });
+      expect(response.statusCode).toBe(200);
+      const returnedIds = response.json<{ posts: Array<{ id: string }> }>().posts.map((post) => post.id);
+      expect(returnedIds).toContain(postIds.get("viewer"));
+      expect(returnedIds).toContain(postIds.get("acceptedPublic"));
+      expect(returnedIds).toContain(postIds.get("acceptedPrivate"));
+      expect(returnedIds).not.toContain(postIds.get("pendingPrivate"));
+      expect(returnedIds).not.toContain(postIds.get("mutedPublic"));
+      expect(returnedIds).not.toContain(postIds.get("blockedByViewer"));
+      expect(returnedIds).not.toContain(postIds.get("blockedViewer"));
+      expect(returnedIds).not.toContain(postIds.get("deletedPublic"));
+    } finally {
+      await app.close();
+      await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [userIds]);
+    }
+  });
 });
