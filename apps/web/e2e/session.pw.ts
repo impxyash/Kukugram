@@ -1434,7 +1434,9 @@ test("PostCard like response is discarded after an identity switch", async ({ pa
   await expect(page.locator(".post-actions button.liked")).toHaveCount(0);
 });
 
-test("authenticated primary navigation is keyboard reachable in visual order", async ({ page }) => {
+test(
+  "authenticated primary navigation is keyboard reachable in visual order",
+  async ({ page }) => {
   await installApi(page, { me: async (_call, route) => authenticated(route) });
   await page.goto("/");
   const home = page.getByRole("button", { name: "Home" });
@@ -1462,7 +1464,9 @@ test("authenticated primary navigation is keyboard reachable in visual order", a
   expect(focus).toEqual({ visible: true, outlineStyle: "solid", outlineWidth: "2px" });
 });
 
-test("Discover announces completed search results through its live status region", async ({ page }) => {
+test(
+  "Discover announces completed search results through its live status region",
+  async ({ page }) => {
   await page.route("**/v1/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname === "/v1/me") return authenticated(route);
@@ -1485,7 +1489,9 @@ test("Discover announces completed search results through its live status region
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();
-  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("friend");
+  await page
+    .getByRole("textbox", { name: "Search people by name or username" })
+    .fill("friend");
   await page.getByRole("button", { name: "Search" }).click();
 
   const status = page.getByRole("status");
