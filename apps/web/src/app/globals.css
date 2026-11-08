@@ -1076,3 +1076,7 @@ textarea:focus {
   outline: 2px solid #5f35a8;
   outline-offset: 3px;
 }
+
+.auth-card-modern :is(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline-color: #5f35a8;
+}

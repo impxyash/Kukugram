@@ -104,6 +104,27 @@ test("keyboard navigation exposes a visible focus ring on auth inputs", async ({
   });
 });
 
+test("auth card buttons use a visible high-contrast keyboard focus ring", async ({ page }) => {
+  await installApi(page, { me: async (_call, route) => unauthenticated(route) });
+  await page.goto("/");
+  const switchMode = page.getByRole("button", { name: "Log in" });
+  await switchMode.focus();
+
+  const focus = await switchMode.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      outlineColor: style.outlineColor,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth
+    };
+  });
+  expect(focus).toEqual({
+    outlineColor: "rgb(95, 53, 168)",
+    outlineStyle: "solid",
+    outlineWidth: "2px"
+  });
+});
+
 test("starts in the unauthenticated state when the session is missing", async ({ page }) => {
   await installApi(page, { me: async (_call, route) => unauthenticated(route) });
   await page.goto("/");
