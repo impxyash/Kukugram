@@ -2708,6 +2708,74 @@ test("a failed feed page keeps its cursor so Load more can retry", async ({ page
   expect(feedCalls).toBe(3);
 });
 
+test("a pending Discover pagination response is discarded after the component unmounts", async ({ page }) => {
+  const firstPerson = {
+    id: "00000000-0000-4000-8000-000000000601",
+    handle: "lifecycle_creator",
+    displayName: "Lifecycle First Result",
+    bio: null,
+    avatarUrl: null,
+    followers: "0",
+    following: "0",
+    isFollowing: false,
+    isRequested: false,
+    privacy: "public" as const,
+    canViewContent: true,
+    isBlocked: false
+  };
+  const stalePerson = {
+    ...firstPerson,
+    id: "00000000-0000-4000-8000-000000000602",
+    handle: "stale_lifecycle_creator",
+    displayName: "Stale Discover Page"
+  };
+  let searchCalls = 0;
+  let releaseSecondPage!: () => void;
+  let markSecondPagePending!: () => void;
+  const secondPagePending = new Promise<void>((resolve) => {
+    markSecondPagePending = resolve;
+  });
+  const secondPageGate = new Promise<void>((resolve) => {
+    releaseSecondPage = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/me") return reply(route, 200, { user });
+    if (url.pathname === "/v1/feed") return reply(route, 200, { posts: [] });
+    if (url.pathname === "/v1/notifications") {
+      return reply(route, 200, { notifications: [] });
+    }
+    if (url.pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    if (url.pathname === "/v1/users/search") {
+      searchCalls += 1;
+      if (searchCalls === 1) {
+        return reply(route, 200, { users: [firstPerson], nextCursor: "lifecycle-page-two" });
+      }
+      markSecondPagePending();
+      await secondPageGate;
+      return reply(route, 200, { users: [stalePerson] });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Discover" }).click();
+  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("lifecycle");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByText("Lifecycle First Result")).toBeVisible();
+  await page.getByRole("button", { name: "Load more people" }).click();
+  await secondPagePending;
+
+  await page.getByRole("button", { name: "Home" }).click();
+  releaseSecondPage();
+  await page.getByRole("button", { name: "Discover" }).click();
+  await expect(page.getByText("Stale Discover Page")).toHaveCount(0);
+  expect(searchCalls).toBe(2);
+});
+
 test("Discover search pagination stops at the final page", async ({ page }) => {
   const makePerson = (id: string, handle: string, displayName: string) => ({
     id,
