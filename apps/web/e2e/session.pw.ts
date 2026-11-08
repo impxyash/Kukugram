@@ -1498,7 +1498,6 @@ test("Discover search results are announced", async ({ page }) => {
   await expect(page.locator(".results")).toHaveAttribute("aria-busy", "false");
 });
 
-
 test("PostCard like state exposes its accessible name and pressed state", async ({ page }) => {
   const post = {
     id: "00000000-0000-4000-8000-000000000231",
