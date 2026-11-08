@@ -1434,9 +1434,7 @@ test("PostCard like response is discarded after an identity switch", async ({ pa
   await expect(page.locator(".post-actions button.liked")).toHaveCount(0);
 });
 
-test(
-  "authenticated primary navigation is keyboard reachable in visual order",
-  async ({ page }) => {
+test("keyboard navigation works in authenticated primary navigation", async ({ page }) => {
   await installApi(page, { me: async (_call, route) => authenticated(route) });
   await page.goto("/");
   const home = page.getByRole("button", { name: "Home" });
@@ -1464,9 +1462,7 @@ test(
   expect(focus).toEqual({ visible: true, outlineStyle: "solid", outlineWidth: "2px" });
 });
 
-test(
-  "Discover announces completed search results through its live status region",
-  async ({ page }) => {
+test("Discover announces search results in its live region", async ({ page }) => {
   await page.route("**/v1/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname === "/v1/me") return authenticated(route);
