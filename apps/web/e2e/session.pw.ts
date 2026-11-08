@@ -338,10 +338,7 @@ test("a late Settings response from account A cannot overwrite account B after a
   await expect(page.getByText("Account B private record")).toBeVisible();
 });
 
-async function verifyPendingAppealReviewAfterIdentitySwitch(
-  page: Page,
-  responseStatus: 200 | 500
-) {
+async function verifyPendingAppealReviewAfterIdentitySwitch(page: Page, responseStatus: 200 | 500) {
   const appealId = "00000000-0000-4000-8000-000000000041";
   const reportId = "10000000-0000-4000-8000-000000000045";
   const accountA = {
