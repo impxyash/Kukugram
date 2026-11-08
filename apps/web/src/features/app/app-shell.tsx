@@ -7,7 +7,8 @@ import {
   createMountedRequestScope,
   createSessionRequestSequence,
   runIfRequestScopeActive,
-  loadSession
+  loadSession,
+  mergeFeedPosts
 } from "./session-bootstrap";
 import type {
   AccountControlResponse,
@@ -92,6 +93,8 @@ function Avatar({
 export function AppShell() {
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [feedCursor, setFeedCursor] = useState<string | undefined>();
+  const [feedGeneration, setFeedGeneration] = useState(0);
   const [notices, setNotices] = useState<Notice[]>([]);
   const activeUserId = useRef<string | null>(null);
   const sessionRequestSequence = useRef(createSessionRequestSequence());
@@ -122,11 +125,14 @@ export function AppShell() {
         setModeratorUserId(null);
         setUser(null);
         setPosts([]);
+        setFeedCursor(undefined);
+        setFeedGeneration((generation) => generation + 1);
         setNotices([]);
         setError(result.error);
         return;
       }
 
+      const sameUser = activeUserId.current === result.user.id;
       const activity = reconcileSessionActivity(
         activeUserId.current,
         result.user.id,
@@ -141,6 +147,10 @@ export function AppShell() {
       activeUserId.current = result.user.id;
       setUser(result.user);
       setPosts(activity.posts);
+      if (result.posts !== undefined || !sameUser) {
+        setFeedCursor(result.nextCursor);
+        setFeedGeneration((generation) => generation + 1);
+      }
       setNotices(activity.notices);
       if (result.activityError) {
         setError("Some of your latest activity could not be loaded. Please refresh and try again.");
@@ -244,6 +254,8 @@ export function AppShell() {
                 setModeratorUserId(null);
                 setUser(null);
                 setPosts([]);
+                setFeedCursor(undefined);
+                setFeedGeneration((generation) => generation + 1);
                 setNotices([]);
                 setError(null);
                 setLoading(false);
@@ -275,7 +287,15 @@ export function AppShell() {
           </div>
         )}
         {tab === "home" && (
-          <Home key={user.id} user={user} posts={posts} setPosts={setPosts} onError={setError} />
+          <Home
+            key={user.id}
+            user={user}
+            posts={posts}
+            setPosts={setPosts}
+            initialCursor={feedCursor}
+            feedGeneration={feedGeneration}
+            onError={setError}
+          />
         )}
         {tab === "discover" && <Discover key={user.id} onError={setError} />}
         {tab === "activity" && (
@@ -494,22 +514,74 @@ function Home({
   user,
   posts,
   setPosts,
+  initialCursor,
+  feedGeneration,
   onError
 }: {
   user: User;
   posts: Post[];
   setPosts: Dispatch<SetStateAction<Post[]>>;
+  initialCursor: string | undefined;
+  feedGeneration: number;
   onError: (message: string | null) => void;
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cursor, setCursor] = useState(initialCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
   const mountedRequestScope = useRef(createMountedRequestScope());
+  const feedGenerationRef = useRef(feedGeneration);
+  const paginationRequestId = useRef(0);
+  const paginationInFlight = useRef(false);
+  feedGenerationRef.current = feedGeneration;
 
   useEffect(() => {
     const scope = createMountedRequestScope();
     mountedRequestScope.current = scope;
     return () => scope.invalidate();
   }, [user.id]);
+
+  useEffect(() => {
+    paginationRequestId.current += 1;
+    paginationInFlight.current = false;
+    setLoadingMore(false);
+    setCursor(initialCursor);
+  }, [feedGeneration, initialCursor]);
+
+  async function loadMore() {
+    if (!cursor || paginationInFlight.current) return;
+    const scope = mountedRequestScope.current;
+    const requestGeneration = feedGenerationRef.current;
+    const requestId = ++paginationRequestId.current;
+    paginationInFlight.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await request<{ posts: Post[]; nextCursor?: string }>(
+        `/feed?cursor=${encodeURIComponent(cursor)}`
+      );
+      if (
+        !scope.isActive() ||
+        feedGenerationRef.current !== requestGeneration ||
+        paginationRequestId.current !== requestId
+      ) return;
+      setPosts((current) => mergeFeedPosts(current, page.posts));
+      setCursor(page.nextCursor);
+      onError(null);
+    } catch (reason) {
+      if (
+        scope.isActive() &&
+        feedGenerationRef.current === requestGeneration &&
+        paginationRequestId.current === requestId
+      ) {
+        onError((reason as Error).message);
+      }
+    } finally {
+      if (paginationRequestId.current === requestId) {
+        paginationInFlight.current = false;
+        if (scope.isActive()) setLoadingMore(false);
+      }
+    }
+  }
 
   async function publish(event: FormEvent) {
     event.preventDefault();
@@ -522,7 +594,7 @@ function Home({
         body: JSON.stringify({ body })
       });
       if (!scope.isActive()) return;
-      setPosts((current) => [post, ...current]);
+      setPosts((current) => mergeFeedPosts([], [post, ...current]));
       setBody("");
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
@@ -581,6 +653,18 @@ function Home({
           <h3>Your feed is waiting.</h3>
           <p>Follow people in Discover, or make the first post in your corner.</p>
         </section>
+      )}
+      {cursor && (
+        <div className="feed-pagination">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={loadingMore}
+            onClick={() => void loadMore()}
+          >
+            {loadingMore ? "Loading..." : "Load more"}
+          </button>
+        </div>
       )}
     </>
   );
