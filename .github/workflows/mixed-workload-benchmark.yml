@@ -32,7 +32,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  format:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install formatter dependency
+        run: pnpm install --frozen-lockfile --filter @kukugram/api...
+      - name: Format and commit only the new benchmark scripts
+        run: |
+          set -euo pipefail
+          pnpm exec prettier --write apps/api/scripts/mixed-workload-benchmark.mjs apps/api/scripts/mixed-workload-api.mts
+          if git diff --quiet -- apps/api/scripts/mixed-workload-benchmark.mjs apps/api/scripts/mixed-workload-api.mts; then
+            echo "Benchmark scripts are already formatted."
+            exit 0
+          fi
+          current_head="$(git rev-parse HEAD)"
+          remote_head="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | cut -f1)"
+          if [[ "$current_head" != "$GITHUB_SHA" || "$remote_head" != "$GITHUB_SHA" ]]; then
+            echo "Branch advanced during formatting; refusing to push over newer work." >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/api/scripts/mixed-workload-benchmark.mjs apps/api/scripts/mixed-workload-api.mts
+          git commit -m "Format mixed-workload benchmark scripts"
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+
   benchmark:
+    needs: [format]
+    if: always() && (needs.format.result == 'success' || needs.format.result == 'skipped')
     name: "Mixed workload — ${{ matrix.suite }}"
     runs-on: ubuntu-latest
     timeout-minutes: 360
