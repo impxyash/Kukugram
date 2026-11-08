@@ -47,11 +47,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
-      - name: Temporary Prettier diff diagnostic
-        if: always()
-        run: |
-          pnpm exec prettier apps/web/e2e/session.pw.ts > /tmp/session.pw.formatted.ts
-          diff -u apps/web/e2e/session.pw.ts /tmp/session.pw.formatted.ts || true
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm --filter @kukugram/database build
