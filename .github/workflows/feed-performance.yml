@@ -263,8 +263,11 @@ jobs:
           psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-first-page-baseline-plan.json <<'SQL'
           SET jit = off;
           EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
-          SELECT n.id, n.created_at
+          SELECT n.id, n.type, n.post_id AS "postId",
+                 n.created_at AS "createdAt", n.read_at AS "readAt",
+                 p.handle, p.display_name AS "displayName"
           FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
           WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
           ORDER BY n.created_at DESC, n.id DESC
           LIMIT 51;
@@ -273,8 +276,11 @@ jobs:
           psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-cursor-page-baseline-plan.json <<'SQL'
           SET jit = off;
           EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
-          SELECT n.id, n.created_at
+          SELECT n.id, n.type, n.post_id AS "postId",
+                 n.created_at AS "createdAt", n.read_at AS "readAt",
+                 p.handle, p.display_name AS "displayName"
           FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
           WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
             AND (n.created_at, n.id) <
                 (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)
@@ -425,8 +431,11 @@ jobs:
           psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-first-page-candidate-plan.json <<'SQL'
           SET jit = off;
           EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
-          SELECT n.id, n.created_at
+          SELECT n.id, n.type, n.post_id AS "postId",
+                 n.created_at AS "createdAt", n.read_at AS "readAt",
+                 p.handle, p.display_name AS "displayName"
           FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
           WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
           ORDER BY n.created_at DESC, n.id DESC
           LIMIT 51;
@@ -435,8 +444,11 @@ jobs:
           psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-cursor-page-candidate-plan.json <<'SQL'
           SET jit = off;
           EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
-          SELECT n.id, n.created_at
+          SELECT n.id, n.type, n.post_id AS "postId",
+                 n.created_at AS "createdAt", n.read_at AS "readAt",
+                 p.handle, p.display_name AS "displayName"
           FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
           WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
             AND (n.created_at, n.id) <
                 (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)
