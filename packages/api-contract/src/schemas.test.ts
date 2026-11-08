@@ -99,16 +99,14 @@ describe("API request contracts", () => {
 
   it("validates optional feed cursors without changing legacy response compatibility", () => {
     expect(feedQuerySchema.parse({})).toEqual({});
-    expect(feedQuerySchema.parse({ cursor: "opaque-cursor" }).cursor).toBe(
-      "opaque-cursor"
-    );
+    expect(feedQuerySchema.parse({ cursor: "opaque-cursor" }).cursor).toBe("opaque-cursor");
     expect(feedQuerySchema.safeParse({ cursor: "" }).success).toBe(false);
     expect(feedQuerySchema.safeParse({ cursor: "x".repeat(513) }).success).toBe(false);
     expect(feedQuerySchema.safeParse({ cursor: "x", unexpected: true }).success).toBe(false);
     expect(feedResponseSchema.safeParse({ posts: [] }).success).toBe(true);
-    expect(
-      feedResponseSchema.safeParse({ posts: [], nextCursor: "opaque-cursor" }).success
-    ).toBe(true);
+    expect(feedResponseSchema.safeParse({ posts: [], nextCursor: "opaque-cursor" }).success).toBe(
+      true
+    );
   });
 
   it("validates documented feed response shapes", () => {
