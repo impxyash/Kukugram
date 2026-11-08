@@ -1675,7 +1675,6 @@ test("concurrent likes on different posts do not overwrite each other", async ({
   await expect(firstUnlike).toHaveAttribute("aria-pressed", "true");
 });
 
-
 test("Activity read response is ignored after an identity switch", async ({ page }) => {
   const accountA = {
     ...user,
