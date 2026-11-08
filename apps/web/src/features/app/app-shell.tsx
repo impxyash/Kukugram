@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { request } from "./api-client";
 import {
@@ -575,6 +575,7 @@ function PostCard({
 }) {
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [comment, setComment] = useState("");
+  const commentsId = useId();
   const mountedRequestScope = useRef(createMountedRequestScope());
 
   useEffect(() => {
@@ -665,6 +666,8 @@ function PostCard({
       <div className="post-actions">
         <button
           className={post.likedByViewer ? "liked" : ""}
+          aria-label={`${post.likedByViewer ? "Unlike" : "Like"} post by ${post.displayName}. ${post.likeCount} likes`}
+          aria-pressed={post.likedByViewer}
           onClick={() => {
             void toggleLike();
           }}
@@ -672,6 +675,8 @@ function PostCard({
           ♥ {post.likeCount}
         </button>
         <button
+          aria-expanded={Boolean(comments)}
+          aria-controls={commentsId}
           onClick={() => {
             void showComments();
           }}
@@ -688,23 +693,30 @@ function PostCard({
           </button>
         )}
       </div>
-      {comments && (
-        <div className="comments">
-          {comments.map((item) => (
-            <p key={item.id}>
-              <b>{item.displayName}</b> <span>@{item.handle}</span> {item.body}
-              {item.handle !== user.handle && (
-                <button
-                  className="secondary-button"
-                  onClick={() => {
-                    void reportContent("comment", item.id, onError);
-                  }}
-                >
-                  Report
-                </button>
-              )}
-            </p>
-          ))}
+      <div
+        id={commentsId}
+        className="comments"
+        role="region"
+        aria-label={`Comments on ${post.displayName}'s post`}
+        aria-live="polite"
+        hidden={!comments}
+      >
+        {comments?.map((item) => (
+          <p key={item.id}>
+            <b>{item.displayName}</b> <span>@{item.handle}</span> {item.body}
+            {item.handle !== user.handle && (
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  void reportContent("comment", item.id, onError);
+                }}
+              >
+                Report
+              </button>
+            )}
+          </p>
+        ))}
+        {comments && (
           <form
             onSubmit={(event) => {
               void addComment(event);
@@ -717,10 +729,10 @@ function PostCard({
               maxLength={1000}
               placeholder="Add to the conversation"
             />
-            <button>Send</button>
+            <button type="submit">Send</button>
           </form>
-        </div>
-      )}
+        )}
+      </div>
     </article>
   );
 }
@@ -848,7 +860,10 @@ function Discover({ onError }: { onError: (message: string) => void }) {
           {loading ? "Searching..." : "Search"}
         </button>
       </form>
-      <div className="results">
+      <p className="sr-only" role="status" aria-live="polite">
+        {loading ? "Searching people." : query.trim() ? `${users.length} people found.` : ""}
+      </p>
+      <div className="results" aria-busy={loading}>
         {users.map((person) => (
           <article key={person.id} className="person">
             <Avatar user={person} />
