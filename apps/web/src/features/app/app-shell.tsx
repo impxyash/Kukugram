@@ -331,6 +331,7 @@ function AuthScreen({
     const values = Object.fromEntries(form);
     try {
       await request(`/auth/${mode}`, { method: "POST", body: JSON.stringify(values) });
+      if (!scope.isActive()) return;
       await onAuthenticated();
     } catch (reason) {
       if (scope.isActive()) setError((reason as Error).message);
