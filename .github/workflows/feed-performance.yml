@@ -891,12 +891,12 @@ jobs:
               client_over_server_ms: clientRoundTripMs - planningMs - executionMs
             });
             if (phase === "measured") {
-              const filename = `../artifacts/write-overhead/plans/${group.key}-${variant.label}-trial-${trial}.json`;
+              const filename = `../../artifacts/write-overhead/plans/${group.key}-${variant.label}-trial-${trial}.json`;
               await writeFile(filename, JSON.stringify(plan, null, 2) + "\n");
             }
           }
 
-          await mkdir("../artifacts/write-overhead/plans", { recursive: true });
+          await mkdir("../../artifacts/write-overhead/plans", { recursive: true });
           await client.connect();
           try {
             for (const group of groups) {
@@ -937,9 +937,9 @@ jobs:
               row.client_over_server_ms.toFixed(4)
             ])
           ];
-          await writeFile("../artifacts/write-overhead/raw.json", JSON.stringify(results, null, 2) + "\n");
-          await writeFile("../artifacts/write-overhead/summary.json", JSON.stringify(summaries, null, 2) + "\n");
-          await writeFile("../artifacts/write-overhead/raw.csv", csvRows.map((row) => row.join(",")).join("\n") + "\n");
+          await writeFile("../../artifacts/write-overhead/raw.json", JSON.stringify(results, null, 2) + "\n");
+          await writeFile("../../artifacts/write-overhead/summary.json", JSON.stringify(summaries, null, 2) + "\n");
+          await writeFile("../../artifacts/write-overhead/raw.csv", csvRows.map((row) => row.join(",")).join("\n") + "\n");
           const report = [
             "Autocommit write benchmark",
             `Warm-up trials per variant: ${warmupTrials}`,
@@ -952,7 +952,7 @@ jobs:
             "",
             ...summaries.map((summary) => JSON.stringify(summary))
           ].join("\n");
-          await writeFile("../artifacts/write-overhead/summary.txt", report + "\n");
+          await writeFile("../../artifacts/write-overhead/summary.txt", report + "\n");
           JS
 
       - name: Document first-touch cache observations
