@@ -600,6 +600,7 @@ function PostCard({
 }) {
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [comment, setComment] = useState("");
+  const [likeBusy, setLikeBusy] = useState(false);
   const commentsId = useId();
   const mountedRequestScope = useRef(createMountedRequestScope());
   const commentsRequestInFlight = useRef(false);
@@ -617,6 +618,7 @@ function PostCard({
   async function toggleLike() {
     if (likeRequestInFlight.current) return;
     likeRequestInFlight.current = true;
+    setLikeBusy(true);
     const scope = mountedRequestScope.current;
     try {
       await request(`/posts/${post.id}/like`, { method: post.likedByViewer ? "DELETE" : "POST" });
@@ -630,6 +632,7 @@ function PostCard({
       if (scope.isActive()) onError((reason as Error).message);
     } finally {
       likeRequestInFlight.current = false;
+      if (scope.isActive()) setLikeBusy(false);
     }
   }
 
@@ -713,6 +716,7 @@ function PostCard({
           className={post.likedByViewer ? "liked" : ""}
           aria-label={`${post.likedByViewer ? "Unlike" : "Like"} post by ${post.displayName}. ${post.likeCount} likes`}
           aria-pressed={post.likedByViewer}
+          disabled={likeBusy}
           onClick={() => {
             void toggleLike();
           }}
