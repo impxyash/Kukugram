@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { request } from "./api-client";
 import {
   createMountedRequestScope,
@@ -474,7 +474,7 @@ function Home({
 }: {
   user: User;
   posts: Post[];
-  setPosts: (posts: Post[]) => void;
+  setPosts: Dispatch<SetStateAction<Post[]>>;
   onError: (message: string | null) => void;
 }) {
   const [body, setBody] = useState("");
