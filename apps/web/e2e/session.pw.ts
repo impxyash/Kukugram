@@ -1471,7 +1471,14 @@ test("Discover announces completed search results through its live status region
     if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
     if (pathname === "/v1/users/search") {
       return reply(route, 200, {
-        users: [{ ...user, id: "00000000-0000-4000-8000-000000000077", handle: "discover-friend", displayName: "Discover Friend" }]
+        users: [
+          {
+            ...user,
+            id: "00000000-0000-4000-8000-000000000077",
+            handle: "discover-friend",
+            displayName: "Discover Friend"
+          }
+        ]
       });
     }
     return reply(route, 200, {});
