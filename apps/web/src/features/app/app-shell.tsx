@@ -929,17 +929,26 @@ function Profile({
   posts: Post[];
   onError: (message: string) => void;
 }) {
+  const mountedRequestScope = useRef(createMountedRequestScope());
+
+  useEffect(() => {
+    const scope = createMountedRequestScope();
+    mountedRequestScope.current = scope;
+    return () => scope.invalidate();
+  }, []);
+
   async function editProfile() {
     const name = window.prompt("Display name", user.displayName);
     if (!name) return;
+    const scope = mountedRequestScope.current;
     try {
       const result = await request<{ user: User }>("/me/profile", {
         method: "PATCH",
         body: JSON.stringify({ displayName: name })
       });
-      setUser(result.user);
+      if (scope.isActive()) setUser(result.user);
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -1066,6 +1075,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   }
 
   async function refresh() {
+    const scope = mountedRequestScope.current;
     const requestId = queueRequestSequence.current.begin();
     setLoading(true);
     setLoadError(null);
@@ -1074,26 +1084,17 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         request<{ reports: ModerationReport[] }>(`/moderation/reports?status=${filter}&limit=50`),
         request<{ appeals: typeof appeals }>("/moderation/appeals")
       ]);
-      if (
-        !mountedRequestScope.current.isActive() ||
-        !queueRequestSequence.current.isCurrent(requestId)
-      ) {
+      if (!scope.isActive() || !queueRequestSequence.current.isCurrent(requestId)) {
         return;
       }
       setReports(reportResult.reports);
       setAppeals(appealResult.appeals);
     } catch (reason) {
-      if (
-        mountedRequestScope.current.isActive() &&
-        queueRequestSequence.current.isCurrent(requestId)
-      ) {
+      if (scope.isActive() && queueRequestSequence.current.isCurrent(requestId)) {
         setLoadError((reason as Error).message);
       }
     } finally {
-      if (
-        mountedRequestScope.current.isActive() &&
-        queueRequestSequence.current.isCurrent(requestId)
-      ) {
+      if (scope.isActive() && queueRequestSequence.current.isCurrent(requestId)) {
         setLoading(false);
       }
     }
@@ -1111,6 +1112,7 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
   }, [filter]);
 
   async function updateReport(id: string, status: "reviewing" | "resolved" | "dismissed") {
+    const scope = mountedRequestScope.current;
     setBusy(id);
     setActionNotice(null);
     try {
@@ -1118,20 +1120,21 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         method: "PATCH",
         body: JSON.stringify({ status })
       });
-      if (!mountedRequestScope.current.isActive()) return;
+      if (!scope.isActive()) return;
       setActionNotice(`Report marked as ${status.replaceAll("_", " ")}.`);
       await refresh();
     } catch (reason) {
-      if (mountedRequestScope.current.isActive()) {
+      if (scope.isActive()) {
         setActionNotice(null);
         onError((reason as Error).message);
       }
     } finally {
-      if (mountedRequestScope.current.isActive()) setBusy(null);
+      if (scope.isActive()) setBusy(null);
     }
   }
 
   async function reviewAppeal(id: string, status: "accepted" | "rejected") {
+    const scope = mountedRequestScope.current;
     setBusy(id);
     setActionNotice(null);
     try {
@@ -1139,16 +1142,16 @@ function ModerationPanel({ onError }: { onError: (message: string) => void }) {
         method: "PATCH",
         body: JSON.stringify({ status })
       });
-      if (!mountedRequestScope.current.isActive()) return;
+      if (!scope.isActive()) return;
       setActionNotice(`Appeal ${status}.`);
       await refresh();
     } catch (reason) {
-      if (mountedRequestScope.current.isActive()) {
+      if (scope.isActive()) {
         setActionNotice(null);
         onError((reason as Error).message);
       }
     } finally {
-      if (mountedRequestScope.current.isActive()) setBusy(null);
+      if (scope.isActive()) setBusy(null);
     }
   }
 
@@ -1368,21 +1371,23 @@ function Settings({
       "Explain why this report decision should be reconsidered (20–2000 characters):"
     );
     if (!details) return;
+    const scope = mountedRequestScope.current;
     try {
       await request(`/reports/${reportId}/appeals`, {
         method: "POST",
         body: JSON.stringify({ details })
       });
-      if (!mountedRequestScope.current.isActive()) return;
+      if (!scope.isActive()) return;
       const result = await request<{ appeals: AppealRecord[] }>("/me/appeals");
-      if (mountedRequestScope.current.isActive()) setAppealHistory(result.appeals);
+      if (scope.isActive()) setAppealHistory(result.appeals);
     } catch (reason) {
-      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const scope = mountedRequestScope.current;
     try {
       const result = await request<{ user: User }>("/me/profile", {
         method: "PATCH",
@@ -1393,11 +1398,11 @@ function Settings({
           privacy
         })
       });
-      if (!mountedRequestScope.current.isActive()) return;
+      if (!scope.isActive()) return;
       setUser(result.user);
       setSaved(true);
     } catch (reason) {
-      if (mountedRequestScope.current.isActive()) onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -1457,14 +1462,15 @@ function Settings({
               <button
                 className="primary-button"
                 onClick={() => {
+                  const scope = mountedRequestScope.current;
                   void request(`/me/follow-requests/${item.handle}/accept`, { method: "POST" })
                     .then(() => {
-                      if (mountedRequestScope.current.isActive()) {
+                      if (scope.isActive()) {
                         setFollowRequests((items) => items.filter((entry) => entry.id !== item.id));
                       }
                     })
                     .catch((reason) => {
-                      if (mountedRequestScope.current.isActive()) {
+                      if (scope.isActive()) {
                         onError((reason as Error).message);
                       }
                     });
@@ -1475,14 +1481,15 @@ function Settings({
               <button
                 className="secondary-button"
                 onClick={() => {
+                  const scope = mountedRequestScope.current;
                   void request(`/me/follow-requests/${item.handle}`, { method: "DELETE" })
                     .then(() => {
-                      if (mountedRequestScope.current.isActive()) {
+                      if (scope.isActive()) {
                         setFollowRequests((items) => items.filter((entry) => entry.id !== item.id));
                       }
                     })
                     .catch((reason) => {
-                      if (mountedRequestScope.current.isActive()) {
+                      if (scope.isActive()) {
                         onError((reason as Error).message);
                       }
                     });
@@ -1509,14 +1516,15 @@ function Settings({
               <button
                 className="secondary-button"
                 onClick={() => {
+                  const scope = mountedRequestScope.current;
                   void request(`/users/${item.handle}/block`, { method: "DELETE" })
                     .then(() => {
-                      if (mountedRequestScope.current.isActive()) {
+                      if (scope.isActive()) {
                         setBlockedUsers((items) => items.filter((entry) => entry.id !== item.id));
                       }
                     })
                     .catch((reason) => {
-                      if (mountedRequestScope.current.isActive()) {
+                      if (scope.isActive()) {
                         onError((reason as Error).message);
                       }
                     });
@@ -1543,14 +1551,15 @@ function Settings({
               <button
                 className="secondary-button"
                 onClick={() => {
+                  const scope = mountedRequestScope.current;
                   void request(`/users/${item.handle}/mute`, { method: "DELETE" })
                     .then(() => {
-                      if (mountedRequestScope.current.isActive()) {
+                      if (scope.isActive()) {
                         setMutedUsers((items) => items.filter((entry) => entry.id !== item.id));
                       }
                     })
                     .catch((reason) => {
-                      if (mountedRequestScope.current.isActive()) {
+                      if (scope.isActive()) {
                         onError((reason as Error).message);
                       }
                     });
