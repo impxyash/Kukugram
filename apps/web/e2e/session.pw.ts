@@ -2709,7 +2709,7 @@ test("a failed feed page keeps its cursor so Load more can retry", async ({ page
 });
 
 
-test("Discover pagination uses one query-bound cursor request and stops at the final page", async ({
+test("Discover search pagination stops at the final page", async ({ page }) => {
   page
 }) => {
   const makePerson = (id: string, handle: string, displayName: string) => ({
@@ -2776,7 +2776,9 @@ test("Discover pagination uses one query-bound cursor request and stops at the f
 
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();
-  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("creator");
+  await page
+    .getByRole("textbox", { name: "Search people by name or username" })
+    .fill("creator");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText("First Search Result")).toBeVisible();
 
