@@ -2322,3 +2322,51 @@ test("rapid follow-request decisions send only one mutation", async ({ page }) =
   await expect(page.getByText("No pending follow requests.")).toBeVisible();
   expect(acceptCalls).toBe(1);
 });
+
+
+test("feed Load more requests the next cursor once and stops at the final page", async ({ page }) => {
+  let feedCalls = 0;
+  let releaseSecondPage!: () => void;
+  let markSecondPagePending!: () => void;
+  const secondPagePending = new Promise<void>((resolve) => {
+    markSecondPagePending = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseSecondPage = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/v1/me") return reply(route, 200, { user });
+    if (url.pathname === "/v1/feed") {
+      feedCalls += 1;
+      if (feedCalls === 1) {
+        return reply(route, 200, { posts: [], nextCursor: "cursor-page-two" });
+      }
+      expect(url.searchParams.get("cursor")).toBe("cursor-page-two");
+      markSecondPagePending();
+      await release;
+      return reply(route, 200, { posts: [] });
+    }
+    if (url.pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (url.pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  const loadMore = page.getByRole("button", { name: "Load more" });
+  await expect(loadMore).toBeVisible();
+  await loadMore.evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await secondPagePending;
+  expect(feedCalls).toBe(2);
+  await expect(page.getByRole("button", { name: "Loading..." })).toBeDisabled();
+
+  releaseSecondPage();
+  await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
+  expect(feedCalls).toBe(2);
+});
