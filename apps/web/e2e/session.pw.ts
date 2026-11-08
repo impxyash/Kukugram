@@ -1674,3 +1674,87 @@ test("concurrent likes on different posts do not overwrite each other", async ({
   await expect(secondUnlike).toHaveAttribute("aria-pressed", "true");
   await expect(firstUnlike).toHaveAttribute("aria-pressed", "true");
 });
+
+
+test("Activity read response is ignored after an identity switch", async ({ page }) => {
+  const accountA = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000131",
+    handle: "activity-a",
+    displayName: "Activity Account A"
+  };
+  const accountB = {
+    ...user,
+    id: "00000000-0000-4000-8000-000000000132",
+    handle: "activity-b",
+    displayName: "Activity Account B"
+  };
+  let switchToAccountB = false;
+  let feedCalls = 0;
+  let readCalls = 0;
+  let releaseFirstRead!: () => void;
+  let markFirstReadPending!: () => void;
+  let markSecondReadPending!: () => void;
+  let markFirstReadSettled!: () => void;
+  const firstReadGate = new Promise<void>((resolve) => {
+    releaseFirstRead = resolve;
+  });
+  const firstReadSeen = new Promise<void>((resolve) => {
+    markFirstReadPending = resolve;
+  });
+  const secondReadSeen = new Promise<void>((resolve) => {
+    markSecondReadPending = resolve;
+  });
+  const firstReadSettled = new Promise<void>((resolve) => {
+    markFirstReadSettled = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") {
+      await reply(route, 200, { user: switchToAccountB ? accountB : accountA });
+      return;
+    }
+    if (pathname === "/v1/feed") {
+      feedCalls += 1;
+      await (feedCalls === 1 ? unavailable(route) : reply(route, 200, { posts: [] }));
+      return;
+    }
+    if (pathname === "/v1/notifications") {
+      await reply(route, 200, { notifications: [] });
+      return;
+    }
+    if (pathname === "/v1/moderation/reports") {
+      await reply(route, 403, { title: "Forbidden" });
+      return;
+    }
+    if (pathname === "/v1/notifications/read") {
+      readCalls += 1;
+      if (readCalls === 1) {
+        markFirstReadPending();
+        await firstReadGate;
+        await reply(route, 500, { title: "Account A read failed" });
+        markFirstReadSettled();
+        return;
+      }
+      markSecondReadPending();
+      await reply(route, 200, {});
+      return;
+    }
+    await reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await page.getByRole("button", { name: "Activity" }).click();
+  await firstReadSeen;
+
+  switchToAccountB = true;
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("heading", { name: "The ripples from your corner." })).toBeVisible();
+  await secondReadSeen;
+
+  releaseFirstRead();
+  await firstReadSettled;
+  await expect(page.locator(".banner.error")).toHaveCount(0);
+});
