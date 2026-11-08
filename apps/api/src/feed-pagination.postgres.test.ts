@@ -31,7 +31,8 @@ function appConfig() {
 
 integration("PostgreSQL feed pagination", () => {
   beforeAll(async () => {
-    if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required for this integration test.");
+    if (!testDatabaseUrl)
+      throw new Error("TEST_DATABASE_URL is required for this integration test.");
 
     const baseUrl = new URL(testDatabaseUrl);
     const databaseNameFromUrl = decodeURIComponent(baseUrl.pathname.replace(/^\//, ""));
@@ -91,7 +92,9 @@ integration("PostgreSQL feed pagination", () => {
     }
   }, 30_000);
 
-  it("keeps filtered equal-timestamp posts in exact keyset order across page boundaries", async () => {
+  it(
+    "keeps filtered equal-timestamp posts in exact keyset order across page boundaries",
+    async () => {
     const viewerId = randomUUID();
     const viewerToken = randomUUID();
     const authors = {
@@ -208,5 +211,7 @@ integration("PostgreSQL feed pagination", () => {
       await app.close();
       await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [userIds]);
     }
-  }, 30_000);
+    },
+    30_000
+  );
 });
