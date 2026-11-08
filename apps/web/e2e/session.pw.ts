@@ -1955,3 +1955,158 @@ test("logout prevents a competing session retry until the request settles", asyn
   await expect(page.getByRole("heading", { name: "Your people, in motion." })).toBeVisible();
   await expect(logout).toBeEnabled();
 });
+
+test("rapid comment submissions create only one comment", async ({ page }) => {
+  const post = {
+    id: "00000000-0000-4000-8000-000000000281",
+    authorId: "00000000-0000-4000-8000-000000000282",
+    handle: "comment-creator",
+    displayName: "Comment Creator",
+    avatarUrl: null,
+    body: "Comment submission race",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  };
+  let commentCalls = 0;
+  let releaseComment!: () => void;
+  let markCommentPending!: () => void;
+  const commentGate = new Promise<void>((resolve) => {
+    releaseComment = resolve;
+  });
+  const commentSeen = new Promise<void>((resolve) => {
+    markCommentPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [post] });
+    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === `/v1/posts/${post.id}/comments` && method === "GET") {
+      return reply(route, 200, { comments: [] });
+    }
+    if (pathname === `/v1/posts/${post.id}/comments` && method === "POST") {
+      commentCalls += 1;
+      markCommentPending();
+      await commentGate;
+      return reply(route, 201, {});
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Reply 0" }).click();
+  const commentInput = page.getByRole("textbox", { name: "Write a comment" });
+  await commentInput.fill("One comment only");
+  const send = page.getByRole("button", { name: "Send" });
+  await send.click();
+  await commentSeen;
+  await send.click();
+  releaseComment();
+
+  await expect(page.getByRole("button", { name: "Reply 1" })).toBeVisible();
+  expect(commentCalls).toBe(1);
+});
+
+test("rapid repeated delete clicks issue only one delete request", async ({ page }) => {
+  const post = {
+    id: "00000000-0000-4000-8000-000000000291",
+    authorId: user.id,
+    handle: user.handle,
+    displayName: user.displayName,
+    avatarUrl: null,
+    body: "Delete request race",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  };
+  let deleteCalls = 0;
+  let releaseDelete!: () => void;
+  let markDeletePending!: () => void;
+  const deleteGate = new Promise<void>((resolve) => {
+    releaseDelete = resolve;
+  });
+  const deleteSeen = new Promise<void>((resolve) => {
+    markDeletePending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [post] });
+    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === `/v1/posts/${post.id}` && method === "DELETE") {
+      deleteCalls += 1;
+      markDeletePending();
+      await deleteGate;
+      return reply(route, 200, {});
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  const deleteButton = page.getByRole("button", { name: "Delete" });
+  await deleteButton.click();
+  await deleteSeen;
+  await deleteButton.click();
+  releaseDelete();
+
+  await expect(page.getByText("Delete request race")).toHaveCount(0);
+  expect(deleteCalls).toBe(1);
+});
+
+test("repeated comment expansion clicks issue only one comments request", async ({ page }) => {
+  const post = {
+    id: "00000000-0000-4000-8000-000000000301",
+    authorId: "00000000-0000-4000-8000-000000000302",
+    handle: "comments-creator",
+    displayName: "Comments Creator",
+    avatarUrl: null,
+    body: "Comments loading race",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "1",
+    likedByViewer: false
+  };
+  let commentsCalls = 0;
+  let releaseComments!: () => void;
+  let markCommentsPending!: () => void;
+  const commentsGate = new Promise<void>((resolve) => {
+    releaseComments = resolve;
+  });
+  const commentsSeen = new Promise<void>((resolve) => {
+    markCommentsPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [post] });
+    if (pathname === "/v1/notifications") return reply(route, 200, { notifications: [] });
+    if (pathname === "/v1/moderation/reports") return reply(route, 403, { title: "Forbidden" });
+    if (pathname === `/v1/posts/${post.id}/comments`) {
+      commentsCalls += 1;
+      markCommentsPending();
+      await commentsGate;
+      return reply(route, 200, { comments: [] });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  const replyButton = page.getByRole("button", { name: "Reply 1" });
+  await replyButton.click();
+  await commentsSeen;
+  await replyButton.click();
+  releaseComments();
+
+  await expect(page.getByRole("region", { name: "Comments on Comments Creator's post" })).toBeVisible();
+  expect(commentsCalls).toBe(1);
+});

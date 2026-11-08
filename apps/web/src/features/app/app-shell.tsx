@@ -602,6 +602,9 @@ function PostCard({
   const [comment, setComment] = useState("");
   const commentsId = useId();
   const mountedRequestScope = useRef(createMountedRequestScope());
+  const commentsRequestInFlight = useRef(false);
+  const commentRequestInFlight = useRef(false);
+  const deleteRequestInFlight = useRef(false);
 
   useEffect(() => {
     const scope = createMountedRequestScope();
@@ -635,18 +638,23 @@ function PostCard({
       setComments(null);
       return;
     }
+    if (commentsRequestInFlight.current) return;
+    commentsRequestInFlight.current = true;
     const scope = mountedRequestScope.current;
     try {
       const result = await request<{ comments: Comment[] }>(`/posts/${post.id}/comments`);
       if (scope.isActive()) setComments(result.comments);
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      commentsRequestInFlight.current = false;
     }
   }
 
   async function addComment(event: FormEvent) {
     event.preventDefault();
-    if (!comment.trim()) return;
+    if (!comment.trim() || commentRequestInFlight.current) return;
+    commentRequestInFlight.current = true;
     const scope = mountedRequestScope.current;
     try {
       await request(`/posts/${post.id}/comments`, {
@@ -659,16 +667,22 @@ function PostCard({
       onChange({ ...post, commentCount: String(Number(post.commentCount) + 1) });
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      commentRequestInFlight.current = false;
     }
   }
 
   async function deletePost() {
+    if (deleteRequestInFlight.current) return;
+    deleteRequestInFlight.current = true;
     const scope = mountedRequestScope.current;
     try {
       await request(`/posts/${post.id}`, { method: "DELETE" });
       if (scope.isActive()) onDelete();
     } catch (reason) {
       if (scope.isActive()) onError((reason as Error).message);
+    } finally {
+      deleteRequestInFlight.current = false;
     }
   }
 
