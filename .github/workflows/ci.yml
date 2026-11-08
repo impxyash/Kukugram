@@ -46,6 +46,8 @@ jobs:
         run: |
           pnpm exec prettier apps/web/src/features/app/app-shell.tsx > /tmp/app-shell.formatted.ts
           diff -u apps/web/src/features/app/app-shell.tsx /tmp/app-shell.formatted.ts || true
+          pnpm exec prettier apps/web/e2e/session.pw.ts > /tmp/session.pw.formatted.ts
+          diff -u apps/web/e2e/session.pw.ts /tmp/session.pw.formatted.ts || true
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
