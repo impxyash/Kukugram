@@ -338,7 +338,7 @@ test("a late Settings response from account A cannot overwrite account B after a
   await expect(page.getByText("Account B private record")).toBeVisible();
 });
 
-test("pending moderation appeal reviews cannot commit or report errors after an identity switch", async ({
+test("pending appeal reviews cannot update a new identity or surface stale errors", async ({
   page
 }) => {
   const acceptedAppealId = "00000000-0000-4000-8000-000000000041";
