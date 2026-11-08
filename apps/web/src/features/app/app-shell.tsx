@@ -563,7 +563,8 @@ function Home({
         !scope.isActive() ||
         feedGenerationRef.current !== requestGeneration ||
         paginationRequestId.current !== requestId
-      ) return;
+      )
+        return;
       setPosts((current) => mergeFeedPosts(current, page.posts));
       setCursor(page.nextCursor);
       onError(null);
