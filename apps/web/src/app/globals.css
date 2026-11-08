@@ -352,7 +352,7 @@ textarea:focus {
 }
 .secondary-button {
   background: transparent;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(246, 243, 236, 0.38);
   color: var(--ink);
 }
 .primary-button:hover,
