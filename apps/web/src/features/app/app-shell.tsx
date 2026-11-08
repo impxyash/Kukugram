@@ -50,7 +50,8 @@ export function reconcileSessionActivity<TPost, TNotice>(
 async function reportContent(
   targetType: "profile" | "post" | "comment",
   targetId: string,
-  onError: (message: string) => void
+  onError: (message: string) => void,
+  isActive: () => boolean
 ) {
   const category = window.prompt(
     "Report reason: harassment, spam, impersonation, self_harm, violence, nudity, copyright, other",
@@ -63,9 +64,11 @@ async function reportContent(
       method: "POST",
       body: JSON.stringify({ targetType, targetId, category, details: details.trim() || undefined })
     });
-    window.alert("Thanks. Your report has been sent privately to the safety team.");
+    if (isActive()) {
+      window.alert("Thanks. Your report has been sent privately to the safety team.");
+    }
   } catch (reason) {
-    onError((reason as Error).message);
+    if (isActive()) onError((reason as Error).message);
   }
 }
 
@@ -265,7 +268,7 @@ export function AppShell() {
         )}
         {tab === "discover" && <Discover key={user.id} onError={setError} />}
         {tab === "activity" && (
-          <Activity notices={notices} setNotices={setNotices} onError={setError} />
+          <Activity userId={user.id} notices={notices} setNotices={setNotices} onError={setError} />
         )}
         {tab === "profile" && (
           <Profile
@@ -688,7 +691,7 @@ function PostCard({
         {post.authorId !== user.id && (
           <button
             onClick={() => {
-              void reportContent("post", post.id, onError);
+              void reportContent("post", post.id, onError, () => mountedRequestScope.current.isActive());
             }}
           >
             Report
@@ -710,7 +713,7 @@ function PostCard({
               <button
                 className="secondary-button"
                 onClick={() => {
-                  void reportContent("comment", item.id, onError);
+                  void reportContent("comment", item.id, onError, () => mountedRequestScope.current.isActive());
                 }}
               >
                 Report
@@ -902,7 +905,7 @@ function Discover({ onError }: { onError: (message: string) => void }) {
               <button
                 className="secondary-button"
                 onClick={() => {
-                  void reportContent("profile", person.id, onError);
+                  void reportContent("profile", person.id, onError, () => mountedRequestScope.current.isActive());
                 }}
               >
                 Report
@@ -922,26 +925,37 @@ function Discover({ onError }: { onError: (message: string) => void }) {
 }
 
 function Activity({
+  userId,
   notices,
   setNotices,
   onError
 }: {
+  userId: string;
   notices: Notice[];
-  setNotices: (notices: Notice[]) => void;
+  setNotices: Dispatch<SetStateAction<Notice[]>>;
   onError: (message: string) => void;
 }) {
+  const mountedRequestScope = useRef(createMountedRequestScope());
+
   useEffect(() => {
+    const scope = createMountedRequestScope();
+    mountedRequestScope.current = scope;
     void request("/notifications/read", { method: "POST" })
       .then(() => {
-        setNotices(
-          notices.map((notice) => ({
+        if (!scope.isActive()) return;
+        const readAt = new Date().toISOString();
+        setNotices((current) =>
+          current.map((notice) => ({
             ...notice,
-            readAt: notice.readAt ?? new Date().toISOString()
+            readAt: notice.readAt ?? readAt
           }))
         );
       })
-      .catch((reason) => onError((reason as Error).message));
-  }, []);
+      .catch((reason) => {
+        if (scope.isActive()) onError((reason as Error).message);
+      });
+    return () => scope.invalidate();
+  }, [userId, setNotices, onError]);
 
   return (
     <>
