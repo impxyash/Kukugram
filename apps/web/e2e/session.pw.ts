@@ -2670,7 +2670,11 @@ test("a failed feed page keeps its cursor so Load more can retry", async ({ page
     commentCount: "0",
     likedByViewer: false
   };
-  const second = { ...first, id: "00000000-0000-4000-8000-000000000413", body: "Retry second page" };
+  const second = {
+    ...first,
+    id: "00000000-0000-4000-8000-000000000413",
+    body: "Retry second page"
+  };
   let feedCalls = 0;
 
   await page.route("**/v1/**", async (route) => {
