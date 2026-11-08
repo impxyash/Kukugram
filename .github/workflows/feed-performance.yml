@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: feed-performance-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   benchmark:
@@ -254,14 +254,35 @@ jobs:
               psql -X -q -A -t -v ON_ERROR_STOP=1 > "artifacts/feed-${cohort}-${page}-baseline-plan.json" <<SQL
           SET jit = off;
           EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
-          WITH viewer AS (SELECT md5('${viewer}')::uuid AS id)
-          SELECT p.id, p.author_id, p.created_at
-          FROM content.posts p CROSS JOIN viewer
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('${viewer}')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
           WHERE p.deleted_at IS NULL
-            AND (p.author_id = viewer.id OR EXISTS (
+            AND (p.author_id = md5('${viewer}')::uuid OR EXISTS (
               SELECT 1 FROM social.follows f
-              WHERE f.follower_id = viewer.id AND f.followee_id = p.author_id AND f.status = 'accepted'
+              WHERE f.follower_id = md5('${viewer}')::uuid
+                AND f.followee_id = p.author_id AND f.status = 'accepted'
             ))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('${viewer}')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id AND b.blocked_id = md5('${viewer}')::uuid)
+                              OR (b.blocker_id = md5('${viewer}')::uuid AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('${viewer}')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('${viewer}')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
             AND ${cursor_predicate}
           ORDER BY p.created_at DESC, p.id DESC
           LIMIT 51;
@@ -297,6 +318,107 @@ jobs:
           LIMIT 51;
           SQL
 
+      - name: Capture repeated baseline query measurements
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/repeated/baseline
+          capture_feed() {
+            local cohort="$1" viewer="$2" page="$3" cursor_predicate="$4" output="$5"
+            psql -X -q -A -t -v ON_ERROR_STOP=1 > "$output" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('$viewer')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('$viewer')::uuid OR EXISTS (
+              SELECT 1 FROM social.follows f WHERE f.follower_id = md5('$viewer')::uuid
+                AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('$viewer')::uuid AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id AND b.blocked_id = md5('$viewer')::uuid)
+                              OR (b.blocker_id = md5('$viewer')::uuid AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('$viewer')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('$viewer')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND $cursor_predicate
+          ORDER BY p.created_at DESC, p.id DESC LIMIT 51;
+          SQL
+          }
+          capture_notifications() {
+            local page="$1" output="$2"
+            local cursor_predicate="TRUE"
+            if [[ "$page" == "cursor" ]]; then
+              cursor_predicate="(n.created_at, n.id) < (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)"
+            fi
+            psql -X -q -A -t -v ON_ERROR_STOP=1 > "$output" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId", n.created_at AS "createdAt",
+                 n.read_at AS "readAt", p.handle, p.display_name AS "displayName"
+          FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            AND $cursor_predicate
+          ORDER BY n.created_at DESC, n.id DESC LIMIT 51;
+          SQL
+          }
+          for trial in {1..5}; do
+            for cohort in dense sparse high; do
+              case "$cohort" in
+                dense) viewer="kukugram-bench-user-1" ;;
+                sparse) viewer="kukugram-bench-user-2" ;;
+                high) viewer="kukugram-bench-user-3" ;;
+              esac
+              for page in first cursor; do
+                predicate="TRUE"
+                if [[ "$page" == "cursor" ]]; then
+                  predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"
+                fi
+                capture_feed "$cohort" "$viewer" "$page" "$predicate"                   "artifacts/repeated/baseline/feed-$cohort-$page-trial-$trial.json"
+              done
+            done
+            for page in first cursor; do
+              capture_notifications "$page"                 "artifacts/repeated/baseline/notifications-$page-trial-$trial.json"
+            done
+          done
+          python3 - <<'PY'
+          import csv, glob, json, math, os, statistics
+          rows = []
+          for path in sorted(glob.glob("artifacts/repeated/baseline/*.json")):
+              with open(path, encoding="utf-8") as handle:
+                  payload = json.load(handle)
+              plan = payload[0]["Plan"]
+              timing = float(payload[0]["Execution Time"])
+              rows.append({
+                  "query": os.path.basename(path).rsplit("-trial-", 1)[0],
+                  "trial": int(os.path.basename(path).rsplit("-trial-", 1)[1].split(".")[0]),
+                  "execution_ms": timing,
+                  "actual_rows": float(plan.get("Actual Rows", 0)),
+                  "shared_hit_blocks": int(plan.get("Shared Hit Blocks", 0)),
+                  "shared_read_blocks": int(plan.get("Shared Read Blocks", 0)),
+              })
+          with open("artifacts/repeated/baseline-summary.csv", "w", newline="", encoding="utf-8") as handle:
+              writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+              writer.writeheader()
+              writer.writerows(rows)
+          with open("artifacts/repeated/baseline-summary.txt", "w", encoding="utf-8") as handle:
+              for name in sorted({row["query"] for row in rows}):
+                  values = [row["execution_ms"] for row in rows if row["query"] == name]
+                  cv = statistics.pstdev(values) / statistics.mean(values) * 100 if statistics.mean(values) else 0
+                  group = [row for row in rows if row["query"] == name]
+                  handle.write(f"{name}: n={len(values)} median_ms={statistics.median(values):.3f} min_ms={min(values):.3f} max_ms={max(values):.3f} stdev_ms={statistics.pstdev(values):.3f} cv_pct={cv:.2f} median_rows={statistics.median(r['actual_rows'] for r in group):.1f} median_shared_hits={statistics.median(r['shared_hit_blocks'] for r in group):.1f} median_shared_reads={statistics.median(r['shared_read_blocks'] for r in group):.1f}\\n")
+          PY
       - name: Prepare isolated write-overhead tables
         run: |
           set -euo pipefail
@@ -422,14 +544,35 @@ jobs:
               psql -X -q -A -t -v ON_ERROR_STOP=1 > "artifacts/feed-${cohort}-${page}-candidate-plan.json" <<SQL
           SET jit = off;
           EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
-          WITH viewer AS (SELECT md5('${viewer}')::uuid AS id)
-          SELECT p.id, p.author_id, p.created_at
-          FROM content.posts p CROSS JOIN viewer
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('${viewer}')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
           WHERE p.deleted_at IS NULL
-            AND (p.author_id = viewer.id OR EXISTS (
+            AND (p.author_id = md5('${viewer}')::uuid OR EXISTS (
               SELECT 1 FROM social.follows f
-              WHERE f.follower_id = viewer.id AND f.followee_id = p.author_id AND f.status = 'accepted'
+              WHERE f.follower_id = md5('${viewer}')::uuid
+                AND f.followee_id = p.author_id AND f.status = 'accepted'
             ))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('${viewer}')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id AND b.blocked_id = md5('${viewer}')::uuid)
+                              OR (b.blocker_id = md5('${viewer}')::uuid AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('${viewer}')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('${viewer}')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
             AND ${cursor_predicate}
           ORDER BY p.created_at DESC, p.id DESC
           LIMIT 51;
@@ -465,6 +608,107 @@ jobs:
           LIMIT 51;
           SQL
 
+      - name: Capture repeated candidate query measurements
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/repeated/candidate
+          capture_feed() {
+            local cohort="$1" viewer="$2" page="$3" cursor_predicate="$4" output="$5"
+            psql -X -q -A -t -v ON_ERROR_STOP=1 > "$output" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('$viewer')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('$viewer')::uuid OR EXISTS (
+              SELECT 1 FROM social.follows f WHERE f.follower_id = md5('$viewer')::uuid
+                AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('$viewer')::uuid AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id AND b.blocked_id = md5('$viewer')::uuid)
+                              OR (b.blocker_id = md5('$viewer')::uuid AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('$viewer')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('$viewer')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND $cursor_predicate
+          ORDER BY p.created_at DESC, p.id DESC LIMIT 51;
+          SQL
+          }
+          capture_notifications() {
+            local page="$1" output="$2"
+            local cursor_predicate="TRUE"
+            if [[ "$page" == "cursor" ]]; then
+              cursor_predicate="(n.created_at, n.id) < (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)"
+            fi
+            psql -X -q -A -t -v ON_ERROR_STOP=1 > "$output" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId", n.created_at AS "createdAt",
+                 n.read_at AS "readAt", p.handle, p.display_name AS "displayName"
+          FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            AND $cursor_predicate
+          ORDER BY n.created_at DESC, n.id DESC LIMIT 51;
+          SQL
+          }
+          for trial in {1..5}; do
+            for cohort in dense sparse high; do
+              case "$cohort" in
+                dense) viewer="kukugram-bench-user-1" ;;
+                sparse) viewer="kukugram-bench-user-2" ;;
+                high) viewer="kukugram-bench-user-3" ;;
+              esac
+              for page in first cursor; do
+                predicate="TRUE"
+                if [[ "$page" == "cursor" ]]; then
+                  predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"
+                fi
+                capture_feed "$cohort" "$viewer" "$page" "$predicate"                   "artifacts/repeated/candidate/feed-$cohort-$page-trial-$trial.json"
+              done
+            done
+            for page in first cursor; do
+              capture_notifications "$page"                 "artifacts/repeated/candidate/notifications-$page-trial-$trial.json"
+            done
+          done
+          python3 - <<'PY'
+          import csv, glob, json, math, os, statistics
+          rows = []
+          for path in sorted(glob.glob("artifacts/repeated/candidate/*.json")):
+              with open(path, encoding="utf-8") as handle:
+                  payload = json.load(handle)
+              plan = payload[0]["Plan"]
+              timing = float(payload[0]["Execution Time"])
+              rows.append({
+                  "query": os.path.basename(path).rsplit("-trial-", 1)[0],
+                  "trial": int(os.path.basename(path).rsplit("-trial-", 1)[1].split(".")[0]),
+                  "execution_ms": timing,
+                  "actual_rows": float(plan.get("Actual Rows", 0)),
+                  "shared_hit_blocks": int(plan.get("Shared Hit Blocks", 0)),
+                  "shared_read_blocks": int(plan.get("Shared Read Blocks", 0)),
+              })
+          with open("artifacts/repeated/candidate-summary.csv", "w", newline="", encoding="utf-8") as handle:
+              writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+              writer.writeheader()
+              writer.writerows(rows)
+          with open("artifacts/repeated/candidate-summary.txt", "w", encoding="utf-8") as handle:
+              for name in sorted({row["query"] for row in rows}):
+                  values = [row["execution_ms"] for row in rows if row["query"] == name]
+                  cv = statistics.pstdev(values) / statistics.mean(values) * 100 if statistics.mean(values) else 0
+                  group = [row for row in rows if row["query"] == name]
+                  handle.write(f"{name}: n={len(values)} median_ms={statistics.median(values):.3f} min_ms={min(values):.3f} max_ms={max(values):.3f} stdev_ms={statistics.pstdev(values):.3f} cv_pct={cv:.2f} median_rows={statistics.median(r['actual_rows'] for r in group):.1f} median_shared_hits={statistics.median(r['shared_hit_blocks'] for r in group):.1f} median_shared_reads={statistics.median(r['shared_read_blocks'] for r in group):.1f}\\n")
+          PY
       - name: Compare repeated isolated index write overhead
         run: |
           set -euo pipefail
@@ -576,6 +820,9 @@ jobs:
             echo
             echo "Notification actor/profile coverage:"
             psql -X -c "SELECT count(*) AS notification_rows, count(n.actor_id) AS actor_rows, count(p.user_id) AS matched_profiles FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id;" || true
+            echo
+            echo "Notification index definitions:"
+            psql -X -c "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'notifications' AND tablename = 'notifications' ORDER BY indexname;" || true
             echo
             echo "Index statistics:"
             psql -X -c "SELECT schemaname, relname, indexrelname, idx_scan, idx_tup_read, idx_tup_fetch, pg_relation_size(indexrelid) AS index_bytes FROM pg_stat_user_indexes ORDER BY schemaname, relname, indexrelname;" || true
