@@ -59,6 +59,7 @@ const config = loadConfig({
 const raw: Array<Record<string, unknown>> = [];
 const errors: Array<Record<string, unknown>> = [];
 let timeouts = 0;
+let warmupPostInserts = 0;
 let app: ReturnType<typeof buildApp> | undefined;
 
 function makeRng(value: number) {
@@ -102,6 +103,7 @@ async function phase(workerCount: number, duration: number, capture: boolean, ro
         if (response.statusCode !== expected) {
           throw new Error("Unexpected API status " + response.statusCode + " for " + operation + ": " + response.body.slice(0, 300));
         }
+        if (!capture && operation === "post_insert_api") warmupPostInserts += 1;
         if (capture) raw.push({ variant, worker_count: workerCount, round, operation, latency_ms: Number(latency.toFixed(4)), status_code: response.statusCode, error: false });
       } catch (error) {
         if (capture) {
@@ -160,7 +162,7 @@ try {
   await writeFile(output, JSON.stringify({
     generated_at: new Date().toISOString(),
     variant, seed, profile, warmup_ms: warmupMs, measurement_ms: measurementMs,
-    rounds, workers, pool_max: poolMax, summaries, raw_samples: raw,
+    rounds, workers, pool_max: poolMax, summaries, raw_samples: raw, warmup_post_inserts: warmupPostInserts,
     errors, retries: 0, timeouts, pool_wait_samples_ms: poolWaitSamples.map((value) => Number(value.toFixed(4))),
     rate_limit_store: "InMemoryRateLimitStore; Redis is not connected",
     api_latency_note: "Fastify app.inject end-to-end latency; includes routing, auth/session lookup, SQL calls and response serialization. It is not a public-network latency measurement."
