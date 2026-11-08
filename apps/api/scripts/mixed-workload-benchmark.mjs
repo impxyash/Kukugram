@@ -75,7 +75,7 @@ function ident(value) {
 }
 function deterministicUuid(label) {
   const hex = createHash("md5").update(label).digest("hex");
-  return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-4" + hex.slice(13, 16) + "-8" + hex.slice(17, 20) + "-" + hex.slice(20, 32);
+  return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-" + hex.slice(12, 16) + "-" + hex.slice(16, 20) + "-" + hex.slice(20, 32);
 }
 function makeRng(value) {
   let state = value >>> 0;
@@ -98,8 +98,8 @@ function summarize(values) {
     p50_ms: percentile(values, 0.50),
     p95_ms: percentile(values, 0.95),
     p99_ms: percentile(values, 0.99),
-    min_ms: values.length ? Number(Math.min(...values).toFixed(4)) : null,
-    max_ms: values.length ? Number(Math.max(...values).toFixed(4)) : null
+    min_ms: values.length ? Number(values.reduce((a, b) => Math.min(a, b), Infinity).toFixed(4)) : null,
+    max_ms: values.length ? Number(values.reduce((a, b) => Math.max(a, b), -Infinity).toFixed(4)) : null
   };
 }
 async function createDatabase(name, template) {
@@ -319,7 +319,7 @@ async function runMarkRead(database, variant) {
     }
     const otherRecipient = deterministicUuid("kukugram-mwb-user-5");
     const otherCount = await client.query("SELECT count(*)::int AS count FROM notifications.notifications WHERE recipient_id = $1 AND read_at IS NULL", [otherRecipient]);
-    if (otherCount.rows[0].count !== 0) throw new Error("Recipient isolation gate failed after mark-read fixture.");
+    if (otherCount.rows[0].count !== 500) throw new Error("Recipient isolation gate failed: another recipient unread rows changed.");
   } finally {
     await client.end();
   }
