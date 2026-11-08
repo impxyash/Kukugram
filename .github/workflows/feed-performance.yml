@@ -417,7 +417,7 @@ jobs:
                   values = [row["execution_ms"] for row in rows if row["query"] == name]
                   cv = statistics.pstdev(values) / statistics.mean(values) * 100 if statistics.mean(values) else 0
                   group = [row for row in rows if row["query"] == name]
-                  handle.write(f"{name}: n={len(values)} median_ms={statistics.median(values):.3f} min_ms={min(values):.3f} max_ms={max(values):.3f} stdev_ms={statistics.pstdev(values):.3f} cv_pct={cv:.2f} median_rows={statistics.median(r['actual_rows'] for r in group):.1f} median_shared_hits={statistics.median(r['shared_hit_blocks'] for r in group):.1f} median_shared_reads={statistics.median(r['shared_read_blocks'] for r in group):.1f}\\n")
+                  handle.write(f"{name}: n={len(values)} median_ms={statistics.median(values):.3f} min_ms={min(values):.3f} max_ms={max(values):.3f} stdev_ms={statistics.pstdev(values):.3f} cv_pct={cv:.2f} median_rows={statistics.median(r['actual_rows'] for r in group):.1f} median_shared_hits={statistics.median(r['shared_hit_blocks'] for r in group):.1f} median_shared_reads={statistics.median(r['shared_read_blocks'] for r in group):.1f}\n")
           PY
       - name: Prepare isolated write-overhead tables
         run: |
@@ -428,10 +428,12 @@ jobs:
           CREATE TABLE benchmark.posts_candidate (LIKE content.posts INCLUDING ALL);
           CREATE TABLE benchmark.notifications_baseline (LIKE notifications.notifications INCLUDING ALL);
           CREATE TABLE benchmark.notifications_candidate (LIKE notifications.notifications INCLUDING ALL);
+          CREATE TABLE benchmark.notifications_replacement AS SELECT * FROM notifications.notifications;
           INSERT INTO benchmark.posts_baseline SELECT * FROM content.posts;
           INSERT INTO benchmark.posts_candidate SELECT * FROM content.posts;
           INSERT INTO benchmark.notifications_baseline SELECT * FROM notifications.notifications;
           INSERT INTO benchmark.notifications_candidate SELECT * FROM notifications.notifications;
+          ANALYZE benchmark.notifications_replacement;
           ANALYZE benchmark.posts_baseline;
           ANALYZE benchmark.posts_candidate;
           ANALYZE benchmark.notifications_baseline;
@@ -445,6 +447,8 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX notifications_recipient_cursor ON notifications.notifications (recipient_id, created_at DESC, id DESC)"
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_posts_global_cursor_candidate ON benchmark.posts_candidate (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
           psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_notifications_recipient_cursor_candidate ON benchmark.notifications_candidate (recipient_id, created_at DESC, id DESC)"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_notifications_replacement_cursor ON benchmark.notifications_replacement (recipient_id, created_at DESC, id DESC)"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE benchmark.notifications_replacement"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE content.posts"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE notifications.notifications"
           psql -X -v ON_ERROR_STOP=1 -c "ANALYZE benchmark.posts_candidate"
@@ -707,8 +711,37 @@ jobs:
                   values = [row["execution_ms"] for row in rows if row["query"] == name]
                   cv = statistics.pstdev(values) / statistics.mean(values) * 100 if statistics.mean(values) else 0
                   group = [row for row in rows if row["query"] == name]
-                  handle.write(f"{name}: n={len(values)} median_ms={statistics.median(values):.3f} min_ms={min(values):.3f} max_ms={max(values):.3f} stdev_ms={statistics.pstdev(values):.3f} cv_pct={cv:.2f} median_rows={statistics.median(r['actual_rows'] for r in group):.1f} median_shared_hits={statistics.median(r['shared_hit_blocks'] for r in group):.1f} median_shared_reads={statistics.median(r['shared_read_blocks'] for r in group):.1f}\\n")
+                  handle.write(f"{name}: n={len(values)} median_ms={statistics.median(values):.3f} min_ms={min(values):.3f} max_ms={max(values):.3f} stdev_ms={statistics.pstdev(values):.3f} cv_pct={cv:.2f} median_rows={statistics.median(r['actual_rows'] for r in group):.1f} median_shared_hits={statistics.median(r['shared_hit_blocks'] for r in group):.1f} median_shared_reads={statistics.median(r['shared_read_blocks'] for r in group):.1f}\n")
           PY
+      - name: Compare notification index addition and replacement strategies
+        run: |
+          set -euo pipefail
+          for strategy in baseline additive replacement; do
+            case "$strategy" in
+              baseline) table="benchmark.notifications_baseline" ;;
+              additive) table="benchmark.notifications_candidate" ;;
+              replacement) table="benchmark.notifications_replacement" ;;
+            esac
+            for query_kind in all unread; do
+              predicate=""
+              if [[ "$query_kind" == "unread" ]]; then predicate="AND n.read_at IS NULL"; fi
+              psql -X -q -A -t -v ON_ERROR_STOP=1 > "artifacts/notifications-$strategy-$query_kind-plan.json" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId", n.created_at AS "createdAt",
+                 n.read_at AS "readAt", p.handle, p.display_name AS "displayName"
+          FROM $table n LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            $predicate
+          ORDER BY n.created_at DESC, n.id DESC LIMIT 51;
+          SQL
+            done
+          done
+          {
+            echo "Notification index strategy sizes (bytes)"
+            psql -X -c "SELECT c.relname AS table_name, i.relname AS index_name, pg_relation_size(i.oid) AS index_bytes, pg_get_indexdef(i.oid) AS definition FROM pg_class i JOIN pg_index x ON x.indexrelid = i.oid JOIN pg_class c ON c.oid = x.indrelid WHERE c.relnamespace = 'benchmark'::regnamespace AND c.relname IN ('notifications_baseline','notifications_candidate','notifications_replacement') ORDER BY c.relname, i.relname;"
+          } > artifacts/notification-index-strategies.txt 2>&1
+
       - name: Compare repeated isolated index write overhead
         run: |
           set -euo pipefail
@@ -805,6 +838,60 @@ jobs:
               END IF;
             END LOOP;
           END $$;
+          SQL
+
+      - name: Measure notification replacement write overhead
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 > artifacts/notification-replacement-write-overhead.txt 2>&1 <<'SQL'
+          DO $
+          DECLARE
+            trial integer;
+            started_at timestamptz;
+            elapsed_ms numeric;
+          BEGIN
+            FOR trial IN 1..6 LOOP
+              IF trial % 2 = 1 THEN
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
+                SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.notifications_replacement (id, recipient_id, actor_id, type)
+                SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'notifications replacement trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.notifications_replacement WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
+              ELSE
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.notifications_replacement (id, recipient_id, actor_id, type)
+                SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'notifications replacement trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.notifications_replacement WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
+                started_at := clock_timestamp();
+                INSERT INTO benchmark.notifications_baseline (id, recipient_id, actor_id, type)
+                SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1))::uuid,
+                       md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid, 'follow'
+                FROM generate_series(1, 5000) AS n;
+                elapsed_ms := extract(epoch FROM clock_timestamp() - started_at) * 1000;
+                RAISE NOTICE 'notifications baseline trial %: % ms', trial, round(elapsed_ms, 3);
+                DELETE FROM benchmark.notifications_baseline WHERE id IN (SELECT md5('kukugram-replacement-write-' || trial || '-' || n)::uuid FROM generate_series(1, 5000) AS n);
+              END IF;
+            END LOOP;
+          END $;
           SQL
 
       - name: Capture dataset and index statistics
