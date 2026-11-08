@@ -82,6 +82,13 @@ jobs:
       - name: Build database workspace package
         run: pnpm --filter @kukugram/database build
 
+      - name: Format benchmark sources and retain formatted snapshot
+        run: |
+          set -euo pipefail
+          pnpm exec prettier --write apps/api/scripts/mixed-workload-benchmark.mjs apps/api/scripts/mixed-workload-api.mts
+          mkdir -p artifacts/mixed-workload/formatted-source
+          cp apps/api/scripts/mixed-workload-benchmark.mjs artifacts/mixed-workload/formatted-source/
+          cp apps/api/scripts/mixed-workload-api.mts artifacts/mixed-workload/formatted-source/
       - name: Validate benchmark scripts and workflow YAML
         run: |
           set -euo pipefail
