@@ -212,7 +212,9 @@ describe("feed cursor bootstrap", () => {
       return Promise.resolve(values[path as keyof typeof values] as T);
     });
 
-    await expect(loadSession<TestUser, TestPost, TestNotification>(requester)).resolves.toMatchObject({
+    await expect(
+      loadSession<TestUser, TestPost, TestNotification>(requester)
+    ).resolves.toMatchObject({
       status: "authenticated",
       posts: [{ id: "post-1" }],
       nextCursor: "cursor-user-1-page-2"
