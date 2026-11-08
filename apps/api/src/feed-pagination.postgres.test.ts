@@ -272,8 +272,8 @@ integration("PostgreSQL feed pagination", () => {
           [searchUserId, handle, `Fixture ${index}`, index === 1 ? "private" : "public"]
         );
         if (index === 1) privateSearchUserId = searchUserId;
-        else if (index === 2) blockedSearchUserId = searchUserId;
-        else expectedSearchIds.push(searchUserId);
+        if (index === 2) blockedSearchUserId = searchUserId;
+        if (index !== 2) expectedSearchIds.push(searchUserId);
       }
       await database().query("INSERT INTO social.blocks (blocker_id, blocked_id) VALUES ($1, $2)", [
         viewerId,
@@ -319,7 +319,7 @@ integration("PostgreSQL feed pagination", () => {
         users: Array<{ id: string; handle: string }>;
         nextCursor?: string;
       }>();
-      expect(thirdSearchBody.users).toHaveLength(11);
+      expect(thirdSearchBody.users).toHaveLength(12);
       expect(thirdSearchBody.nextCursor).toBeUndefined();
 
       const actualSearchIds = [
@@ -328,12 +328,14 @@ integration("PostgreSQL feed pagination", () => {
         ...thirdSearchBody.users
       ].map((user) => user.id);
       expect(actualSearchIds).toEqual(expectedSearchIds);
-      expect(actualSearchIds).toHaveLength(51);
+      expect(actualSearchIds).toHaveLength(52);
       expect(new Set(actualSearchIds).size).toBe(51);
       expect(actualSearchIds).not.toContain(blockedSearchUserId);
     } finally {
       await app.close();
-      await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [userIds]);
+      await database().query("DELETE FROM identity.users WHERE id = ANY($1::uuid[])", [
+        [...userIds, ...searchUserIds]
+      ]);
     }
   }, 30_000);
 });
