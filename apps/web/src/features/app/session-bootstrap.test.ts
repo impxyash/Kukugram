@@ -154,7 +154,7 @@ describe("session request sequencing", () => {
 describe("request-scoped async completion", () => {
   it("does not start authentication completion after its scope is invalidated", async () => {
     const scope = createMountedRequestScope();
-    const onAuthenticated = vi.fn(async () => undefined);
+    const onAuthenticated = vi.fn(() => Promise.resolve());
     let resolveAuth!: () => void;
     const pendingAuth = new Promise<void>((resolve) => {
       resolveAuth = resolve;
