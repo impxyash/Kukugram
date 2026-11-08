@@ -4,6 +4,7 @@ import {
   createMountedRequestScope,
   createSessionRequestSequence,
   loadSession,
+  mergeFeedPosts,
   runIfRequestScopeActive
 } from "./session-bootstrap.js";
 import { reconcileSessionActivity } from "./app-shell.js";
@@ -199,8 +200,6 @@ describe("mounted request scope", () => {
     expect(committed).toEqual(["account-b-data"]);
   });
 });
-
-
 describe("feed cursor bootstrap", () => {
   it("preserves the initial feed cursor for the authenticated session", async () => {
     const requester = vi.fn(<T>(path: string): Promise<T> => {
@@ -234,5 +233,16 @@ describe("feed cursor bootstrap", () => {
       posts: [{ id: "post-1" }],
       nextCursor: undefined
     });
+  });
+});
+
+describe("feed page merging", () => {
+  it("deduplicates posts by ID while preserving the existing feed order", () => {
+    expect(
+      mergeFeedPosts(
+        [{ id: "post-1" }, { id: "post-2" }],
+        [{ id: "post-2" }, { id: "post-3" }]
+      )
+    ).toEqual([{ id: "post-1" }, { id: "post-2" }, { id: "post-3" }]);
   });
 });
