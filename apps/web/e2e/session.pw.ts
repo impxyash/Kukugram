@@ -1579,7 +1579,7 @@ test("PostCard comments toggle exposes expanded state and a labelled live region
   const toggle = page.getByRole("button", { name: "Reply 1" });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   const regionId = await toggle.getAttribute("aria-controls");
-  expect(regionId).toBeTruthy();
+  if (!regionId) throw new Error("Expected the comments region to have an id");
   const region = page.locator(`#${regionId}`);
   await expect(region).toBeHidden();
 
