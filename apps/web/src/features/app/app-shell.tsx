@@ -102,6 +102,7 @@ export function AppShell() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
+  const [logoutBusy, setLogoutBusy] = useState(false);
 
   async function refresh() {
     const requestId = sessionRequestSequence.current.begin();
@@ -228,10 +229,15 @@ export function AppShell() {
         </nav>
         <button
           className="nav-item logout"
+          disabled={logoutBusy}
           onClick={() => {
+            if (logoutBusy) return;
+            const logoutUserId = activeUserId.current;
+            setLogoutBusy(true);
             void (async () => {
               try {
                 await request("/auth/logout", { method: "POST" });
+                if (activeUserId.current !== logoutUserId) return;
                 sessionRequestSequence.current.invalidate();
                 activeUserId.current = null;
                 setModeratorUserId(null);
@@ -241,7 +247,11 @@ export function AppShell() {
                 setError(null);
                 setLoading(false);
               } catch (reason) {
-                setError((reason as Error).message);
+                if (activeUserId.current === logoutUserId) {
+                  setError((reason as Error).message);
+                }
+              } finally {
+                setLogoutBusy(false);
               }
             })();
           }}
@@ -256,7 +266,7 @@ export function AppShell() {
             <button
               className="secondary-button"
               type="button"
-              disabled={loading}
+              disabled={loading || logoutBusy}
               onClick={() => void refresh()}
             >
               Retry
@@ -303,9 +313,18 @@ function AuthScreen({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const mountedRequestScope = useRef(createMountedRequestScope());
+
+  useEffect(() => {
+    const scope = createMountedRequestScope();
+    mountedRequestScope.current = scope;
+    setBusy(false);
+    return () => scope.invalidate();
+  }, [mode]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const scope = mountedRequestScope.current;
     setBusy(true);
     setError(null);
     const form = new FormData(event.currentTarget);
@@ -314,9 +333,9 @@ function AuthScreen({
       await request(`/auth/${mode}`, { method: "POST", body: JSON.stringify(values) });
       await onAuthenticated();
     } catch (reason) {
-      setError((reason as Error).message);
+      if (scope.isActive()) setError((reason as Error).message);
     } finally {
-      setBusy(false);
+      if (scope.isActive()) setBusy(false);
     }
   }
 
@@ -451,6 +470,7 @@ function AuthScreen({
               {mode === "signup" ? "Already have an account?" : "Don't have an account?"}
               <button
                 className="auth-switch-button"
+                disabled={busy}
                 onClick={() => {
                   setError(null);
                   setMode(mode === "signup" ? "login" : "signup");

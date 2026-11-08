@@ -1811,3 +1811,83 @@ test("rapid repeated likes on one post issue only one request", async ({ page })
   await expect(unlike).toHaveAttribute("aria-pressed", "true");
   expect(likeCalls).toBe(1);
 });
+
+test("late authentication errors do not leak across login and signup modes", async ({ page }) => {
+  let releaseSignup!: () => void;
+  let markSignupPending!: () => void;
+  const signupGate = new Promise<void>((resolve) => {
+    releaseSignup = resolve;
+  });
+  const signupSeen = new Promise<void>((resolve) => {
+    markSignupPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return unauthenticated(route);
+    if (pathname === "/v1/auth/signup") {
+      markSignupPending();
+      await signupGate;
+      return reply(route, 400, { title: "Stale signup failure" });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await page.getByLabel("Full name").fill("Test Creator");
+  await page.getByLabel("Username").fill("test_creator");
+  await page.getByLabel("Email address").fill("creator@example.com");
+  await page.getByLabel("Password").fill("a-secure-password");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await signupSeen;
+
+  await page.getByRole("button", { name: "Log in" }).click();
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  releaseSignup();
+
+  await expect(page.locator(".form-error")).toHaveCount(0);
+  await expect(page.getByLabel("Email address")).toBeVisible();
+});
+
+
+test("logout prevents a competing session retry until the request settles", async ({ page }) => {
+  let releaseLogout!: () => void;
+  let markLogoutPending!: () => void;
+  const logoutGate = new Promise<void>((resolve) => {
+    releaseLogout = resolve;
+  });
+  const logoutSeen = new Promise<void>((resolve) => {
+    markLogoutPending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return unavailable(route);
+    if (pathname === "/v1/notifications") {
+      return reply(route, 200, { notifications: [] });
+    }
+    if (pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    if (pathname === "/v1/auth/logout") {
+      markLogoutPending();
+      await logoutGate;
+      return reply(route, 500, { title: "Logout failed" });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  const logout = page.getByRole("button", { name: "Log out" });
+  await logout.click();
+  await logoutSeen;
+
+  await expect(logout).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Retry" })).toBeDisabled();
+  releaseLogout();
+
+  await expect(page.getByRole("heading", { name: "Your people, in motion." })).toBeVisible();
+  await expect(logout).toBeEnabled();
+});
