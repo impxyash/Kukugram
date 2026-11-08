@@ -642,7 +642,7 @@ describe("social privacy authorization", () => {
     await app.close();
   });
 
-  it("rejects malformed notification cursors before querying notifications", async () => {
+  it("rejects malformed notification cursors before querying", async () => {
     const pool = makePool();
     const app = appWithPool(pool);
     const response = await app.inject({
@@ -657,7 +657,7 @@ describe("social privacy authorization", () => {
     await app.close();
   });
 
-  it("uses recipient-scoped timestamp-and-id keyset pagination for notifications", async () => {
+  it("uses a recipient-scoped notification keyset", async () => {
     const pool = makePool();
     const app = appWithPool(pool);
     const response = await app.inject({
@@ -706,13 +706,13 @@ describe("social privacy authorization", () => {
     }>();
     expect(body.notifications).toHaveLength(50);
     expect(body.nextCursor).toEqual(expect.any(String));
-    const decoded = JSON.parse(
-      Buffer.from(body.nextCursor!, "base64url").toString("utf8")
-    );
-    expect(decoded).toEqual({
+    const cursorJson = Buffer.from(body.nextCursor!, "base64url").toString("utf8");
+    const decoded = JSON.parse(cursorJson);
+    const expectedCursor = {
       createdAt: createdAt.toISOString(),
       id: notificationRows[49]?.id
-    });
+    };
+    expect(decoded).toEqual(expectedCursor);
     await app.close();
   });
 
