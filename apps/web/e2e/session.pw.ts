@@ -449,7 +449,7 @@ test("a pending appeal acceptance cannot update a different identity", async ({ 
   await verifyPendingAppealReviewAfterIdentitySwitch(page, 200);
 });
 
-test("a pending appeal rejection cannot report errors to a different identity", async ({ page }) => {
+test("pending appeal rejection cannot report errors after identity switch", async ({ page }) => {
   await verifyPendingAppealReviewAfterIdentitySwitch(page, 500);
 });
 
