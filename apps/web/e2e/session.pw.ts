@@ -2766,7 +2766,7 @@ test("Discover search pagination stops at the final page", async ({ page }) => {
       expect(url.searchParams.get("cursor")).toBe("search-page-two");
       markSecondPagePending();
       await secondPageGate;
-      return reply(route, 200, { users: [secondPerson] });
+      return reply(route, 200, { users: [secondPerson, firstPerson] });
     }
     return reply(route, 200, {});
   });
@@ -2789,6 +2789,7 @@ test("Discover search pagination stops at the final page", async ({ page }) => {
 
   releaseSecondPage();
   await expect(page.getByText("Second Search Result")).toBeVisible();
+  await expect(page.getByText("First Search Result")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Load more people" })).toHaveCount(0);
   expect(searchCalls).toBe(2);
 });
