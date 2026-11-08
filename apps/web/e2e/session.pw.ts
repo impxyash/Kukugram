@@ -2774,9 +2774,7 @@ test("Discover search pagination stops at the final page", async ({ page }) => {
 
   await page.goto("/");
   await page.getByRole("button", { name: "Discover" }).click();
-  await page
-    .getByRole("textbox", { name: "Search people by name or username" })
-    .fill("creator");
+  await page.getByRole("textbox", { name: "Search people by name or username" }).fill("creator");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText("First Search Result")).toBeVisible();
 
