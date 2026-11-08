@@ -128,7 +128,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 
 1. Finish and test the Phase 1 social-core baseline: profile privacy, follow graph, block/mute visibility, post audience/visibility, feed correctness, and interaction authorization.
 2. Implement image/carousel upload foundations only after selecting and configuring a non-production object-storage adapter and its local test substitute.
-3. Add cursor pagination to feed, search, comments, notifications, and moderation lists without breaking existing response contracts.
+3. Add cursor pagination to search, comments, notifications, and moderation lists; feed is done.
 4. Complete the shared API contract adoption and generated OpenAPI snapshot.
 5. Add remaining Phase 1 product surfaces: saves/collections, richer posts, Explore/hashtags, notification preferences, and accessibility audit.
 6. Add workers, media processing, and realtime only after the corresponding domain contracts and infrastructure are ready.
