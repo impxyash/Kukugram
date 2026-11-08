@@ -34,7 +34,7 @@ import {
   postCreateRequestSchema,
   profileUpdateRequestSchema,
   reportCreateRequestSchema,
-  signupRequestSchema,
+  signupRequestSchema
 } from "./schemas.js";
 
 describe("API request contracts", () => {
