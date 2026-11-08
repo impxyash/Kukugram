@@ -1098,8 +1098,9 @@ integration("PostgreSQL moderation guarantees", () => {
     const userId = randomUUID();
     const token = randomUUID();
     const createdAt = new Date("2026-11-08T10:00:00.000Z");
-    const postIds = Array.from({ length: 53 }, (_, index) =>
-      `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`
+    const postIds = Array.from(
+      { length: 53 },
+      (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`
     );
     await database().query("INSERT INTO identity.users (id, email) VALUES ($1, $2)", [
       userId,
