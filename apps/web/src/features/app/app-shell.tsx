@@ -261,14 +261,15 @@ export function AppShell() {
           </div>
         )}
         {tab === "home" && (
-          <Home user={user} posts={posts} setPosts={setPosts} onError={setError} />
+          <Home key={user.id} user={user} posts={posts} setPosts={setPosts} onError={setError} />
         )}
-        {tab === "discover" && <Discover onError={setError} />}
+        {tab === "discover" && <Discover key={user.id} onError={setError} />}
         {tab === "activity" && (
           <Activity notices={notices} setNotices={setNotices} onError={setError} />
         )}
         {tab === "profile" && (
           <Profile
+            key={user.id}
             user={user}
             setUser={setUser}
             posts={posts.filter((post) => post.authorId === user.id)}
@@ -478,22 +479,31 @@ function Home({
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const mountedRequestScope = useRef(createMountedRequestScope());
+
+  useEffect(() => {
+    const scope = createMountedRequestScope();
+    mountedRequestScope.current = scope;
+    return () => scope.invalidate();
+  }, [user.id]);
 
   async function publish(event: FormEvent) {
     event.preventDefault();
     if (!body.trim()) return;
+    const scope = mountedRequestScope.current;
     setBusy(true);
     try {
       const { post } = await request<{ post: Post }>("/posts", {
         method: "POST",
         body: JSON.stringify({ body })
       });
+      if (!scope.isActive()) return;
       setPosts([post, ...posts]);
       setBody("");
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     } finally {
-      setBusy(false);
+      if (scope.isActive()) setBusy(false);
     }
   }
 
@@ -528,7 +538,7 @@ function Home({
         <div className="feed">
           {posts.map((post) => (
             <PostCard
-              key={post.id}
+              key={user.id + ":" + post.id}
               post={post}
               user={user}
               onChange={(updated) =>
@@ -565,17 +575,26 @@ function PostCard({
 }) {
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [comment, setComment] = useState("");
+  const mountedRequestScope = useRef(createMountedRequestScope());
+
+  useEffect(() => {
+    const scope = createMountedRequestScope();
+    mountedRequestScope.current = scope;
+    return () => scope.invalidate();
+  }, []);
 
   async function toggleLike() {
+    const scope = mountedRequestScope.current;
     try {
       await request(`/posts/${post.id}/like`, { method: post.likedByViewer ? "DELETE" : "POST" });
+      if (!scope.isActive()) return;
       onChange({
         ...post,
         likedByViewer: !post.likedByViewer,
         likeCount: String(Number(post.likeCount) + (post.likedByViewer ? -1 : 1))
       });
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -584,35 +603,40 @@ function PostCard({
       setComments(null);
       return;
     }
+    const scope = mountedRequestScope.current;
     try {
-      setComments((await request<{ comments: Comment[] }>(`/posts/${post.id}/comments`)).comments);
+      const result = await request<{ comments: Comment[] }>(`/posts/${post.id}/comments`);
+      if (scope.isActive()) setComments(result.comments);
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
   async function addComment(event: FormEvent) {
     event.preventDefault();
     if (!comment.trim()) return;
+    const scope = mountedRequestScope.current;
     try {
       await request(`/posts/${post.id}/comments`, {
         method: "POST",
         body: JSON.stringify({ body: comment })
       });
+      if (!scope.isActive()) return;
       setComment("");
       setComments(null);
       onChange({ ...post, commentCount: String(Number(post.commentCount) + 1) });
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
   async function deletePost() {
+    const scope = mountedRequestScope.current;
     try {
       await request(`/posts/${post.id}`, { method: "DELETE" });
-      onDelete();
+      if (scope.isActive()) onDelete();
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -705,28 +729,52 @@ function Discover({ onError }: { onError: (message: string) => void }) {
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const mountedRequestScope = useRef(createMountedRequestScope());
+  const searchRequestSequence = useRef(createSessionRequestSequence());
+
+  useEffect(() => {
+    const scope = createMountedRequestScope();
+    const sequence = createSessionRequestSequence();
+    mountedRequestScope.current = scope;
+    searchRequestSequence.current = sequence;
+    return () => {
+      scope.invalidate();
+      sequence.invalidate();
+    };
+  }, []);
 
   async function search(event: FormEvent) {
     event.preventDefault();
     if (!query.trim()) return;
+    const scope = mountedRequestScope.current;
+    const requestId = searchRequestSequence.current.begin();
     setLoading(true);
     try {
-      setUsers(
-        (await request<{ users: User[] }>(`/users/search?q=${encodeURIComponent(query)}`)).users
+      const result = await request<{ users: User[] }>(
+        `/users/search?q=${encodeURIComponent(query)}`
       );
+      if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
+        setUsers(result.users);
+      }
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
+        onError((reason as Error).message);
+      }
     } finally {
-      setLoading(false);
+      if (scope.isActive() && searchRequestSequence.current.isCurrent(requestId)) {
+        setLoading(false);
+      }
     }
   }
 
   async function toggleFollow(person: User) {
+    const scope = mountedRequestScope.current;
     try {
       if (person.isFollowing || person.isRequested) {
         await request(`/users/${person.handle}/follow`, { method: "DELETE" });
-        setUsers(
-          users.map((item) =>
+        if (!scope.isActive()) return;
+        setUsers((current) =>
+          current.map((item) =>
             item.id === person.id ? { ...item, isFollowing: false, isRequested: false } : item
           )
         );
@@ -734,8 +782,9 @@ function Discover({ onError }: { onError: (message: string) => void }) {
         const result = await request<{ user: User }>(`/users/${person.handle}/follow`, {
           method: "POST"
         });
-        setUsers(
-          users.map((item) =>
+        if (!scope.isActive()) return;
+        setUsers((current) =>
+          current.map((item) =>
             item.id === person.id
               ? {
                   ...item,
@@ -747,16 +796,17 @@ function Discover({ onError }: { onError: (message: string) => void }) {
         );
       }
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
   async function mutePerson(person: User) {
+    const scope = mountedRequestScope.current;
     try {
       await request(`/users/${person.handle}/mute`, { method: "POST" });
-      setUsers(users.filter((item) => item.id !== person.id));
+      if (scope.isActive()) setUsers((current) => current.filter((item) => item.id !== person.id));
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -767,11 +817,12 @@ function Discover({ onError }: { onError: (message: string) => void }) {
       )
     )
       return;
+    const scope = mountedRequestScope.current;
     try {
       await request(`/users/${person.handle}/block`, { method: "POST" });
-      setUsers(users.filter((item) => item.id !== person.id));
+      if (scope.isActive()) setUsers((current) => current.filter((item) => item.id !== person.id));
     } catch (reason) {
-      onError((reason as Error).message);
+      if (scope.isActive()) onError((reason as Error).message);
     }
   }
 
@@ -935,7 +986,7 @@ function Profile({
     const scope = createMountedRequestScope();
     mountedRequestScope.current = scope;
     return () => scope.invalidate();
-  }, []);
+  }, [user.id]);
 
   async function editProfile() {
     const name = window.prompt("Display name", user.displayName);
