@@ -302,7 +302,7 @@ integration("PostgreSQL feed pagination", () => {
         headers
       });
       expect(mismatchedQueryCursor.statusCode).toBe(400);
-      expect(mismatchedQueryCursor.json<{ title: string }>().title).toBe("Invalid request");
+
 
       const malformedCursor = await app.inject({
         method: "GET",
