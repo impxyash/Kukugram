@@ -46,15 +46,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Temporary Prettier diff capture
-        run: |
-          pnpm exec prettier --write apps/api/src/moderation.postgres.test.ts
-          git diff -- apps/api/src/moderation.postgres.test.ts
-      - uses: actions/upload-artifact@v4
-        with:
-          name: temporary-prettier-output
-          path: apps/api/src/moderation.postgres.test.ts
-          retention-days: 1
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
