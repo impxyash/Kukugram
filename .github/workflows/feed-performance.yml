@@ -129,7 +129,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          psql -X -A -t -v ON_ERROR_STOP=1 > artifacts/feed-first-page-plan.json <<'SQL'
+          psql -X -A -t -v ON_ERROR_STOP=1 > artifacts/feed-first-page-baseline-plan.json <<'SQL'
+          SET jit = off;
           EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
           SELECT p.id, p.body, p.created_at AS "createdAt",
                  pr.handle, pr.display_name AS "displayName",
@@ -168,7 +169,99 @@ jobs:
           LIMIT 51;
           SQL
 
-          psql -X -A -t -v ON_ERROR_STOP=1 > artifacts/feed-cursor-page-plan.json <<'SQL'
+          psql -X -A -t -v ON_ERROR_STOP=1 > artifacts/feed-cursor-page-baseline-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('kukugram-bench-user-1')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('kukugram-bench-user-1')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id
+                                  AND b.blocked_id = md5('kukugram-bench-user-1')::uuid)
+                              OR (b.blocker_id = md5('kukugram-bench-user-1')::uuid
+                                  AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND (p.created_at, p.id) <
+                (now() - interval '45 days',
+                 md5('kukugram-bench-post-200000')::uuid)
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+
+      - name: Create disposable global cursor index candidate
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -c \\
+            "CREATE INDEX posts_feed_global_cursor_candidate ON content.posts (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE content.posts"
+
+      - name: Capture candidate-index query plans
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          psql -X -A -t -v ON_ERROR_STOP=1 > artifacts/feed-first-page-candidate-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('kukugram-bench-user-1')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('kukugram-bench-user-1')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id
+                                  AND b.blocked_id = md5('kukugram-bench-user-1')::uuid)
+                              OR (b.blocker_id = md5('kukugram-bench-user-1')::uuid
+                                  AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND (NULL::timestamptz IS NULL
+                 OR (p.created_at, p.id) <
+                    (NULL::timestamptz, NULL::uuid))
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+
+          psql -X -A -t -v ON_ERROR_STOP=1 > artifacts/feed-cursor-page-candidate-plan.json <<'SQL'
+          SET jit = off;
           EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
           SELECT p.id, p.body, p.created_at AS "createdAt",
                  pr.handle, pr.display_name AS "displayName",
