@@ -518,44 +518,60 @@ try {
     const database = dbNames[dbKey];
     await configureVariant(database, variant);
     await queryPlans(database, variant, suite);
-    if (variant.startsWith("notification") && (suite === "all" || suite === "mark-read" || suite === "notifications")) {
-      if (suite === "all" || suite === "mark-read") markReadResults.push(...await runMarkRead(database, variant));
-      if (suite === "all" || suite === "notifications") {
-        for (const workerCount of settings.workers) {
-          for (let round = 1; round <= settings.rounds; round += 1) {
-            summaries.push(...await runTimedSuite(database, "notifications", variant, workerCount, round));
-          }
+    if (variant.startsWith("notification") && (suite === "all" || suite === "mark-read")) {
+      markReadResults.push(...await runMarkRead(database, variant));
+    }
+  }
+
+  const notificationOrder = balancedOrders(["notification-baseline", "notification-additive", "notification-replacement"]);
+  const notificationDatabases = {
+    "notification-baseline": dbNames.notificationBaseline,
+    "notification-additive": dbNames.notificationAdditive,
+    "notification-replacement": dbNames.notificationReplacement
+  };
+  if (suite === "all" || suite === "notifications") {
+    for (const workerCount of settings.workers) {
+      for (let round = 1; round <= settings.rounds; round += 1) {
+        for (const variant of notificationOrder[(round - 1) % notificationOrder.length]) {
+          summaries.push(...await runTimedSuite(notificationDatabases[variant], "notifications", variant, workerCount, round));
         }
       }
     }
-    if (variant.startsWith("feed") && (suite === "all" || suite === "feed")) {
-      for (const workerCount of settings.workers) {
-        for (let round = 1; round <= settings.rounds; round += 1) {
-          summaries.push(...await runTimedSuite(database, "feed", variant, workerCount, round));
+  }
+
+  const feedOrder = balancedOrders(["feed-baseline", "feed-candidate"]);
+  const feedDatabases = { "feed-baseline": dbNames.feedBaseline, "feed-candidate": dbNames.feedCandidate };
+  if (suite === "all" || suite === "feed") {
+    for (const workerCount of settings.workers) {
+      for (let round = 1; round <= settings.rounds; round += 1) {
+        for (const variant of feedOrder[(round - 1) % feedOrder.length]) {
+          summaries.push(...await runTimedSuite(feedDatabases[variant], "feed", variant, workerCount, round));
         }
       }
+    }
+    for (const variant of ["feed-baseline", "feed-candidate"]) {
+      const database = feedDatabases[variant];
       const apiOutput = resolve(artifactDir, variant + "-api.json");
       const apiScript = resolve(root, "apps/api/scripts/mixed-workload-api.mts");
       const child = spawnSync("pnpm", ["--filter", "@kukugram/api", "exec", "tsx", apiScript], {
-        cwd: root,
-        encoding: "utf8",
+        cwd: root, encoding: "utf8",
         env: {
           ...process.env,
           DATABASE_URL: "postgresql://" + encodeURIComponent(target.user) + ":" + encodeURIComponent(target.password) + "@" + target.host + ":" + target.port + "/" + database,
           BENCH_VIEWER_ID: deterministicUuid("kukugram-mwb-user-1"),
-          BENCH_SEED: String(seed),
-          BENCH_PROFILE: profile,
-          BENCH_OUTPUT: apiOutput,
-          BENCH_VARIANT: variant
+          BENCH_SEED: String(seed), BENCH_PROFILE: profile, BENCH_OUTPUT: apiOutput, BENCH_VARIANT: variant
         },
         maxBuffer: 20 * 1024 * 1024
       });
       if (child.status !== 0) throw new Error("API benchmark helper failed: " + (child.stderr || child.stdout).slice(-4000));
       notes.push({ event: "api-helper", variant, stdout: child.stdout.slice(-1000) });
     }
-    storage.push(await indexAndTableStats(database, variant));
   }
 
+  for (const key of selected) {
+    const [variant, dbKey] = variantDefinitions[key];
+    storage.push(await indexAndTableStats(dbNames[dbKey], variant));
+  }
   const walEnd = await admin.query("SELECT wal_bytes::text FROM pg_stat_wal");
   walAfter = walEnd.rows[0]?.wal_bytes ?? null;
   const walDelta = walBefore !== null && walAfter !== null ? (BigInt(walAfter) - BigInt(walBefore)).toString() : null;
