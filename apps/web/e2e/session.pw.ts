@@ -2372,7 +2372,6 @@ test("feed Load more requests the next cursor once and stops at the final page",
   expect(feedCalls).toBe(2);
 });
 
-
 test("refresh invalidates an in-flight page and advances from the refreshed cursor", async ({
   page
 }) => {
