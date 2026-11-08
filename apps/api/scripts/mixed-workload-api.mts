@@ -58,6 +58,7 @@ const config = loadConfig({
 });
 const raw: Array<Record<string, unknown>> = [];
 const errors: Array<Record<string, unknown>> = [];
+let timeouts = 0;
 let app: ReturnType<typeof buildApp> | undefined;
 
 function makeRng(value: number) {
@@ -104,7 +105,9 @@ async function phase(workerCount: number, duration: number, capture: boolean, ro
         if (capture) raw.push({ variant, worker_count: workerCount, round, operation, latency_ms: Number(latency.toFixed(4)), status_code: response.statusCode, error: false });
       } catch (error) {
         if (capture) {
-          errors.push({ variant, worker_count: workerCount, round, operation, message: String((error as Error).message).slice(0, 300) });
+          const message = String((error as Error).message);
+          if (/timeout|timed out|ETIMEDOUT|ESOCKETTIMEDOUT/i.test(message)) timeouts += 1;
+          errors.push({ variant, worker_count: workerCount, round, operation, message: message.slice(0, 300) });
           raw.push({ variant, worker_count: workerCount, round, operation, latency_ms: Number((performance.now() - started).toFixed(4)), status_code: null, error: true });
         }
       }
@@ -118,6 +121,7 @@ try {
     [randomUUID(), viewerId, hashSessionToken(token, pepper)]
   );
   app = buildApp(config, pool, new InMemoryRateLimitStore());
+  app.log.level = "silent";
   await app.ready();
   const initial = await app.inject({ method: "GET", url: "/v1/feed", headers: { cookie: "bench_session=" + token } });
   if (initial.statusCode !== 200) throw new Error("API feed preflight failed: " + initial.statusCode);
@@ -145,6 +149,8 @@ try {
           ...summarize(values),
           throughput_ops_sec: Number((values.length / elapsedSeconds).toFixed(3)),
           errors: measured.filter((row) => row.operation === operation && row.error).length,
+          retries: 0,
+          timeouts,
           pool_wait: summarize(poolWaitSamples.slice(waitStart))
         });
       }
@@ -155,7 +161,7 @@ try {
     generated_at: new Date().toISOString(),
     variant, seed, profile, warmup_ms: warmupMs, measurement_ms: measurementMs,
     rounds, workers, pool_max: poolMax, summaries, raw_samples: raw,
-    errors, pool_wait_samples_ms: poolWaitSamples.map((value) => Number(value.toFixed(4))),
+    errors, retries: 0, timeouts, pool_wait_samples_ms: poolWaitSamples.map((value) => Number(value.toFixed(4))),
     rate_limit_store: "InMemoryRateLimitStore; Redis is not connected",
     api_latency_note: "Fastify app.inject end-to-end latency; includes routing, auth/session lookup, SQL calls and response serialization. It is not a public-network latency measurement."
   }, null, 2) + "\n");
