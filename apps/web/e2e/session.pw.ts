@@ -1497,3 +1497,102 @@ test("Discover search results are announced", async ({ page }) => {
   await expect(page.getByText("Discover Friend")).toBeVisible();
   await expect(page.locator(".results")).toHaveAttribute("aria-busy", "false");
 });
+
+
+test("PostCard like state is announced with an accessible name and pressed state", async ({ page }) => {
+  const post = {
+    id: "00000000-0000-4000-8000-000000000231",
+    authorId: "00000000-0000-4000-8000-000000000232",
+    handle: "creator",
+    displayName: "Creator",
+    avatarUrl: null,
+    body: "Accessible like state post",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "2",
+    commentCount: "0",
+    likedByViewer: false
+  };
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [post] });
+    if (pathname === "/v1/notifications") {
+      return reply(route, 200, { notifications: [] });
+    }
+    if (pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    if (pathname === `/v1/posts/${post.id}/like`) return reply(route, 200, {});
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  const like = page.getByRole("button", { name: "Like post by Creator. 2 likes" });
+  await expect(like).toHaveAttribute("aria-pressed", "false");
+  await like.click();
+
+  const unlike = page.getByRole("button", { name: "Unlike post by Creator. 3 likes" });
+  await expect(unlike).toHaveAttribute("aria-pressed", "true");
+});
+
+test("PostCard comments toggle exposes expanded state and a labelled live region", async ({
+  page
+}) => {
+  const post = {
+    id: "00000000-0000-4000-8000-000000000241",
+    authorId: "00000000-0000-4000-8000-000000000242",
+    handle: "creator",
+    displayName: "Creator",
+    avatarUrl: null,
+    body: "Accessible comments region post",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "1",
+    likedByViewer: false
+  };
+  const comment = {
+    id: "00000000-0000-4000-8000-000000000243",
+    body: "A readable comment",
+    createdAt: "2026-11-02T00:00:00.000Z",
+    handle: "commenter",
+    displayName: "Commenter",
+    avatarUrl: null
+  };
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [post] });
+    if (pathname === "/v1/notifications") {
+      return reply(route, 200, { notifications: [] });
+    }
+    if (pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    if (pathname === `/v1/posts/${post.id}/comments`) {
+      return reply(route, 200, { comments: [comment] });
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  const toggle = page.getByRole("button", { name: "Reply 1" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  const regionId = await toggle.getAttribute("aria-controls");
+  expect(regionId).toBeTruthy();
+  const region = page.locator(`#${regionId}`);
+  await expect(region).toBeHidden();
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.getByRole("region", { name: "Comments on Creator's post" })
+  ).toBeVisible();
+  await expect(region).toHaveAttribute("aria-live", "polite");
+  await expect(region).toContainText("A readable comment");
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(region).toBeHidden();
+});
