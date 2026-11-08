@@ -1,6 +1,13 @@
 name: Mixed Workload PostgreSQL Benchmark
 
 on:
+  push:
+    branches:
+      - feature/privacy-controls
+    paths:
+      - apps/api/scripts/mixed-workload-benchmark.mjs
+      - apps/api/scripts/mixed-workload-api.mts
+      - .github/workflows/mixed-workload-benchmark.yml
   workflow_dispatch:
     inputs:
       profile:
@@ -99,8 +106,8 @@ jobs:
           set -euo pipefail
           node apps/api/scripts/mixed-workload-benchmark.mjs \
             --suite "${{ matrix.suite }}" \
-            --profile "${{ inputs.profile }}" \
-            --seed "${{ inputs.seed }}"
+            --profile "${{ github.event_name == 'push' && 'smoke' || inputs.profile }}" \
+            --seed "${{ inputs.seed || '20261109' }}"
 
       - name: Upload mixed-workload evidence
         if: always()
