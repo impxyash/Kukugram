@@ -700,11 +700,19 @@ describe("social privacy authorization", () => {
       headers: { cookie }
     });
     expect(response.statusCode).toBe(200);
-    const body = response.json<{ notifications: Array<{ id: string }>; nextCursor?: string }>();
+    const body = response.json<{
+      notifications: Array<{ id: string }>;
+      nextCursor?: string;
+    }>();
     expect(body.notifications).toHaveLength(50);
     expect(body.nextCursor).toEqual(expect.any(String));
-    const decoded = JSON.parse(Buffer.from(body.nextCursor!, "base64url").toString("utf8"));
-    expect(decoded).toEqual({ createdAt: createdAt.toISOString(), id: notificationRows[49]?.id });
+    const decoded = JSON.parse(
+      Buffer.from(body.nextCursor!, "base64url").toString("utf8")
+    );
+    expect(decoded).toEqual({
+      createdAt: createdAt.toISOString(),
+      id: notificationRows[49]?.id
+    });
     await app.close();
   });
 
