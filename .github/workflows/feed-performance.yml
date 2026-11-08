@@ -286,7 +286,7 @@ jobs:
         run: |
           set -euo pipefail
           psql -X -v ON_ERROR_STOP=1 > artifacts/write-overhead-baseline.txt <<'SQL'
-          \\timing on
+          \timing on
           BEGIN;
           INSERT INTO content.posts (id, author_id, body)
           SELECT md5('kukugram-write-test-post-' || n)::uuid,
@@ -448,7 +448,7 @@ jobs:
         run: |
           set -euo pipefail
           psql -X -v ON_ERROR_STOP=1 > artifacts/write-overhead-candidate.txt <<'SQL'
-          \\timing on
+          \timing on
           BEGIN;
           INSERT INTO content.posts (id, author_id, body)
           SELECT md5('kukugram-write-test-post-' || n)::uuid,
