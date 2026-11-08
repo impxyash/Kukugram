@@ -943,7 +943,7 @@ textarea:focus {
   width: 100%;
   color: #24212a;
   background: #faf9fb;
-  border: 1px solid #e5e1e9;
+  border: 1px solid #8f8995;
   border-radius: 9px;
   padding: 13px 12px;
   font-size: 14px;
@@ -1028,6 +1028,16 @@ textarea:focus {
   color: #a92e3a;
   background: #fff1f2;
   border-color: #ffd4d9;
+}
+
+.auth-card-modern .secondary-button {
+  border-color: #6b6572;
+  color: #514b59;
+}
+
+.auth-card-modern .auth-submit:disabled {
+  background: #6540ae;
+  opacity: 1;
 }
 @media (max-width: 800px) {
   .auth-page {

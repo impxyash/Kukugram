@@ -125,6 +125,27 @@ test("auth card buttons use a visible high-contrast keyboard focus ring", async 
   });
 });
 
+test("auth input and secondary button boundaries remain visible", async ({ page }) => {
+  await installApi(page, { me: async (_call, route) => unavailable(route) });
+  await page.goto("/");
+  const email = page.getByLabel("Email address");
+  const retry = page.getByRole("button", { name: "Retry session" });
+  const styles = await Promise.all([
+    email.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { borderColor: style.borderTopColor, backgroundColor: style.backgroundColor };
+    }),
+    retry.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { borderColor: style.borderTopColor, color: style.color };
+    })
+  ]);
+  expect(styles).toEqual([
+    { borderColor: "rgb(143, 137, 149)", backgroundColor: "rgb(250, 249, 251)" },
+    { borderColor: "rgb(107, 101, 114)", color: "rgb(81, 75, 89)" }
+  ]);
+});
+
 test("starts in the unauthenticated state when the session is missing", async ({ page }) => {
   await installApi(page, { me: async (_call, route) => unauthenticated(route) });
   await page.goto("/");
@@ -1864,6 +1885,20 @@ test("late authentication errors do not leak across login and signup modes", asy
 
   const switchMode = page.getByRole("button", { name: "Log in" });
   await expect(switchMode).toBeDisabled();
+  const busySubmit = page.getByRole("button", { name: "Please wait..." });
+  const busyStyles = await busySubmit.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      color: style.color,
+      opacity: style.opacity
+    };
+  });
+  expect(busyStyles).toEqual({
+    backgroundColor: "rgb(101, 64, 174)",
+    color: "rgb(255, 255, 255)",
+    opacity: "1"
+  });
   releaseSignup();
 
   await expect(page.getByText("Stale signup failure")).toBeVisible();
