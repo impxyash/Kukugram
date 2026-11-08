@@ -422,19 +422,13 @@ test("pending appeal reviews cannot update a new identity or surface stale error
       });
       return;
     }
-    if (
-      pathname === `/v1/moderation/appeals/${acceptedAppealId}` &&
-      method === "PATCH"
-    ) {
+    if (pathname === `/v1/moderation/appeals/${acceptedAppealId}` && method === "PATCH") {
       markAcceptedPending();
       await acceptedPending;
       await reply(route, 200, {});
       return;
     }
-    if (
-      pathname === `/v1/moderation/appeals/${rejectedAppealId}` &&
-      method === "PATCH"
-    ) {
+    if (pathname === `/v1/moderation/appeals/${rejectedAppealId}` && method === "PATCH") {
       markRejectedPending();
       await rejectedPending;
       await reply(route, 500, { title: "Service unavailable" });
