@@ -1174,10 +1174,9 @@ test("changing moderation filters resets expanded report and appeal details", as
   expect(appealDetailCalls).toBe(2);
 });
 
-
-test("a pending Discover search from account A cannot update account B after an identity switch", async ({
-  page
-}) => {
+test(
+  "a pending Discover search from account A cannot update account B after an identity switch",
+  async ({ page }) => {
   const accountA = {
     ...user,
     id: "00000000-0000-4000-8000-000000000101",
@@ -1326,7 +1325,9 @@ test("a pending Profile edit from account A cannot overwrite account B", async (
   await expect(page.getByRole("heading", { name: "Account A stale edit" })).toHaveCount(0);
 });
 
-test("a pending PostCard like response cannot mutate a replacement account feed", async ({ page }) => {
+test(
+  "a pending PostCard like response cannot mutate a replacement account feed",
+  async ({ page }) => {
   const accountA = {
     ...user,
     id: "00000000-0000-4000-8000-000000000121",
@@ -1352,7 +1353,7 @@ test("a pending PostCard like response cannot mutate a replacement account feed"
     likedByViewer: false
   };
   let switchToAccountB = false;
-  let feedCalls = 0;
+  let notificationCalls = 0;
   let releaseLike!: () => void;
   let markLikePending!: () => void;
   const likeGate = new Promise<void>((resolve) => {
@@ -1370,14 +1371,14 @@ test("a pending PostCard like response cannot mutate a replacement account feed"
       return;
     }
     if (pathname === "/v1/feed") {
-      feedCalls += 1;
-      await (feedCalls === 1
-        ? unavailable(route)
-        : reply(route, 200, { posts: [post] }));
+      await reply(route, 200, { posts: [post] });
       return;
     }
     if (pathname === "/v1/notifications") {
-      await reply(route, 200, { notifications: [] });
+      notificationCalls += 1;
+      await (notificationCalls === 1
+        ? unavailable(route)
+        : reply(route, 200, { notifications: [] }));
       return;
     }
     if (pathname === "/v1/moderation/reports") {
