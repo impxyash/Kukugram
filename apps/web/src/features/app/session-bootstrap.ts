@@ -12,7 +12,7 @@ export type SessionBootstrapResult<TUser, TPost, TNotification> =
       status: "authenticated";
       user: TUser;
       posts: TPost[] | undefined;
-      nextCursor: string | undefined;
+      nextCursor?: string;
       notifications: TNotification[] | undefined;
       activityError: boolean;
     };
@@ -40,11 +40,13 @@ export async function loadSession<TUser, TPost, TNotification>(
     status: "authenticated",
     user: session.user as TUser,
     posts: feedResult.status === "fulfilled" ? (feedResult.value.posts as TPost[]) : undefined,
-    nextCursor: feedResult.status === "fulfilled" ? feedResult.value.nextCursor : undefined,
     notifications:
       activityResult.status === "fulfilled"
         ? (activityResult.value.notifications as TNotification[])
         : undefined,
+    ...(feedResult.status === "fulfilled" && feedResult.value.nextCursor
+      ? { nextCursor: feedResult.value.nextCursor }
+      : {}),
     activityError: feedResult.status === "rejected" || activityResult.status === "rejected"
   };
 }
