@@ -2323,9 +2323,9 @@ test("rapid follow-request decisions send only one mutation", async ({ page }) =
   expect(acceptCalls).toBe(1);
 });
 
-test(
-  "feed Load more requests the next cursor once and stops at the final page",
-  async ({ page }) => {
+test("feed Load more requests the next cursor once and stops at the final page", async ({
+  page
+}) => {
   let feedCalls = 0;
   let releaseSecondPage!: () => void;
   let markSecondPagePending!: () => void;
