@@ -1757,3 +1757,57 @@ test("Activity read response is ignored after an identity switch", async ({ page
   await firstReadSettled;
   await expect(page.locator(".banner.error")).toHaveCount(0);
 });
+
+test("rapid repeated likes on one post issue only one request", async ({ page }) => {
+  const post = {
+    id: "00000000-0000-4000-8000-000000000271",
+    authorId: "00000000-0000-4000-8000-000000000272",
+    handle: "single-like",
+    displayName: "Single Like",
+    avatarUrl: null,
+    body: "Prevent duplicate like requests",
+    createdAt: "2026-11-01T00:00:00.000Z",
+    likeCount: "0",
+    commentCount: "0",
+    likedByViewer: false
+  };
+  let likeCalls = 0;
+  let releaseLike!: () => void;
+  let markLikePending!: () => void;
+  const likeGate = new Promise<void>((resolve) => {
+    releaseLike = resolve;
+  });
+  const likeSeen = new Promise<void>((resolve) => {
+    markLikePending = resolve;
+  });
+
+  await page.route("**/v1/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === "/v1/me") return authenticated(route);
+    if (pathname === "/v1/feed") return reply(route, 200, { posts: [post] });
+    if (pathname === "/v1/notifications") {
+      return reply(route, 200, { notifications: [] });
+    }
+    if (pathname === "/v1/moderation/reports") {
+      return reply(route, 403, { title: "Forbidden" });
+    }
+    if (pathname === `/v1/posts/${post.id}/like`) {
+      likeCalls += 1;
+      markLikePending();
+      await likeGate;
+      return reply(route, 200, {});
+    }
+    return reply(route, 200, {});
+  });
+
+  await page.goto("/");
+  const like = page.getByRole("button", { name: "Like post by Single Like. 0 likes" });
+  await like.click();
+  await likeSeen;
+  await like.click();
+  releaseLike();
+
+  await expect(page.getByRole("button", { name: "Unlike post by Single Like. 1 likes" }))
+    .toHaveAttribute("aria-pressed", "true");
+  expect(likeCalls).toBe(1);
+});
