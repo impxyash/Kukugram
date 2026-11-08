@@ -1498,7 +1498,7 @@ test("Discover search results are announced", async ({ page }) => {
   await expect(page.locator(".results")).toHaveAttribute("aria-busy", "false");
 });
 
-test("PostCard like state exposes its accessible name and pressed state", async ({ page }) => {
+test("PostCard like button exposes pressed state", async ({ page }) => {
   const post = {
     id: "00000000-0000-4000-8000-000000000231",
     authorId: "00000000-0000-4000-8000-000000000232",
@@ -1535,9 +1535,7 @@ test("PostCard like state exposes its accessible name and pressed state", async 
   await expect(unlike).toHaveAttribute("aria-pressed", "true");
 });
 
-test("PostCard comments toggle exposes expanded state and a labelled live region", async ({
-  page
-}) => {
+test("PostCard comments region is accessible", async ({ page }) => {
   const post = {
     id: "00000000-0000-4000-8000-000000000241",
     authorId: "00000000-0000-4000-8000-000000000242",
