@@ -2709,7 +2709,7 @@ test("a failed feed page keeps its cursor so Load more can retry", async ({ page
 });
 
 
-test("Discover Load more requests the query-bound search cursor once and stops at the final page", async ({
+test("Discover pagination uses one query-bound cursor request and stops at the final page", async ({
   page
 }) => {
   const makePerson = (id: string, handle: string, displayName: string) => ({
