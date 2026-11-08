@@ -1849,7 +1849,6 @@ test("late authentication errors do not leak across login and signup modes", asy
   await expect(page.getByLabel("Email address")).toBeVisible();
 });
 
-
 test("logout prevents a competing session retry until the request settles", async ({ page }) => {
   let releaseLogout!: () => void;
   let markLogoutPending!: () => void;
