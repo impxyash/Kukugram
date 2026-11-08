@@ -443,9 +443,16 @@ describe("social privacy authorization", () => {
       reportOwnerId?: string;
       duplicateReport?: boolean;
       feedRows?: Array<{
-        id: string; body: string; createdAt: Date; handle: string; displayName: string;
-        avatarUrl: string | null; likeCount: string; commentCount: string;
-        likedByViewer: boolean; authorId: string;
+        id: string;
+        body: string;
+        createdAt: Date;
+        handle: string;
+        displayName: string;
+        avatarUrl: string | null;
+        likeCount: string;
+        commentCount: string;
+        likedByViewer: boolean;
+        authorId: string;
       }>;
     } = {}
   ) {
