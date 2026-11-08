@@ -57,7 +57,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 | Threaded comments                                 | In progress                          | Comments exist; current API does not implement threaded replies                                          |
 | Saves and collections                             | Not started / not found              | No implementation found                                                                                  |
 | Share links / internal share                      | Not started / not found              | No implementation found                                                                                  |
-| Following chronological feed                      | Implemented and tested               | Authenticated follow-based feed with deleted/private/block/mute filters; 50-row `(created_at, id)` keyset pagination and next-cursor coverage in API, unit, and browser E2E tests. Circle filters and For You ranking remain separate work |
+| Following chronological feed                      | Implemented and tested               | 50-row keyset pagination tested; Circle filters and For You ranking remain separate |
 | For You personalized feed                         | Not started / not found              | No ranker found                                                                                          |
 | Explore and search                                | In progress                          | Account search exists; Explore/content search/typed results absent                                       |
 | Hashtag pages                                     | Not started / not found              | No implementation found                                                                                  |
@@ -128,7 +128,7 @@ Source: `KUKUGRAM_BLUEPRINT.md`, repository tree, API boundary inventory, API co
 
 1. Finish and test the Phase 1 social-core baseline: profile privacy, follow graph, block/mute visibility, post audience/visibility, feed correctness, and interaction authorization.
 2. Implement image/carousel upload foundations only after selecting and configuring a non-production object-storage adapter and its local test substitute.
-3. Extend cursor pagination to search, comments, notifications, and moderation lists without breaking existing response contracts; Following feed cursor pagination is implemented and tested.
+3. Extend cursor pagination to search, comments, notifications, and moderation lists; Following feed pagination is complete.
 4. Complete the shared API contract adoption and generated OpenAPI snapshot.
 5. Add remaining Phase 1 product surfaces: saves/collections, richer posts, Explore/hashtags, notification preferences, and accessibility audit.
 6. Add workers, media processing, and realtime only after the corresponding domain contracts and infrastructure are ready.
