@@ -1112,7 +1112,11 @@ try {
     runtime_notes: notes,
     errors,
     acceptance: {
-      performance_decision_eligible: profile === "full" && settings.rounds === 3 && settings.warmupMs === 120_000 && settings.measurementMs === 300_000,
+      performance_decision_eligible:
+        profile === "full" &&
+        settings.rounds === 3 &&
+        settings.warmupMs === 120_000 &&
+        settings.measurementMs === 300_000,
       smoke_is_validation_only: profile === "smoke",
       correctness_gate:
         errors.length === 0 &&
