@@ -949,7 +949,7 @@ textarea:focus {
   font-size: 14px;
 }
 .auth-card-modern input::placeholder {
-  color: #aaa4b0;
+  color: #6b6572;
 }
 .auth-card-modern input:focus {
   border-color: #8054d6;
@@ -971,7 +971,7 @@ textarea:focus {
   margin: 0 0 10px;
 }
 .auth-card-heading > p:last-child {
-  color: #817b88;
+  color: #6b6572;
   font-size: 13px;
   line-height: 1.55;
   margin: 0;
@@ -992,7 +992,7 @@ textarea:focus {
   background: #6540ae;
 }
 .auth-terms {
-  color: #918a98;
+  color: #6b6572;
   font-size: 11px;
   line-height: 1.5;
   margin: 8px 0 0;
