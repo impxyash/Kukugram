@@ -1205,7 +1205,9 @@ integration("PostgreSQL moderation guarantees", () => {
     const postIds = new Map<string, string>();
     const fixtures = [
       ["viewer", viewerId, false],
-      ...authorEntries.map(([kind, authorId]) => [kind, authorId, kind === "deletedPublic"] as const)
+      ...authorEntries.map(
+        ([kind, authorId]) => [kind, authorId, kind === "deletedPublic"] as const
+      )
     ] as const;
     for (const [kind, authorId, deleted] of fixtures) {
       const postId = randomUUID();
@@ -1225,7 +1227,9 @@ integration("PostgreSQL moderation guarantees", () => {
         headers: { cookie: `session=${viewerToken}` }
       });
       expect(response.statusCode).toBe(200);
-      const returnedIds = response.json<{ posts: Array<{ id: string }> }>().posts.map((post) => post.id);
+      const returnedIds = response
+        .json<{ posts: Array<{ id: string }> }>()
+        .posts.map((post) => post.id);
       expect(returnedIds).toContain(postIds.get("viewer"));
       expect(returnedIds).toContain(postIds.get("acceptedPublic"));
       expect(returnedIds).toContain(postIds.get("acceptedPrivate"));
