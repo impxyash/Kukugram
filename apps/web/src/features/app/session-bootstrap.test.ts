@@ -200,6 +200,7 @@ describe("mounted request scope", () => {
     expect(committed).toEqual(["account-b-data"]);
   });
 });
+
 describe("feed cursor bootstrap", () => {
   it("preserves the initial feed cursor for the authenticated session", async () => {
     const requester = vi.fn(<T>(path: string): Promise<T> => {
