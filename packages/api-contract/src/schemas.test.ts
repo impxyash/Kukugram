@@ -117,9 +117,9 @@ describe("API request contracts", () => {
       "opaque-cursor"
     );
     expect(userSearchQuerySchema.safeParse({ q: "creator", cursor: "" }).success).toBe(false);
-    expect(
-      userSearchQuerySchema.safeParse({ q: "creator", cursor: "x".repeat(513) }).success
-    ).toBe(false);
+    expect(userSearchQuerySchema.safeParse({ q: "creator", cursor: "x".repeat(513) }).success).toBe(
+      false
+    );
     expect(userSearchQuerySchema.safeParse({ q: "creator", extra: true }).success).toBe(false);
     expect(userSearchResponseSchema.safeParse({ users: [] }).success).toBe(true);
     expect(

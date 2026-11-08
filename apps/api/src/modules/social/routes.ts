@@ -191,10 +191,7 @@ const searchCursorSchema = z
   })
   .strict();
 
-function decodeSearchCursor(
-  value: string,
-  query: string
-): { handle: string; id: string } {
+function decodeSearchCursor(value: string, query: string): { handle: string; id: string } {
   try {
     if (value.length > 512) throw new Error("Invalid cursor");
     const decoded = Buffer.from(value, "base64url").toString("utf8");

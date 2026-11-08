@@ -46,10 +46,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Temporary Prettier formatting diagnostic
-        run: |
-          pnpm exec prettier --write apps/api/src/app.test.ts apps/api/src/modules/social/routes.ts packages/api-contract/src/schemas.test.ts
-          git diff -- apps/api/src/app.test.ts apps/api/src/modules/social/routes.ts packages/api-contract/src/schemas.test.ts
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint

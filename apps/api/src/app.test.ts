@@ -737,7 +737,10 @@ describe("social privacy authorization", () => {
       headers: { cookie }
     });
     expect(response.statusCode).toBe(200);
-    const body = response.json<{ users: Array<{ id: string; handle: string }>; nextCursor?: string }>();
+    const body = response.json<{
+      users: Array<{ id: string; handle: string }>;
+      nextCursor?: string;
+    }>();
     expect(body.users).toHaveLength(20);
     const expectedCursor = Buffer.from(
       JSON.stringify({
