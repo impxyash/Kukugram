@@ -2107,6 +2107,9 @@ test("repeated comment expansion clicks issue only one comments request", async 
   await replyButton.click();
   releaseComments();
 
-  await expect(page.getByRole("region", { name: "Comments on Comments Creator's post" })).toBeVisible();
+  const commentsRegion = page.getByRole("region", {
+    name: "Comments on Comments Creator's post"
+  });
+  await expect(commentsRegion).toBeVisible();
   expect(commentsCalls).toBe(1);
 });
