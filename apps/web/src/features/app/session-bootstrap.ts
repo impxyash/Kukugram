@@ -85,3 +85,11 @@ export function createMountedRequestScope() {
     }
   };
 }
+
+/** Runs an async completion only while its originating component scope is active. */
+export async function runIfRequestScopeActive(
+  scope: Pick<ReturnType<typeof createMountedRequestScope>, "isActive">,
+  action: () => Promise<void>
+): Promise<void> {
+  if (scope.isActive()) await action();
+}

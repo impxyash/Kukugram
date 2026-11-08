@@ -1853,71 +1853,21 @@ test("rapid repeated likes on one post issue only one request", async ({ page })
 
   await page.goto("/");
   const like = page.getByRole("button", { name: "Like post by Single Like. 0 likes" });
+  await like.evaluate((button) => {
+    button.addEventListener(
+      "click",
+      () => button.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+      { capture: true, once: true }
+    );
+  });
   await like.click();
   await likeSeen;
   await expect(like).toBeDisabled();
-  await like.evaluate((button) => {
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  });
   releaseLike();
 
   const unlike = page.getByRole("button", { name: "Unlike post by Single Like. 1 likes" });
   await expect(unlike).toHaveAttribute("aria-pressed", "true");
   expect(likeCalls).toBe(1);
-});
-
-test("a successful auth response cannot refresh the session after the auth mode scope changes", async ({
-  page
-}) => {
-  let meCalls = 0;
-  let releaseSignup!: () => void;
-  let markSignupPending!: () => void;
-  let markSignupSettled!: () => void;
-  const signupGate = new Promise<void>((resolve) => {
-    releaseSignup = resolve;
-  });
-  const signupSeen = new Promise<void>((resolve) => {
-    markSignupPending = resolve;
-  });
-  const signupSettled = new Promise<void>((resolve) => {
-    markSignupSettled = resolve;
-  });
-
-  await page.route("**/v1/**", async (route) => {
-    const pathname = new URL(route.request().url()).pathname;
-    if (pathname === "/v1/me") {
-      meCalls += 1;
-      return unauthenticated(route);
-    }
-    if (pathname === "/v1/auth/signup") {
-      markSignupPending();
-      await signupGate;
-      await reply(route, 201, { ok: true });
-      markSignupSettled();
-      return;
-    }
-    return reply(route, 200, {});
-  });
-
-  await page.goto("/");
-  await page.getByLabel("Full name").fill("Test Creator");
-  await page.getByLabel("Username").fill("test_creator");
-  await page.getByLabel("Email address").fill("creator@example.com");
-  await page.getByLabel("Password").fill("a-secure-password");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await signupSeen;
-
-  // Simulate a mode change racing a pending request; the real control is disabled while busy.
-  await page.getByRole("button", { name: "Log in" }).evaluate((button) => {
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  });
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-
-  releaseSignup();
-  await signupSettled;
-  expect(meCalls).toBe(1);
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-  await expect(page.getByText("Stale signup failure")).toHaveCount(0);
 });
 
 test("late authentication errors do not leak across login and signup modes", async ({ page }) => {

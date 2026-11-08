@@ -3,7 +3,8 @@ import { ApiError } from "./api-client.js";
 import {
   createMountedRequestScope,
   createSessionRequestSequence,
-  loadSession
+  loadSession,
+  runIfRequestScopeActive
 } from "./session-bootstrap.js";
 import { reconcileSessionActivity } from "./app-shell.js";
 
@@ -147,6 +148,24 @@ describe("session request sequencing", () => {
 
     expect(sequence.isCurrent(olderRefresh)).toBe(false);
     expect(sequence.isCurrent(latestRefresh)).toBe(true);
+  });
+});
+
+describe("request-scoped async completion", () => {
+  it("does not start authentication completion after its scope is invalidated", async () => {
+    const scope = createMountedRequestScope();
+    const onAuthenticated = vi.fn(async () => undefined);
+    let resolveAuth!: () => void;
+    const pendingAuth = new Promise<void>((resolve) => {
+      resolveAuth = resolve;
+    });
+    const completion = pendingAuth.then(() => runIfRequestScopeActive(scope, onAuthenticated));
+
+    scope.invalidate();
+    resolveAuth();
+    await completion;
+
+    expect(onAuthenticated).not.toHaveBeenCalled();
   });
 });
 

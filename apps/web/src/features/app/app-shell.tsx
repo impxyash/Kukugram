@@ -6,6 +6,7 @@ import { request } from "./api-client";
 import {
   createMountedRequestScope,
   createSessionRequestSequence,
+  runIfRequestScopeActive,
   loadSession
 } from "./session-bootstrap";
 import type {
@@ -331,8 +332,7 @@ function AuthScreen({
     const values = Object.fromEntries(form);
     try {
       await request(`/auth/${mode}`, { method: "POST", body: JSON.stringify(values) });
-      if (!scope.isActive()) return;
-      await onAuthenticated();
+      await runIfRequestScopeActive(scope, onAuthenticated);
     } catch (reason) {
       if (scope.isActive()) setError((reason as Error).message);
     } finally {
