@@ -80,7 +80,7 @@ handler in the identity module.
 
 | Method and path            | Access                                       | Request boundary             | Success response                                            |
 | -------------------------- | -------------------------------------------- | ---------------------------- | ----------------------------------------------------------- |
-| GET `/feed`                | Authenticated | Optional opaque base64url keyset `cursor` (max 512 chars) | 200: `{ posts, nextCursor? }`; 50/page, `(created_at DESC, id DESC)`; privacy, mute and block filters |
+| GET `/feed`                | Authenticated                                | Optional cursor (base64url)  | 200: `{ posts, nextCursor? }`; 50/page; stable keyset       |
 | POST `/posts`              | Authenticated                                | body trimmed 1–2000          | 201: `{ post: PostRow }`                                    |
 | DELETE `/posts/:id`        | Authenticated; author-only                   | id UUID                      | 204; 404 when unavailable/not owned                         |
 | POST `/posts/:id/like`     | Authenticated                                | id UUID                      | 200: `{ liked: true }`                                      |
