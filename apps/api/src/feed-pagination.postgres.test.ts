@@ -156,10 +156,10 @@ integration("PostgreSQL feed pagination", () => {
 
     for (let index = 1; index <= 72; index += 1) {
       const isExcluded = index % 4 === 0;
-      const excludedKind = excludedAuthors[(index / 4 - 1) % excludedAuthors.length];
+      const excludedKind = excludedAuthors[(index / 4 - 1) % excludedAuthors.length]!;
       const authorId = isExcluded
         ? authors[excludedKind]
-        : visibleAuthors[(index - 1) % visibleAuthors.length];
+        : visibleAuthors[(index - 1) % visibleAuthors.length]!;
       const postId = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
       const deleted = isExcluded && excludedKind === "deletedPublic";
 
