@@ -46,6 +46,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Temporary pagination formatter diagnostic
+        run: |
+          pnpm exec prettier --write apps/web/e2e/session.pw.ts apps/web/src/features/app/app-shell.tsx apps/web/src/features/app/session-bootstrap.test.ts
+          git diff -- apps/web/e2e/session.pw.ts apps/web/src/features/app/app-shell.tsx apps/web/src/features/app/session-bootstrap.test.ts
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
