@@ -125,6 +125,7 @@ jobs:
           ANALYZE content.comments;
           SQL
 
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
           INSERT INTO social.follows (follower_id, followee_id, status)
           SELECT md5('kukugram-bench-user-2')::uuid,
                  md5('kukugram-bench-user-' || n)::uuid,
@@ -148,6 +149,7 @@ jobs:
 
           ANALYZE social.follows;
           ANALYZE notifications.notifications;
+          SQL
 
       - name: Capture actual feed query plans
         run: |
