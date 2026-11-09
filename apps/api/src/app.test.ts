@@ -187,6 +187,7 @@ describe("API", () => {
       "PATCH /v1/moderation/reports/{id}",
       "POST /v1/auth/login",
       "POST /v1/auth/logout",
+      "POST /v1/auth/logout-all",
       "POST /v1/auth/signup",
       "POST /v1/me/follow-requests/{handle}/accept",
       "POST /v1/moderation/audit/resolve-actor",
@@ -288,6 +289,28 @@ describe("API", () => {
     expect(typeof problemDetails.requestId).toBe("string");
     expect(problemDetails.requestId.length).toBeGreaterThan(0);
     expect(problemDetails).not.toHaveProperty("unexpected");
+    await app.close();
+  });
+
+  it("revokes every active session when logging out all devices", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/logout-all",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(
+      pool.statements.some(
+        (sql) =>
+          sql.includes("UPDATE identity.sessions SET revoked_at = now()") &&
+          sql.includes("WHERE user_id = $1") &&
+          sql.includes("revoked_at IS NULL")
+      )
+    ).toBe(true);
+    expect(pool.parameters.at(-1)).toEqual([viewerId]);
+    expect(response.headers["set-cookie"]).toContain("Max-Age=0");
     await app.close();
   });
 
