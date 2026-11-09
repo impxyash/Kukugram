@@ -46,6 +46,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Diagnose auth test Prettier output
+        run: |
+          pnpm exec prettier apps/api/src/platform/auth/session.test.ts > /tmp/session.test.formatted.ts
+          diff -u apps/api/src/platform/auth/session.test.ts /tmp/session.test.formatted.ts || true
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm lint
