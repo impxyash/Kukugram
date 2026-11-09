@@ -292,28 +292,6 @@ describe("API", () => {
     await app.close();
   });
 
-  it("revokes every active session when logging out all devices", async () => {
-    const pool = makePool();
-    const app = appWithPool(pool);
-    const response = await app.inject({
-      method: "POST",
-      url: "/v1/auth/logout-all",
-      headers: { cookie }
-    });
-    expect(response.statusCode).toBe(204);
-    expect(
-      pool.statements.some(
-        (sql) =>
-          sql.includes("UPDATE identity.sessions SET revoked_at = now()") &&
-          sql.includes("WHERE user_id = $1") &&
-          sql.includes("revoked_at IS NULL")
-      )
-    ).toBe(true);
-    expect(pool.parameters.at(-1)).toEqual([viewerId]);
-    expect(response.headers["set-cookie"]).toContain("Max-Age=0");
-    await app.close();
-  });
-
   it("requires authentication for privacy-control endpoints", async () => {
     const app = buildApp(config);
     const requests = [
@@ -640,6 +618,28 @@ describe("social privacy authorization", () => {
   function appWithPool(pool: Pool) {
     return buildApp(config, pool);
   }
+
+  it("revokes every active session when logging out all devices", async () => {
+    const pool = makePool();
+    const app = appWithPool(pool);
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/logout-all",
+      headers: { cookie }
+    });
+    expect(response.statusCode).toBe(204);
+    expect(
+      pool.statements.some(
+        (sql) =>
+          sql.includes("UPDATE identity.sessions SET revoked_at = now()") &&
+          sql.includes("WHERE user_id = $1") &&
+          sql.includes("revoked_at IS NULL")
+      )
+    ).toBe(true);
+    expect(pool.parameters.at(-1)).toEqual([viewerId]);
+    expect(response.headers["set-cookie"]).toContain("Max-Age=0");
+    await app.close();
+  });
 
   it("returns private profile metadata without granting private content access", async () => {
     const pool = makePool({ privacy: "private" });
