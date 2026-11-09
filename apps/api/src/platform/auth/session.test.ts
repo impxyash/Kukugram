@@ -16,7 +16,7 @@ describe("native access tokens", () => {
       exp: Math.floor(now / 1000) + 900,
       iss: "kukugram-api",
       aud: "kukugram-native",
-      typ: "access"
+      typ: "access",
     });
   });
 
