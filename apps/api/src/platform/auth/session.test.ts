@@ -26,8 +26,12 @@ describe("native access tokens", () => {
   it("rejects a token with a modified payload or signature", () => {
     const token = createNativeAccessToken(userId, sessionId, pepper, now);
     const [header, payload, signature] = token.split(".");
-    expect(verifyNativeAccessToken(`${header}.${payload}.${signature}x`, pepper, now)).toBeNull();
-    expect(verifyNativeAccessToken(`${header}.${payload.slice(0, -1)}A.${signature}`, pepper, now)).toBeNull();
+    expect(
+      verifyNativeAccessToken(`${header}.${payload}.${signature}x`, pepper, now)
+    ).toBeNull();
+    expect(
+      verifyNativeAccessToken(`${header}.${payload.slice(0, -1)}A.${signature}`, pepper, now)
+    ).toBeNull();
   });
 
   it("rejects expired tokens", () => {
@@ -37,7 +41,9 @@ describe("native access tokens", () => {
 
   it("rejects tokens signed with a different pepper", () => {
     const token = createNativeAccessToken(userId, sessionId, pepper, now);
-    expect(verifyNativeAccessToken(token, "a-different-secure-pepper-value-123456", now)).toBeNull();
+    expect(
+      verifyNativeAccessToken(token, "a-different-secure-pepper-value-123456", now)
+    ).toBeNull();
   });
 
   it("rejects malformed tokens and tokens with a noncanonical lifetime", () => {
