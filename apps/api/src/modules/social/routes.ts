@@ -291,6 +291,16 @@ export const socialRoutes: FastifyPluginCallback = (app, _opts, done) => {
     return reply.code(204).send();
   });
 
+  app.post("/auth/logout-all", async (request, reply) => {
+    const current = await requireViewer(request);
+    await app.pool.query(
+      "UPDATE identity.sessions SET revoked_at = now(), updated_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+      [current.id]
+    );
+    reply.clearCookie(app.config.SESSION_COOKIE_NAME, { path: "/" });
+    return reply.code(204).send();
+  });
+
   app.get("/me", async (request) => {
     const current = await requireViewer(request);
     const result = await app.pool.query<{ handle: string }>(
