@@ -125,6 +125,22 @@ test("auth card buttons use a visible high-contrast keyboard focus ring", async 
   });
 });
 
+test("reduced-motion preference disables decorative animations", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+
+  const animationName = await page.evaluate(() => {
+    const indicator = document.createElement("span");
+    indicator.className = "pulse-dot";
+    document.body.append(indicator);
+    const name = getComputedStyle(indicator).animationName;
+    indicator.remove();
+    return name;
+  });
+
+  expect(animationName).toBe("none");
+});
+
 test("dark search inputs expose a visible control boundary", async ({ page }) => {
   await installApi(page, { me: async (_call, route) => authenticated(route) });
   await page.goto("/");
