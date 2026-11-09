@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createNativeAccessToken,
-  verifyNativeAccessToken
-} from "./session.js";
+import { createNativeAccessToken, verifyNativeAccessToken } from "./session.js";
 
 const pepper = "a-secure-test-pepper-that-is-long-enough";
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -26,11 +23,13 @@ describe("native access tokens", () => {
   it("rejects a token with a modified payload or signature", () => {
     const token = createNativeAccessToken(userId, sessionId, pepper, now);
     const [header, payload, signature] = token.split(".");
+    expect(verifyNativeAccessToken(`${header}.${payload}.${signature}x`, pepper, now)).toBeNull();
     expect(
-      verifyNativeAccessToken(`${header}.${payload}.${signature}x`, pepper, now)
-    ).toBeNull();
-    expect(
-      verifyNativeAccessToken(`${header}.${payload.slice(0, -1)}A.${signature}`, pepper, now)
+      verifyNativeAccessToken(
+        `${header}.${payload.slice(0, -1)}A.${signature}`,
+        pepper,
+        now
+      )
     ).toBeNull();
   });
 
