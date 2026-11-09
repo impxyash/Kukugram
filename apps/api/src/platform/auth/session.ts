@@ -137,7 +137,7 @@ export function verifyNativeAccessToken(
     ) {
       return null;
     }
-    return claims as NativeAccessTokenClaims;
+    return claims as unknown as NativeAccessTokenClaims;
   } catch {
     return null;
   }
