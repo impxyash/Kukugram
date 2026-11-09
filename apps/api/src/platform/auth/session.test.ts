@@ -23,15 +23,9 @@ describe("native access tokens", () => {
   it("rejects a token with a modified payload or signature", () => {
     const token = createNativeAccessToken(userId, sessionId, pepper, now);
     const [header, payload, signature] = token.split(".");
+    expect(verifyNativeAccessToken(`${header}.${payload}.${signature}x`, pepper, now)).toBeNull();
     expect(
-      verifyNativeAccessToken(`${header}.${payload}.${signature}x`, pepper, now)
-    ).toBeNull();
-    expect(
-      verifyNativeAccessToken(
-        `${header}.${payload.slice(0, -1)}A.${signature}`,
-        pepper,
-        now
-      )
+      verifyNativeAccessToken(`${header}.${payload.slice(0, -1)}A.${signature}`, pepper, now)
     ).toBeNull();
   });
 
