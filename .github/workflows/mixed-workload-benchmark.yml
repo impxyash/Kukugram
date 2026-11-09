@@ -153,7 +153,7 @@ jobs:
           set -euo pipefail
           node apps/api/scripts/mixed-workload-benchmark.mjs \
             --suite "${{ matrix.suite }}" \
-            --profile "${{ github.event_name == 'push' && 'smoke' || inputs.profile }}" \
+            --profile "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[benchmark-full]') && 'full' || (github.event_name == 'push' && 'smoke' || inputs.profile) }}" \
             --seed "${{ inputs.seed || '20261109' }}"
 
       - name: Upload mixed-workload evidence
