@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createNativeAccessToken,
-  verifyNativeAccessToken
+  verifyNativeAccessToken,
 } from "./session.js";
 
 const pepper = "a-secure-test-pepper-that-is-long-enough";
@@ -19,7 +19,7 @@ describe("native access tokens", () => {
       exp: Math.floor(now / 1000) + 900,
       iss: "kukugram-api",
       aud: "kukugram-native",
-      typ: "access"
+      typ: "access",
     });
   });
 
@@ -27,10 +27,14 @@ describe("native access tokens", () => {
     const token = createNativeAccessToken(userId, sessionId, pepper, now);
     const [header, payload, signature] = token.split(".");
     expect(
-      verifyNativeAccessToken(`${header}.${payload}.${signature}x`, pepper, now)
+      verifyNativeAccessToken(`${header}.${payload}.${signature}x`, pepper, now),
     ).toBeNull();
     expect(
-      verifyNativeAccessToken(`${header}.${payload.slice(0, -1)}A.${signature}`, pepper, now)
+      verifyNativeAccessToken(
+        `${header}.${payload.slice(0, -1)}A.${signature}`,
+        pepper,
+        now,
+      ),
     ).toBeNull();
   });
 
@@ -42,7 +46,11 @@ describe("native access tokens", () => {
   it("rejects tokens signed with a different pepper", () => {
     const token = createNativeAccessToken(userId, sessionId, pepper, now);
     expect(
-      verifyNativeAccessToken(token, "a-different-secure-pepper-value-123456", now)
+      verifyNativeAccessToken(
+        token,
+        "a-different-secure-pepper-value-123456",
+        now,
+      ),
     ).toBeNull();
   });
 
