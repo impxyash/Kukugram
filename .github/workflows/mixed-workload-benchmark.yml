@@ -1,0 +1,166 @@
+name: Mixed Workload PostgreSQL Benchmark
+
+on:
+  push:
+    branches:
+      - feature/privacy-controls
+    paths:
+      - apps/api/scripts/mixed-workload-benchmark.mjs
+      - apps/api/scripts/mixed-workload-api.mts
+      - .github/workflows/mixed-workload-benchmark.yml
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Smoke validates the harness quickly; full runs the 2m warm-up, 5m measurement and 3 rounds."
+        required: true
+        type: choice
+        default: full
+        options:
+          - smoke
+          - full
+      seed:
+        description: "Deterministic dataset and workload seed."
+        required: true
+        type: string
+        default: "20261109"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mixed-workload-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  format:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install formatter dependency
+        run: pnpm install --frozen-lockfile --filter @kukugram/api...
+      - name: Format and commit only the new benchmark scripts
+        run: |
+          set -euo pipefail
+          pnpm exec prettier --write apps/api/scripts/mixed-workload-benchmark.mjs apps/api/scripts/mixed-workload-api.mts
+          if git diff --quiet -- apps/api/scripts/mixed-workload-benchmark.mjs apps/api/scripts/mixed-workload-api.mts; then
+            echo "Benchmark scripts are already formatted."
+            exit 0
+          fi
+          current_head="$(git rev-parse HEAD)"
+          remote_head="$(git ls-remote origin "refs/heads/${GITHUB_REF_NAME}" | cut -f1)"
+          if [[ "$current_head" != "$GITHUB_SHA" || "$remote_head" != "$GITHUB_SHA" ]]; then
+            echo "Branch advanced during formatting; refusing to push over newer work." >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/api/scripts/mixed-workload-benchmark.mjs apps/api/scripts/mixed-workload-api.mts
+          git commit -m "Format mixed-workload benchmark scripts"
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+
+  benchmark:
+    needs: [format]
+    if: always() && (needs.format.result == 'success' || needs.format.result == 'skipped')
+    name: "Mixed workload — ${{ matrix.suite }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - mark-read
+          - notifications
+          - feed
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: kukugram_bench
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kukugram_bench"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: kukugram_bench
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install API workspace dependencies
+        run: pnpm install --frozen-lockfile --filter @kukugram/api...
+
+      - name: Build database workspace package
+        run: pnpm --filter @kukugram/database build
+
+      - name: Format benchmark sources and retain formatted snapshot
+        run: |
+          set -euo pipefail
+          pnpm exec prettier --write apps/api/scripts/mixed-workload-benchmark.mjs apps/api/scripts/mixed-workload-api.mts
+          mkdir -p artifacts/mixed-workload/formatted-source
+          cp apps/api/scripts/mixed-workload-benchmark.mjs artifacts/mixed-workload/formatted-source/
+          cp apps/api/scripts/mixed-workload-api.mts artifacts/mixed-workload/formatted-source/
+      - name: Validate benchmark scripts and workflow YAML
+        run: |
+          set -euo pipefail
+          node --check apps/api/scripts/mixed-workload-benchmark.mjs
+          pnpm --filter @kukugram/api exec tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --strict scripts/mixed-workload-api.mts
+          ruby -e 'require "yaml"; YAML.load_file(".github/workflows/mixed-workload-benchmark.yml"); puts "Workflow YAML parsed."'
+
+      - name: Wait for disposable PostgreSQL
+        run: |
+          set -euo pipefail
+          for attempt in {1..60}; do
+            if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Disposable PostgreSQL did not become ready." >&2
+          exit 1
+
+      - name: Run isolated mixed-workload benchmark
+        run: |
+          set -euo pipefail
+          node apps/api/scripts/mixed-workload-benchmark.mjs \
+            --suite "${{ matrix.suite }}" \
+            --profile "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, '[benchmark-full]') && 'full' || (github.event_name == 'push' && 'smoke' || inputs.profile) }}" \
+            --seed "${{ inputs.seed || '20261109' }}"
+
+      - name: Upload mixed-workload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kukugram-mixed-workload-${{ matrix.suite }}-${{ github.run_id }}
+          path: artifacts/mixed-workload/
+          if-no-files-found: warn
+          retention-days: 14

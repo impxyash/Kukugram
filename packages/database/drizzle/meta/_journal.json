@@ -2,7 +2,75 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    { "idx": 0, "version": "7", "when": 0, "tag": "0000_initial", "breakpoints": true },
-    { "idx": 1, "version": "7", "when": 0, "tag": "0001_social_core", "breakpoints": true }
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 0,
+      "tag": "0000_initial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 0,
+      "tag": "0001_social_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794000000000,
+      "tag": "0002_privacy_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794000001000,
+      "tag": "0003_moderation_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794000002000,
+      "tag": "0004_moderation_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794000003000,
+      "tag": "0005_immutable_audit_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794000004000,
+      "tag": "0006_moderation_pseudonymization",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794000005000,
+      "tag": "0007_moderation_audit_actor_refs",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794000006000,
+      "tag": "0008_moderation_audit_identity_resolution",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794170000000,
+      "tag": "0009_pagination_indexes",
+      "breakpoints": true
+    }
   ]
 }

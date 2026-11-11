@@ -4,42 +4,107 @@ import helmet from "@fastify/helmet";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify from "fastify";
+import type { Pool } from "pg";
 import { createDatabase } from "@kukugram/database";
 import { ZodError } from "zod";
 import type { ApiConfig } from "./config.js";
+import {
+  createAuthRateLimitKey,
+  InMemoryRateLimitStore,
+  RedisRateLimitStore,
+  resolveClientIp,
+  type RateLimitStore
+} from "./platform/rate-limit.js";
 import { identityRoutes } from "./modules/identity/routes.js";
 import { socialRoutes } from "./modules/social/routes.js";
 import "./platform/database.js";
 
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 10;
-const authAttempts = new Map<string, { count: number; resetAt: number }>();
-
-export function buildApp(config: ApiConfig) {
+export function buildApp(
+  config: ApiConfig,
+  poolOverride?: Pool,
+  rateLimitStoreOverride?: RateLimitStore,
+  requirePublicClientIpHeader = config.NODE_ENV === "production" && process.env.NODE_ENV !== "test"
+) {
   const app = Fastify({
     logger: { level: config.NODE_ENV === "production" ? "info" : "debug" },
     genReqId: () => crypto.randomUUID()
   });
-  const { pool } = createDatabase(config.DATABASE_URL);
+  const pool = poolOverride ?? createDatabase(config.DATABASE_URL).pool;
+  const rateLimitStore =
+    rateLimitStoreOverride ??
+    (config.NODE_ENV === "test"
+      ? new InMemoryRateLimitStore()
+      : new RedisRateLimitStore(config.REDIS_URL, () => {
+          app.log.error("Authentication rate-limit Redis connection error.");
+        }));
+  app.addSchema({
+    $id: "ProblemDetails",
+    title: "ProblemDetails",
+    type: "object",
+    required: ["type", "title", "status", "instance", "requestId"],
+    properties: {
+      type: { type: "string", format: "uri" },
+      title: { type: "string" },
+      status: { type: "integer", minimum: 400, maximum: 599 },
+      detail: { type: "string" },
+      instance: { type: "string" },
+      requestId: { type: "string" }
+    },
+    additionalProperties: false
+  });
   app.decorate("config", config);
   app.decorate("pool", pool);
-  app.addHook("onClose", async () => pool.end());
+  app.addHook("onReady", async () => {
+    try {
+      await rateLimitStore.connect();
+    } catch {
+      throw new Error("Redis rate limiter is unavailable; refusing to start the API.");
+    }
+  });
+  app.addHook("onClose", async () => {
+    try {
+      await rateLimitStore.close();
+    } catch {
+      app.log.error("Authentication rate-limit Redis shutdown failed.");
+    }
+    await pool.end();
+  });
 
   app.addHook("onRequest", async (request, reply) => {
-    if (request.method !== "POST" || !["/v1/auth/login", "/v1/auth/signup"].includes(request.url.split("?")[0] ?? "")) {
+    if (
+      request.method !== "POST" ||
+      !["/v1/auth/login", "/v1/auth/signup"].includes(request.url.split("?")[0] ?? "")
+    ) {
       return;
     }
 
-    const now = Date.now();
-    const key = `${request.ip}:${request.url.split("?")[0]}`;
-    let bucket = authAttempts.get(key);
-    if (!bucket || bucket.resetAt <= now) {
-      bucket = { count: 0, resetAt: now + AUTH_WINDOW_MS };
-      authAttempts.set(key, bucket);
+    const endpoint = request.url.split("?")[0] ?? "";
+    let result: { count: number; ttlMs: number };
+    try {
+      // Railway overwrites X-Real-IP only on public HTTP ingress; private-network callers must not use these auth routes.
+      const clientIp = resolveClientIp(
+        request.headers["x-real-ip"],
+        request.raw.socket.remoteAddress,
+        requirePublicClientIpHeader
+      );
+      const key = createAuthRateLimitKey(config.SESSION_TOKEN_PEPPER, clientIp, endpoint);
+      result = await rateLimitStore.consume(key, AUTH_WINDOW_MS);
+    } catch {
+      request.log.error("Authentication rate limiter unavailable.");
+      return reply.header("retry-after", "5").code(503).type("application/problem+json").send({
+        type: "https://kukugram.com/problems/rate-limiter-unavailable",
+        title: "Authentication temporarily unavailable",
+        status: 503,
+        detail: "Please try again shortly.",
+        instance: request.url,
+        requestId: request.id
+      });
     }
 
-    if (bucket.count >= AUTH_MAX_ATTEMPTS) {
-      const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    if (result.count > AUTH_MAX_ATTEMPTS) {
+      const retryAfter = Math.max(1, Math.ceil(result.ttlMs / 1000));
       return reply
         .header("retry-after", String(retryAfter))
         .code(429)
@@ -53,34 +118,133 @@ export function buildApp(config: ApiConfig) {
           requestId: request.id
         });
     }
-
-    bucket.count += 1;
-    if (authAttempts.size > 10_000) {
-      for (const [entryKey, entry] of authAttempts) {
-        if (entry.resetAt <= now) authAttempts.delete(entryKey);
-      }
-      if (authAttempts.size > 10_000) {
-        const oldestKey = authAttempts.keys().next().value;
-        if (oldestKey) authAttempts.delete(oldestKey);
-      }
-    }
   });
 
   app.register(helmet, { contentSecurityPolicy: false });
   app.register(cors, { origin: config.WEB_ORIGIN, credentials: true });
   app.register(cookie, { hook: "onRequest" });
   app.register(swagger, {
+    stripBasePath: false,
+    refResolver: {
+      buildLocalReference: (schema, _baseUri, _fragment, index) =>
+        (schema as { title?: string }).title ?? `def-${index}`
+    },
+    transform: ({ schema, url }) => {
+      if (!url.startsWith("/v1/")) return { schema, url };
+      const routeSchema = (schema ?? {}) as Record<string, unknown> & {
+        response?: Record<string, unknown>;
+      };
+      return {
+        schema: {
+          ...routeSchema,
+          response: {
+            ...(routeSchema.response ?? {}),
+            default: {
+              description: "Problem Details error response",
+              content: {
+                "application/problem+json": {
+                  schema: { $ref: "ProblemDetails#" }
+                }
+              }
+            }
+          }
+        },
+        url
+      };
+    },
+    transformObject: (documentObject) => {
+      const normalizeProblemDetailsRefs = (value: unknown): void => {
+        if (Array.isArray(value)) {
+          value.forEach(normalizeProblemDetailsRefs);
+          return;
+        }
+        if (value === null || typeof value !== "object") return;
+        const object = value as Record<string, unknown>;
+        if (object.$ref === "ProblemDetails#") {
+          object.$ref = "#/components/schemas/ProblemDetails";
+        }
+        Object.values(object).forEach(normalizeProblemDetailsRefs);
+      };
+      const document =
+        "openapiObject" in documentObject
+          ? documentObject.openapiObject
+          : documentObject.swaggerObject;
+      normalizeProblemDetailsRefs(document);
+      return document;
+    },
     openapi: {
       info: { title: "Kukugram API", version: "1.0.0" },
-      servers: [{ url: "/v1" }]
+      servers: [{ url: "/" }],
+      paths: {
+        "/health": {
+          get: {
+            tags: ["System"],
+            summary: "Check API health",
+            responses: {
+              "200": {
+                description: "API is healthy",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      required: ["status", "requestId"],
+                      properties: {
+                        status: { type: "string", const: "ok" },
+                        requestId: { type: "string" }
+                      },
+                      additionalProperties: false
+                    }
+                  }
+                }
+              },
+              "500": {
+                description: "Health check failed",
+                content: {
+                  "application/problem+json": {
+                    schema: { $ref: "ProblemDetails#" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   });
   app.register(swaggerUi, { routePrefix: "/documentation" });
 
-  app.get("/health", { schema: { hide: true } }, (request) => ({
-    status: "ok",
-    requestId: request.id
-  }));
+  app.get(
+    "/health",
+    {
+      schema: {
+        tags: ["System"],
+        summary: "Check API health",
+        response: {
+          200: {
+            type: "object",
+            required: ["status", "requestId"],
+            properties: {
+              status: { type: "string", const: "ok" },
+              requestId: { type: "string" }
+            },
+            additionalProperties: false
+          },
+          500: {
+            description: "Health check failed",
+            content: {
+              "application/problem+json": {
+                schema: { $ref: "ProblemDetails#" }
+              }
+            }
+          }
+        }
+      }
+    },
+    (request) => ({
+      status: "ok",
+      requestId: request.id
+    })
+  );
   app.register(identityRoutes, { prefix: "/v1" });
   app.register(socialRoutes, { prefix: "/v1" });
 

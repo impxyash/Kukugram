@@ -1,0 +1,1029 @@
+name: Feed PostgreSQL Performance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feed-performance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          contains(github.event.pull_request.labels.*.name, 'run-feed-benchmark') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: kukugram_bench
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kukugram_bench"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: kukugram_bench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install benchmark database client dependency
+        run: pnpm install --frozen-lockfile --filter @kukugram/api...
+      - name: Wait for isolated PostgreSQL
+        run: |
+          for attempt in {1..30}; do
+            if pg_isready -d "$PGDATABASE"; then exit 0; fi
+            sleep 2
+          done
+          echo "Disposable benchmark PostgreSQL did not become ready." >&2
+          exit 1
+
+      - name: Apply repository migrations
+        run: |
+          set -euo pipefail
+          for migration in packages/database/drizzle/[0-9]*.sql; do
+            echo "Applying $migration"
+            psql -X -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+      - name: Reset pagination indexes for disposable baseline
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -c "DROP INDEX IF EXISTS content.posts_feed_global_cursor"
+          psql -X -v ON_ERROR_STOP=1 -c "DROP INDEX IF EXISTS notifications.notifications_recipient_cursor"
+
+      - name: Seed disposable benchmark dataset
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO identity.users (id, email)
+          SELECT md5('kukugram-bench-user-' || n)::uuid,
+                 'bench-user-' || n || '@example.invalid'
+          FROM generate_series(1, 12000) AS n;
+
+          INSERT INTO social.profiles (user_id, handle, display_name, privacy)
+          SELECT md5('kukugram-bench-user-' || n)::uuid,
+                 'bench_' || n,
+                 'Benchmark User ' || n,
+                 CASE WHEN n % 20 = 0 THEN 'private' ELSE 'public' END
+          FROM generate_series(1, 12000) AS n;
+
+          INSERT INTO social.follows (follower_id, followee_id, status)
+          SELECT md5('kukugram-bench-user-1')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid,
+                 CASE WHEN n % 5 = 0 THEN 'pending' ELSE 'accepted' END
+          FROM generate_series(2, 661) AS n;
+
+          INSERT INTO social.mutes (muter_id, muted_id)
+          SELECT md5('kukugram-bench-user-1')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid
+          FROM generate_series(602, 631) AS n;
+
+          INSERT INTO social.blocks (blocker_id, blocked_id)
+          SELECT md5('kukugram-bench-user-1')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid
+          FROM generate_series(632, 646) AS n;
+
+          INSERT INTO social.blocks (blocker_id, blocked_id)
+          SELECT md5('kukugram-bench-user-' || n)::uuid,
+                 md5('kukugram-bench-user-1')::uuid
+          FROM generate_series(647, 661) AS n;
+
+          INSERT INTO content.posts (id, author_id, body, created_at, deleted_at)
+          SELECT md5('kukugram-bench-post-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n * 37, 12000) + 1))::uuid,
+                 'Synthetic feed benchmark post ' || n,
+                 now() - (mod(n, 129600)::text || ' minutes')::interval,
+                 CASE WHEN n % 33 = 0 THEN now() ELSE NULL END
+          FROM generate_series(1, 400000) AS n;
+
+          INSERT INTO content.likes (user_id, post_id)
+          SELECT md5('kukugram-bench-user-' || (mod(n * 13, 12000) + 1))::uuid,
+                 md5('kukugram-bench-post-' || n)::uuid
+          FROM generate_series(1, 120000) AS n;
+
+          INSERT INTO content.comments (id, post_id, author_id, body)
+          SELECT md5('kukugram-bench-comment-' || n)::uuid,
+                 md5('kukugram-bench-post-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid,
+                 'Synthetic benchmark comment ' || n
+          FROM generate_series(1, 80000) AS n;
+
+          ANALYZE identity.users;
+          ANALYZE social.profiles;
+          ANALYZE social.follows;
+          ANALYZE social.mutes;
+          ANALYZE social.blocks;
+          ANALYZE content.posts;
+          ANALYZE content.likes;
+          ANALYZE content.comments;
+          SQL
+
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO social.follows (follower_id, followee_id, status)
+          SELECT md5('kukugram-bench-user-2')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid,
+                 'accepted'
+          FROM generate_series(100, 104) AS n;
+
+          INSERT INTO social.follows (follower_id, followee_id, status)
+          SELECT md5('kukugram-bench-user-3')::uuid,
+                 md5('kukugram-bench-user-' || n)::uuid,
+                 'accepted'
+          FROM generate_series(1001, 6000) AS n;
+
+          INSERT INTO notifications.notifications (id, recipient_id, actor_id, type, created_at, read_at)
+          SELECT md5('kukugram-bench-notification-' || n)::uuid,
+                 md5('kukugram-bench-user-' || (mod(n * 29, 12000) + 1))::uuid,
+                 CASE
+                   WHEN n % 10 = 0 THEN NULL
+                   ELSE md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1))::uuid
+                 END,
+                 'follow',
+                 now() - (mod(n, 129600)::text || ' minutes')::interval,
+                 CASE WHEN (n / 12000) % 10 < 7 THEN now() ELSE NULL END
+          FROM generate_series(1, 1200000) AS n;
+
+          ANALYZE social.follows;
+          ANALYZE notifications.notifications;
+          SQL
+
+      - name: Capture actual feed query plans
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/feed-first-page-baseline-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('kukugram-bench-user-1')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('kukugram-bench-user-1')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id
+                                  AND b.blocked_id = md5('kukugram-bench-user-1')::uuid)
+                              OR (b.blocker_id = md5('kukugram-bench-user-1')::uuid
+                                  AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND (NULL::timestamptz IS NULL
+                 OR (p.created_at, p.id) <
+                    (NULL::timestamptz, NULL::uuid))
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/feed-cursor-page-baseline-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('kukugram-bench-user-1')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('kukugram-bench-user-1')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id
+                                  AND b.blocked_id = md5('kukugram-bench-user-1')::uuid)
+                              OR (b.blocker_id = md5('kukugram-bench-user-1')::uuid
+                                  AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND (p.created_at, p.id) <
+                (now() - interval '45 days',
+                 md5('kukugram-bench-post-200000')::uuid)
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+
+      - name: Capture sparse and high-follow baseline plans
+        run: |
+          set -euo pipefail
+          for cohort in sparse high; do
+            if [[ "$cohort" == "sparse" ]]; then viewer="kukugram-bench-user-2"; else viewer="kukugram-bench-user-3"; fi
+            for page in first cursor; do
+              if [[ "$page" == "first" ]]; then cursor_predicate="TRUE"; else cursor_predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"; fi
+              psql -X -q -A -t -v ON_ERROR_STOP=1 > "artifacts/feed-${cohort}-${page}-baseline-plan.json" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('${viewer}')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('${viewer}')::uuid OR EXISTS (
+              SELECT 1 FROM social.follows f
+              WHERE f.follower_id = md5('${viewer}')::uuid
+                AND f.followee_id = p.author_id AND f.status = 'accepted'
+            ))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('${viewer}')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id AND b.blocked_id = md5('${viewer}')::uuid)
+                              OR (b.blocker_id = md5('${viewer}')::uuid AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('${viewer}')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('${viewer}')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND ${cursor_predicate}
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+            done
+          done
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-first-page-baseline-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId",
+                 n.created_at AS "createdAt", n.read_at AS "readAt",
+                 p.handle, p.display_name AS "displayName"
+          FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+          ORDER BY n.created_at DESC, n.id DESC
+          LIMIT 51;
+          SQL
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-cursor-page-baseline-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId",
+                 n.created_at AS "createdAt", n.read_at AS "readAt",
+                 p.handle, p.display_name AS "displayName"
+          FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            AND (n.created_at, n.id) <
+                (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)
+          ORDER BY n.created_at DESC, n.id DESC
+          LIMIT 51;
+          SQL
+
+      - name: Capture repeated baseline query measurements
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/repeated/baseline
+          capture_feed() {
+            local cohort="$1" viewer="$2" page="$3" cursor_predicate="$4" output="$5"
+            psql -X -q -A -t -v ON_ERROR_STOP=1 > "$output" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('$viewer')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('$viewer')::uuid OR EXISTS (
+              SELECT 1 FROM social.follows f WHERE f.follower_id = md5('$viewer')::uuid
+                AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('$viewer')::uuid AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id AND b.blocked_id = md5('$viewer')::uuid)
+                              OR (b.blocker_id = md5('$viewer')::uuid AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('$viewer')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('$viewer')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND $cursor_predicate
+          ORDER BY p.created_at DESC, p.id DESC LIMIT 51;
+          SQL
+          }
+          capture_notifications() {
+            local page="$1" output="$2"
+            local cursor_predicate="TRUE"
+            if [[ "$page" == "cursor" ]]; then
+              cursor_predicate="(n.created_at, n.id) < (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)"
+            fi
+            psql -X -q -A -t -v ON_ERROR_STOP=1 > "$output" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId", n.created_at AS "createdAt",
+                 n.read_at AS "readAt", p.handle, p.display_name AS "displayName"
+          FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            AND $cursor_predicate
+          ORDER BY n.created_at DESC, n.id DESC LIMIT 51;
+          SQL
+          }
+          # Explicit warm-up pass; warm-up plans are excluded from measured summaries.
+          mkdir -p artifacts/warmup/baseline
+          for cohort in dense sparse high; do
+            case "$cohort" in
+              dense) viewer="kukugram-bench-user-1" ;;
+              sparse) viewer="kukugram-bench-user-2" ;;
+              high) viewer="kukugram-bench-user-3" ;;
+            esac
+            for page in first cursor; do
+              predicate="TRUE"
+              if [[ "$page" == "cursor" ]]; then
+                predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"
+              fi
+              capture_feed "$cohort" "$viewer" "$page" "$predicate" "artifacts/warmup/baseline/feed-$cohort-$page.json"
+            done
+          done
+          for page in first cursor; do
+            capture_notifications "$page" "artifacts/warmup/baseline/notifications-$page.json"
+          done
+          for trial in {1..12}; do
+            for cohort in dense sparse high; do
+              case "$cohort" in
+                dense) viewer="kukugram-bench-user-1" ;;
+                sparse) viewer="kukugram-bench-user-2" ;;
+                high) viewer="kukugram-bench-user-3" ;;
+              esac
+              for page in first cursor; do
+                predicate="TRUE"
+                if [[ "$page" == "cursor" ]]; then
+                  predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"
+                fi
+                capture_feed "$cohort" "$viewer" "$page" "$predicate"                   "artifacts/repeated/baseline/feed-$cohort-$page-trial-$trial.json"
+              done
+            done
+            for page in first cursor; do
+              capture_notifications "$page"                 "artifacts/repeated/baseline/notifications-$page-trial-$trial.json"
+            done
+          done
+          python3 - <<'PY'
+          import csv, glob, json, math, os, statistics
+          rows = []
+          for path in sorted(glob.glob("artifacts/repeated/baseline/*.json")):
+              with open(path, encoding="utf-8") as handle:
+                  payload = json.load(handle)
+              plan = payload[0]["Plan"]
+              timing = float(payload[0]["Execution Time"])
+              rows.append({
+                  "query": os.path.basename(path).rsplit("-trial-", 1)[0],
+                  "trial": int(os.path.basename(path).rsplit("-trial-", 1)[1].split(".")[0]),
+                  "execution_ms": timing,
+                  "actual_rows": float(plan.get("Actual Rows", 0)),
+                  "shared_hit_blocks": int(plan.get("Shared Hit Blocks", 0)),
+                  "shared_read_blocks": int(plan.get("Shared Read Blocks", 0)),
+              })
+          with open("artifacts/repeated/baseline-summary.csv", "w", newline="", encoding="utf-8") as handle:
+              writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+              writer.writeheader()
+              writer.writerows(rows)
+          with open("artifacts/repeated/baseline-summary.txt", "w", encoding="utf-8") as handle:
+              for name in sorted({row["query"] for row in rows}):
+                  values = [row["execution_ms"] for row in rows if row["query"] == name]
+                  cv = statistics.pstdev(values) / statistics.mean(values) * 100 if statistics.mean(values) else 0
+                  group = [row for row in rows if row["query"] == name]
+                  handle.write(f"{name}: n={len(values)} median_ms={statistics.median(values):.3f} min_ms={min(values):.3f} max_ms={max(values):.3f} stdev_ms={statistics.pstdev(values):.3f} cv_pct={cv:.2f} median_rows={statistics.median(r['actual_rows'] for r in group):.1f} median_shared_hits={statistics.median(r['shared_hit_blocks'] for r in group):.1f} median_shared_reads={statistics.median(r['shared_read_blocks'] for r in group):.1f}\n")
+          PY
+      - name: Prepare isolated write-overhead tables
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA benchmark;
+          CREATE TABLE benchmark.posts_baseline (LIKE content.posts INCLUDING ALL);
+          CREATE TABLE benchmark.posts_candidate (LIKE content.posts INCLUDING ALL);
+          CREATE TABLE benchmark.notifications_baseline (LIKE notifications.notifications INCLUDING ALL);
+          CREATE TABLE benchmark.notifications_candidate (LIKE notifications.notifications INCLUDING ALL);
+          CREATE TABLE benchmark.notifications_replacement (LIKE notifications.notifications INCLUDING ALL);
+          CREATE TABLE benchmark.notifications_replacement_baseline (LIKE notifications.notifications INCLUDING ALL);
+          INSERT INTO benchmark.posts_baseline SELECT * FROM content.posts;
+          INSERT INTO benchmark.posts_candidate SELECT * FROM content.posts;
+          INSERT INTO benchmark.notifications_baseline SELECT * FROM notifications.notifications;
+          INSERT INTO benchmark.notifications_candidate SELECT * FROM notifications.notifications;
+          INSERT INTO benchmark.notifications_replacement SELECT * FROM notifications.notifications;
+          INSERT INTO benchmark.notifications_replacement_baseline SELECT * FROM notifications.notifications;
+          DROP INDEX benchmark.notifications_replacement_recipient_id_created_at_idx;
+          ANALYZE benchmark.notifications_replacement;
+          ANALYZE benchmark.notifications_replacement_baseline;
+          ANALYZE benchmark.posts_baseline;
+          ANALYZE benchmark.posts_candidate;
+          ANALYZE benchmark.notifications_baseline;
+          ANALYZE benchmark.notifications_candidate;
+          SQL
+
+      - name: Create disposable global cursor index candidate
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX posts_feed_global_cursor ON content.posts (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX notifications_recipient_cursor ON notifications.notifications (recipient_id, created_at DESC, id DESC)"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_posts_global_cursor_candidate ON benchmark.posts_candidate (created_at DESC, id DESC) INCLUDE (author_id) WHERE deleted_at IS NULL"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_notifications_recipient_cursor_candidate ON benchmark.notifications_candidate (recipient_id, created_at DESC, id DESC)"
+          psql -X -v ON_ERROR_STOP=1 -c "CREATE INDEX bench_notifications_replacement_cursor ON benchmark.notifications_replacement (recipient_id, created_at DESC, id DESC)"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE benchmark.notifications_replacement"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE content.posts"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE notifications.notifications"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE benchmark.posts_candidate"
+          psql -X -v ON_ERROR_STOP=1 -c "ANALYZE benchmark.notifications_candidate"
+
+      - name: Capture candidate-index query plans
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/feed-first-page-candidate-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('kukugram-bench-user-1')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('kukugram-bench-user-1')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id
+                                  AND b.blocked_id = md5('kukugram-bench-user-1')::uuid)
+                              OR (b.blocker_id = md5('kukugram-bench-user-1')::uuid
+                                  AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND (NULL::timestamptz IS NULL
+                 OR (p.created_at, p.id) <
+                    (NULL::timestamptz, NULL::uuid))
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/feed-cursor-page-candidate-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('kukugram-bench-user-1')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('kukugram-bench-user-1')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id
+                                  AND b.blocked_id = md5('kukugram-bench-user-1')::uuid)
+                              OR (b.blocker_id = md5('kukugram-bench-user-1')::uuid
+                                  AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('kukugram-bench-user-1')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('kukugram-bench-user-1')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND (p.created_at, p.id) <
+                (now() - interval '45 days',
+                 md5('kukugram-bench-post-200000')::uuid)
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+
+      - name: Capture sparse and high-follow candidate plans
+        run: |
+          set -euo pipefail
+          for cohort in sparse high; do
+            if [[ "$cohort" == "sparse" ]]; then viewer="kukugram-bench-user-2"; else viewer="kukugram-bench-user-3"; fi
+            for page in first cursor; do
+              if [[ "$page" == "first" ]]; then cursor_predicate="TRUE"; else cursor_predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"; fi
+              psql -X -q -A -t -v ON_ERROR_STOP=1 > "artifacts/feed-${cohort}-${page}-candidate-plan.json" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('${viewer}')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p
+          JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('${viewer}')::uuid OR EXISTS (
+              SELECT 1 FROM social.follows f
+              WHERE f.follower_id = md5('${viewer}')::uuid
+                AND f.followee_id = p.author_id AND f.status = 'accepted'
+            ))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('${viewer}')::uuid
+                             AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id AND b.blocked_id = md5('${viewer}')::uuid)
+                              OR (b.blocker_id = md5('${viewer}')::uuid AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('${viewer}')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id
+                             AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('${viewer}')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND ${cursor_predicate}
+          ORDER BY p.created_at DESC, p.id DESC
+          LIMIT 51;
+          SQL
+            done
+          done
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-first-page-candidate-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId",
+                 n.created_at AS "createdAt", n.read_at AS "readAt",
+                 p.handle, p.display_name AS "displayName"
+          FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+          ORDER BY n.created_at DESC, n.id DESC
+          LIMIT 51;
+          SQL
+
+          psql -X -q -A -t -v ON_ERROR_STOP=1 > artifacts/notifications-cursor-page-candidate-plan.json <<'SQL'
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId",
+                 n.created_at AS "createdAt", n.read_at AS "readAt",
+                 p.handle, p.display_name AS "displayName"
+          FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            AND (n.created_at, n.id) <
+                (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)
+          ORDER BY n.created_at DESC, n.id DESC
+          LIMIT 51;
+          SQL
+
+      - name: Capture repeated candidate query measurements
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/repeated/candidate
+          capture_feed() {
+            local cohort="$1" viewer="$2" page="$3" cursor_predicate="$4" output="$5"
+            psql -X -q -A -t -v ON_ERROR_STOP=1 > "$output" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT p.id, p.body, p.created_at AS "createdAt",
+                 pr.handle, pr.display_name AS "displayName",
+                 pr.avatar_url AS "avatarUrl",
+                 (SELECT count(*) FROM content.likes l WHERE l.post_id = p.id) AS "likeCount",
+                 (SELECT count(*) FROM content.comments c WHERE c.post_id = p.id) AS "commentCount",
+                 EXISTS(SELECT 1 FROM content.likes l WHERE l.post_id = p.id
+                        AND l.user_id = md5('$viewer')::uuid) AS "likedByViewer",
+                 p.author_id AS "authorId"
+          FROM content.posts p JOIN social.profiles pr ON pr.user_id = p.author_id
+          WHERE p.deleted_at IS NULL
+            AND (p.author_id = md5('$viewer')::uuid OR EXISTS (
+              SELECT 1 FROM social.follows f WHERE f.follower_id = md5('$viewer')::uuid
+                AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND NOT EXISTS(SELECT 1 FROM social.mutes m
+                           WHERE m.muter_id = md5('$viewer')::uuid AND m.muted_id = p.author_id)
+            AND NOT EXISTS(SELECT 1 FROM social.blocks b
+                           WHERE (b.blocker_id = p.author_id AND b.blocked_id = md5('$viewer')::uuid)
+                              OR (b.blocker_id = md5('$viewer')::uuid AND b.blocked_id = p.author_id))
+            AND (p.author_id = md5('$viewer')::uuid
+                 OR EXISTS(SELECT 1 FROM social.profiles public_profile
+                           WHERE public_profile.user_id = p.author_id AND public_profile.privacy <> 'private')
+                 OR EXISTS(SELECT 1 FROM social.follows f
+                           WHERE f.follower_id = md5('$viewer')::uuid
+                             AND f.followee_id = p.author_id AND f.status = 'accepted'))
+            AND $cursor_predicate
+          ORDER BY p.created_at DESC, p.id DESC LIMIT 51;
+          SQL
+          }
+          capture_notifications() {
+            local page="$1" output="$2"
+            local cursor_predicate="TRUE"
+            if [[ "$page" == "cursor" ]]; then
+              cursor_predicate="(n.created_at, n.id) < (now() - interval '45 days', md5('kukugram-bench-notification-200000')::uuid)"
+            fi
+            psql -X -q -A -t -v ON_ERROR_STOP=1 > "$output" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId", n.created_at AS "createdAt",
+                 n.read_at AS "readAt", p.handle, p.display_name AS "displayName"
+          FROM notifications.notifications n
+          LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            AND $cursor_predicate
+          ORDER BY n.created_at DESC, n.id DESC LIMIT 51;
+          SQL
+          }
+          # Explicit warm-up pass; warm-up plans are excluded from measured summaries.
+          mkdir -p artifacts/warmup/candidate
+          for cohort in dense sparse high; do
+            case "$cohort" in
+              dense) viewer="kukugram-bench-user-1" ;;
+              sparse) viewer="kukugram-bench-user-2" ;;
+              high) viewer="kukugram-bench-user-3" ;;
+            esac
+            for page in first cursor; do
+              predicate="TRUE"
+              if [[ "$page" == "cursor" ]]; then
+                predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"
+              fi
+              capture_feed "$cohort" "$viewer" "$page" "$predicate" "artifacts/warmup/candidate/feed-$cohort-$page.json"
+            done
+          done
+          for page in first cursor; do
+            capture_notifications "$page" "artifacts/warmup/candidate/notifications-$page.json"
+          done
+          for trial in {1..12}; do
+            for cohort in dense sparse high; do
+              case "$cohort" in
+                dense) viewer="kukugram-bench-user-1" ;;
+                sparse) viewer="kukugram-bench-user-2" ;;
+                high) viewer="kukugram-bench-user-3" ;;
+              esac
+              for page in first cursor; do
+                predicate="TRUE"
+                if [[ "$page" == "cursor" ]]; then
+                  predicate="(p.created_at, p.id) < (now() - interval '45 days', md5('kukugram-bench-post-200000')::uuid)"
+                fi
+                capture_feed "$cohort" "$viewer" "$page" "$predicate"                   "artifacts/repeated/candidate/feed-$cohort-$page-trial-$trial.json"
+              done
+            done
+            for page in first cursor; do
+              capture_notifications "$page"                 "artifacts/repeated/candidate/notifications-$page-trial-$trial.json"
+            done
+          done
+          python3 - <<'PY'
+          import csv, glob, json, math, os, statistics
+          rows = []
+          for path in sorted(glob.glob("artifacts/repeated/candidate/*.json")):
+              with open(path, encoding="utf-8") as handle:
+                  payload = json.load(handle)
+              plan = payload[0]["Plan"]
+              timing = float(payload[0]["Execution Time"])
+              rows.append({
+                  "query": os.path.basename(path).rsplit("-trial-", 1)[0],
+                  "trial": int(os.path.basename(path).rsplit("-trial-", 1)[1].split(".")[0]),
+                  "execution_ms": timing,
+                  "actual_rows": float(plan.get("Actual Rows", 0)),
+                  "shared_hit_blocks": int(plan.get("Shared Hit Blocks", 0)),
+                  "shared_read_blocks": int(plan.get("Shared Read Blocks", 0)),
+              })
+          with open("artifacts/repeated/candidate-summary.csv", "w", newline="", encoding="utf-8") as handle:
+              writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+              writer.writeheader()
+              writer.writerows(rows)
+          with open("artifacts/repeated/candidate-summary.txt", "w", encoding="utf-8") as handle:
+              for name in sorted({row["query"] for row in rows}):
+                  values = [row["execution_ms"] for row in rows if row["query"] == name]
+                  cv = statistics.pstdev(values) / statistics.mean(values) * 100 if statistics.mean(values) else 0
+                  group = [row for row in rows if row["query"] == name]
+                  handle.write(f"{name}: n={len(values)} median_ms={statistics.median(values):.3f} min_ms={min(values):.3f} max_ms={max(values):.3f} stdev_ms={statistics.pstdev(values):.3f} cv_pct={cv:.2f} median_rows={statistics.median(r['actual_rows'] for r in group):.1f} median_shared_hits={statistics.median(r['shared_hit_blocks'] for r in group):.1f} median_shared_reads={statistics.median(r['shared_read_blocks'] for r in group):.1f}\n")
+          PY
+      - name: Compare notification index addition and replacement strategies
+        run: |
+          set -euo pipefail
+          for strategy in baseline additive replacement; do
+            case "$strategy" in
+              baseline) table="benchmark.notifications_baseline" ;;
+              additive) table="benchmark.notifications_candidate" ;;
+              replacement) table="benchmark.notifications_replacement" ;;
+            esac
+            for query_kind in all unread; do
+              predicate=""
+              if [[ "$query_kind" == "unread" ]]; then predicate="AND n.read_at IS NULL"; fi
+              psql -X -q -A -t -v ON_ERROR_STOP=1 > "artifacts/notifications-$strategy-$query_kind-plan.json" <<SQL
+          SET jit = off;
+          EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)
+          SELECT n.id, n.type, n.post_id AS "postId", n.created_at AS "createdAt",
+                 n.read_at AS "readAt", p.handle, p.display_name AS "displayName"
+          FROM $table n LEFT JOIN social.profiles p ON p.user_id = n.actor_id
+          WHERE n.recipient_id = md5('kukugram-bench-user-1')::uuid
+            $predicate
+          ORDER BY n.created_at DESC, n.id DESC LIMIT 51;
+          SQL
+            done
+          done
+          {
+            echo "Notification index strategy sizes (bytes)"
+            psql -X -c "SELECT c.relname AS table_name, i.relname AS index_name, pg_relation_size(i.oid) AS index_bytes, pg_get_indexdef(i.oid) AS definition FROM pg_class i JOIN pg_index x ON x.indexrelid = i.oid JOIN pg_class c ON c.oid = x.indrelid WHERE c.relnamespace = 'benchmark'::regnamespace AND c.relname IN ('notifications_baseline','notifications_candidate','notifications_replacement') ORDER BY c.relname, i.relname;"
+          } > artifacts/notification-index-strategies.txt 2>&1
+
+      - name: Measure autocommit index write overhead
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/write-overhead/plans
+          cd apps/api
+          node --input-type=module <<'JS'
+          import { Client } from "pg";
+          import { performance } from "node:perf_hooks";
+          import { mkdir, writeFile } from "node:fs/promises";
+
+          const client = new Client();
+          const runId = process.env.GITHUB_RUN_ID ?? "local";
+          const warmupTrials = 3;
+          const measuredTrials = 12;
+          const rowCount = 5000;
+          const groups = [
+            {
+              key: "posts",
+              kind: "posts",
+              variants: [
+                { label: "baseline", table: "benchmark.posts_baseline" },
+                { label: "candidate", table: "benchmark.posts_candidate" }
+              ]
+            },
+            {
+              key: "notifications-additive",
+              kind: "notifications",
+              variants: [
+                { label: "baseline", table: "benchmark.notifications_baseline" },
+                { label: "candidate", table: "benchmark.notifications_candidate" }
+              ]
+            },
+            {
+              key: "notifications-replacement",
+              kind: "notifications",
+              variants: [
+                { label: "baseline", table: "benchmark.notifications_replacement_baseline" },
+                { label: "replacement", table: "benchmark.notifications_replacement" }
+              ]
+            }
+          ];
+          const results = [];
+
+          function insertSql(group, table) {
+            if (group.kind === "posts") {
+              return `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+                INSERT INTO ${table} (id, author_id, body)
+                SELECT md5($1::text || n::text)::uuid,
+                       md5('kukugram-bench-user-' || (mod(n, 12000) + 1)::text)::uuid,
+                       'Disposable autocommit benchmark write ' || n
+                FROM generate_series(1, ${rowCount}) AS series(n)`;
+            }
+            return `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+              INSERT INTO ${table} (id, recipient_id, actor_id, type)
+              SELECT md5($1::text || n::text)::uuid,
+                     md5('kukugram-bench-user-' || (mod(n, 12000) + 1)::text)::uuid,
+                     md5('kukugram-bench-user-' || (mod(n * 17, 12000) + 1)::text)::uuid,
+                     'follow'
+              FROM generate_series(1, ${rowCount}) AS series(n)`;
+          }
+
+          function summarize(values) {
+            const sorted = [...values].sort((a, b) => a - b);
+            const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+            const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+            const median = sorted.length % 2
+              ? sorted[(sorted.length - 1) / 2]
+              : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+            const stdev = Math.sqrt(variance);
+            return {
+              median_ms: median,
+              min_ms: sorted[0],
+              max_ms: sorted.at(-1),
+              stdev_ms: stdev,
+              cv_pct: mean === 0 ? 0 : (stdev / mean) * 100
+            };
+          }
+
+          async function measure(group, variant, phase, trial) {
+            const prefix = `kukugram-${runId}-${group.key}-${phase}-${trial}-`;
+            const startedAt = performance.now();
+            const result = await client.query(insertSql(group, variant.table), [prefix]);
+            const clientRoundTripMs = performance.now() - startedAt;
+            const explainValue = result.rows[0]["QUERY PLAN"] ?? Object.values(result.rows[0])[0];
+            const plan = Array.isArray(explainValue) ? explainValue[0] : JSON.parse(explainValue)[0];
+            const planningMs = Number(plan["Planning Time"] ?? 0);
+            const executionMs = Number(plan["Execution Time"] ?? 0);
+            results.push({
+              group: group.key,
+              variant: variant.label,
+              phase,
+              trial,
+              inserted_rows: rowCount,
+              planning_ms: planningMs,
+              server_execution_ms: executionMs,
+              autocommit_client_round_trip_ms: clientRoundTripMs,
+              client_over_server_ms: clientRoundTripMs - planningMs - executionMs
+            });
+            if (phase === "measured") {
+              const filename = `../../artifacts/write-overhead/plans/${group.key}-${variant.label}-trial-${trial}.json`;
+              await writeFile(filename, JSON.stringify(plan, null, 2) + "\n");
+            }
+          }
+
+          await mkdir("../../artifacts/write-overhead/plans", { recursive: true });
+          await client.connect();
+          try {
+            for (const group of groups) {
+              for (let trial = 1; trial <= warmupTrials; trial += 1) {
+                const order = trial % 2 ? group.variants : [...group.variants].reverse();
+                for (const variant of order) await measure(group, variant, "warmup", trial);
+              }
+              for (let trial = 1; trial <= measuredTrials; trial += 1) {
+                const order = trial % 2 ? group.variants : [...group.variants].reverse();
+                for (const variant of order) await measure(group, variant, "measured", trial);
+              }
+            }
+          } finally {
+            await client.end();
+          }
+
+          const measured = results.filter((row) => row.phase === "measured");
+          const summaries = [];
+          for (const group of groups) {
+            for (const variant of group.variants) {
+              const rows = measured.filter((row) => row.group === group.key && row.variant === variant.label);
+              const summary = { group: group.key, variant: variant.label, trials: rows.length };
+              for (const metric of ["planning_ms", "server_execution_ms", "autocommit_client_round_trip_ms", "client_over_server_ms"]) {
+                Object.assign(summary, Object.fromEntries(
+                  Object.entries(summarize(rows.map((row) => row[metric])))
+                    .map(([key, value]) => [`${metric}_${key}`, Number(value.toFixed(4))])
+                ));
+              }
+              summaries.push(summary);
+            }
+          }
+
+          const csvRows = [
+            ["group", "variant", "trial", "planning_ms", "server_execution_ms", "autocommit_client_round_trip_ms", "client_over_server_ms"],
+            ...measured.map((row) => [
+              row.group, row.variant, row.trial, row.planning_ms.toFixed(4),
+              row.server_execution_ms.toFixed(4), row.autocommit_client_round_trip_ms.toFixed(4),
+              row.client_over_server_ms.toFixed(4)
+            ])
+          ];
+          await writeFile("../../artifacts/write-overhead/raw.json", JSON.stringify(results, null, 2) + "\n");
+          await writeFile("../../artifacts/write-overhead/summary.json", JSON.stringify(summaries, null, 2) + "\n");
+          await writeFile("../../artifacts/write-overhead/raw.csv", csvRows.map((row) => row.join(",")).join("\n") + "\n");
+          const report = [
+            "Autocommit write benchmark",
+            `Warm-up trials per variant: ${warmupTrials}`,
+            `Measured trials per variant: ${measuredTrials}`,
+            `Rows per INSERT: ${rowCount}`,
+            "Each EXPLAIN ANALYZE INSERT is a standalone autocommit statement; no explicit BEGIN is used.",
+            "server_execution_ms is PostgreSQL's EXPLAIN Execution Time.",
+            "autocommit_client_round_trip_ms measures client send-to-response time after the implicit commit.",
+            "client_over_server_ms subtracts server planning and execution; it includes commit plus protocol/network/client overhead and is NOT a pure commit-time measurement.",
+            "",
+            ...summaries.map((summary) => JSON.stringify(summary))
+          ].join("\n");
+          await writeFile("../../artifacts/write-overhead/summary.txt", report + "\n");
+          JS
+
+      - name: Document first-touch cache observations
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          def load_plan(path):
+              with Path(path).open(encoding="utf-8") as handle:
+                  return json.load(handle)[0]
+
+          def find_index(node, index_name):
+              if node.get("Index Name") == index_name:
+                  return node
+              for child in node.get("Plans", []):
+                  found = find_index(child, index_name)
+                  if found:
+                      return found
+              return None
+
+          lines = [
+              "First-touch cache observations",
+              "",
+              "The single-plan baseline and candidate captures occur at different points in the workflow, after different query and index-build histories.",
+              "They are first-touch observations, NOT a controlled cold-cache comparison.",
+              "PostgreSQL Shared Read Blocks count reads into shared buffers; they do not prove physical disk reads because the operating-system page cache may satisfy them.",
+              "Use the repeated summaries after explicit warm-up for warmed-cache comparisons.",
+              ""
+          ]
+          for phase in ("baseline", "candidate"):
+              for page in ("first", "cursor"):
+                  path = f"artifacts/feed-sparse-{page}-{phase}-plan.json"
+                  payload = load_plan(path)
+                  root = payload["Plan"]
+                  index = find_index(root, "posts_feed_global_cursor")
+                  lines.append(
+                      f"{phase} sparse {page}: execution_ms={payload.get('Execution Time')} "
+                      f"root_shared_reads={root.get('Shared Read Blocks', 0)} "
+                      f"feed_index_shared_reads={(index or {}).get('Shared Read Blocks', 0)}"
+                  )
+          Path("artifacts/cache-observation-notes.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+      - name: Capture dataset and index statistics
+        if: always()
+        run: |
+          mkdir -p artifacts
+          {
+            echo "PostgreSQL:"
+            psql -X -Atc "SELECT version();" || true
+            echo
+            echo "Table statistics:"
+            psql -X -c "SELECT schemaname, relname, n_live_tup, seq_scan, idx_scan, pg_relation_size(relid) AS table_bytes, pg_total_relation_size(relid) AS total_bytes FROM pg_stat_user_tables ORDER BY schemaname, relname;" || true
+            echo
+            echo "Notification actor/profile coverage:"
+            psql -X -c "SELECT count(*) AS notification_rows, count(n.actor_id) AS actor_rows, count(p.user_id) AS matched_profiles FROM notifications.notifications n LEFT JOIN social.profiles p ON p.user_id = n.actor_id;" || true
+            echo
+            echo "Notification index definitions:"
+            psql -X -c "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'notifications' AND tablename = 'notifications' ORDER BY indexname;" || true
+            echo
+            echo "Index statistics:"
+            psql -X -c "SELECT schemaname, relname, indexrelname, idx_scan, idx_tup_read, idx_tup_fetch, pg_relation_size(indexrelid) AS index_bytes FROM pg_stat_user_indexes ORDER BY schemaname, relname, indexrelname;" || true
+          } > artifacts/database-statistics.txt 2>&1
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kukugram-feed-postgres-benchmark
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
